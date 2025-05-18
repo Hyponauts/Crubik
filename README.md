@@ -1,6 +1,6 @@
-# Crubic
+# Crubik
 
-A new Flutter project.
+Cross-platform Flutter app for Rubik's Cube speed solving puzzle.
 
 ## Getting Started
 
