@@ -3,6 +3,9 @@
 *.log
 *.pyc
 *.swp
+*.tmp
+*.bak
+*~
 .DS_Store
 .atom/
 .build/
@@ -18,10 +21,8 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code settings may contain machine-specific SDK and workspace paths.
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -32,6 +33,11 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+coverage/
+
+# FVM installs and links SDKs here. Keep .fvmrc in version control so every
+# developer uses the same Flutter channel/version.
+.fvm/
 
 # Symbolication related
 app.*.symbols
@@ -43,3 +49,30 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android/Gradle generated and machine-local files
+**/.gradle/
+**/.cxx/
+/android/captures/
+/android/local.properties
+/android/key.properties
+*.jks
+*.keystore
+
+# Apple platform generated files
+**/Pods/
+**/.symlinks/
+**/Flutter/ephemeral/
+**/Flutter/Generated.xcconfig
+**/Flutter/flutter_export_environment.sh
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Flutter desktop generated files
+**/flutter/ephemeral/
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
