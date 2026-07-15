@@ -1,0 +1,102 @@
+import 'package:flutter/material.dart';
+
+abstract final class CrubikColors {
+  static const background = Color(0xFF0A0C0E);
+  static const surface = Color(0xFF121518);
+  static const elevated = Color(0xFF181C20);
+  static const border = Color(0xFF2A3036);
+  static const text = Color(0xFFF2F5F3);
+  static const muted = Color(0xFF919A9E);
+  static const lime = Color(0xFFB7F34A);
+  static const cyan = Color(0xFF58D8DA);
+  static const warning = Color(0xFFFFC857);
+  static const danger = Color(0xFFFF6B6B);
+}
+
+abstract final class CrubikTheme {
+  static ThemeData get dark {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: CrubikColors.lime,
+      brightness: Brightness.dark,
+      surface: CrubikColors.surface,
+    ).copyWith(
+      primary: CrubikColors.lime,
+      onPrimary: CrubikColors.background,
+      secondary: CrubikColors.cyan,
+      surface: CrubikColors.surface,
+      onSurface: CrubikColors.text,
+      error: CrubikColors.danger,
+      outline: CrubikColors.border,
+    );
+
+    final base = ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: CrubikColors.background,
+    );
+
+    return base.copyWith(
+      textTheme: base.textTheme.copyWith(
+        displayLarge: base.textTheme.displayLarge?.copyWith(
+          color: CrubikColors.text,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -3,
+        ),
+        headlineMedium: base.textTheme.headlineMedium?.copyWith(
+          color: CrubikColors.text,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.8,
+        ),
+        titleLarge: base.textTheme.titleLarge?.copyWith(
+          color: CrubikColors.text,
+          fontWeight: FontWeight.w700,
+        ),
+        titleMedium: base.textTheme.titleMedium?.copyWith(
+          color: CrubikColors.text,
+          fontWeight: FontWeight.w600,
+        ),
+        bodyLarge: base.textTheme.bodyLarge?.copyWith(color: CrubikColors.text),
+        bodyMedium: base.textTheme.bodyMedium?.copyWith(
+          color: CrubikColors.muted,
+          height: 1.35,
+        ),
+        labelLarge: base.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+      ),
+      dividerColor: CrubikColors.border,
+      iconTheme: const IconThemeData(color: CrubikColors.muted),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: CrubikColors.background,
+        foregroundColor: CrubikColors.text,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        backgroundColor: CrubikColors.background,
+        indicatorColor: Color(0x22B7F34A),
+        selectedIconTheme: IconThemeData(color: CrubikColors.lime),
+        unselectedIconTheme: IconThemeData(color: CrubikColors.muted),
+        selectedLabelTextStyle: TextStyle(
+          color: CrubikColors.text,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelTextStyle: TextStyle(color: CrubikColors.muted),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: CrubikColors.surface,
+        selectedItemColor: CrubikColors.lime,
+        unselectedItemColor: CrubikColors.muted,
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: CrubikColors.elevated,
+        contentTextStyle: TextStyle(color: CrubikColors.text),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}

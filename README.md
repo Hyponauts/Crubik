@@ -1,16 +1,66 @@
 # Crubik
 
-Cross-platform Flutter app for Rubik's Cube speed solving puzzle.
+Crubik is an offline-first Flutter companion for GAN and MoYu smart cubes. The
+MVP keeps the complete practice loop on-device: connect a cube, follow a
+scramble, watch turns update a live 3x3 model, time the solve, and retain the
+session without an account or network connection.
 
-## Getting Started
+## MVP capabilities
 
-This project is a starting point for a Flutter application.
+- Responsive phone, tablet, and desktop practice layouts.
+- GAN Gen2, Gen3, and Gen4 BLE services, plus the MoYu AI 2023 Gen2 variant.
+- MAC-salted AES packet decryption, initial facelet-state synchronization, and
+  move-history recovery for supported protocols.
+- A pure-Dart 54-sticker cube model, notation parser, and 20-move practice
+  scramble generator.
+- Touch and spacebar timing, move capture, automatic stop on a solved cube,
+  best/mean/Ao5 statistics, and recent-solve deletion.
+- Durable local solve storage through SQLite on native platforms and Drift's
+  IndexedDB-backed storage on the web.
+- Versioned, lossless JSON solve-history export through the clipboard.
+- A hardware-free demo/manual-input path.
 
-A few resources to get you started if this is your first Flutter project:
+The current scramble generator is deliberately labelled a **practice
+scramble**. A production WCA random-state generator remains a follow-up; its
+pure-Dart implementation should be validated against TNoodle and cubing.js.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Cube scope
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The P0 vendor scope is intentionally limited to GAN and MoYu:
+
+- GAN Gen2: GAN Mini ui FreePlay, GAN12 ui / ui FreePlay, GAN356 i Carry / Carry
+  S / i 3, and other hardware exposing the same certified service.
+- GAN Gen3: GAN356 i Carry 2 protocol.
+- GAN Gen4: GAN12 ui Maglev and GAN14 ui FreePlay protocol.
+- MoYu: MoYu AI 2023 using its GAN Gen2-compatible protocol and MoYu key
+  material.
+
+The adapters are implemented and packet-tested, but every marketed
+model/firmware/platform combination still needs physical-device certification
+before a production compatibility promise is made.
+
+## Run and verify
+
+```sh
+flutter pub get
+flutter run
+flutter analyze
+flutter test
+```
+
+The generated Drift schema is committed. After changing the database tables,
+regenerate it with:
+
+```sh
+dart run build_runner build
+```
+
+The web build includes `sqlite3.wasm` matching the locked `sqlite3` dependency
+and a worker compiled from the locked Drift version.
+
+## Product documentation
+
+- [Product vision](docs/crubik-product-vision.md)
+
+Third-party protocol attribution is documented in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
