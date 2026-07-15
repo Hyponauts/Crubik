@@ -86,7 +86,11 @@ class _PracticePageState extends State<PracticePage> {
       key: const Key('practice-mobile-layout'),
       appBar: AppBar(
         titleSpacing: 16,
-        title: const _Brand(compact: true),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: _Brand(compact: true),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -103,9 +107,11 @@ class _PracticePageState extends State<PracticePage> {
               ? _MobilePractice(
                 practice: widget.practiceController,
                 connection: widget.connectionController,
-                onConnectPressed: _showConnectionDialog,
               )
-              : _SessionsView(practice: widget.practiceController),
+              : _SessionsView(
+                practice: widget.practiceController,
+                mobile: true,
+              ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
@@ -258,40 +264,375 @@ class _DesktopPractice extends StatelessWidget {
 }
 
 class _MobilePractice extends StatelessWidget {
-  const _MobilePractice({
+  const _MobilePractice({required this.practice, required this.connection});
+
+  final PracticeController practice;
+  final CubeConnectionController connection;
+
+  void _showManualMoves(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _ManualMovesDialog(practice: practice),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useAccessibilityFallback = textScale > 1.3;
+        if (useAccessibilityFallback) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: _MobilePracticePortrait(
+              practice: practice,
+              connection: connection,
+              onManualMoves: () => _showManualMoves(context),
+              scrollFallback: true,
+            ),
+          );
+        }
+
+        final landscape = constraints.maxWidth > constraints.maxHeight;
+        return Padding(
+          padding: EdgeInsets.all(landscape ? 8 : 12),
+          child:
+              landscape
+                  ? _MobilePracticeLandscape(
+                    practice: practice,
+                    connection: connection,
+                    onManualMoves: () => _showManualMoves(context),
+                  )
+                  : _MobilePracticePortrait(
+                    practice: practice,
+                    connection: connection,
+                    onManualMoves: () => _showManualMoves(context),
+                  ),
+        );
+      },
+    );
+  }
+}
+
+class _MobilePracticePortrait extends StatelessWidget {
+  const _MobilePracticePortrait({
     required this.practice,
     required this.connection,
-    required this.onConnectPressed,
+    required this.onManualMoves,
+    this.scrollFallback = false,
   });
 
   final PracticeController practice;
   final CubeConnectionController connection;
-  final VoidCallback onConnectPressed;
+  final VoidCallback onManualMoves;
+  final bool scrollFallback;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final cube = _CompactCubePanel(practice: practice, connection: connection);
+    return Column(
+      mainAxisSize: scrollFallback ? MainAxisSize.min : MainAxisSize.max,
       children: [
-        _MobileStatusCard(
-          connection: connection,
-          onConnectPressed: onConnectPressed,
-        ),
-        const SizedBox(height: 12),
-        _CubeAndTimerHero(
-          practice: practice,
-          connection: connection,
-          compact: true,
-        ),
-        const SizedBox(height: 12),
-        _ScramblePanel(practice: practice),
-        const SizedBox(height: 12),
-        _MoveInputPanel(practice: practice),
-        const SizedBox(height: 12),
-        _MobileStats(practice: practice),
-        const SizedBox(height: 12),
-        _RecentSolves(practice: practice, limit: 5),
+        _CompactScramblePanel(practice: practice, onManualMoves: onManualMoves),
+        const SizedBox(height: 8),
+        if (scrollFallback)
+          SizedBox(height: 240, child: cube)
+        else
+          Expanded(child: cube),
+        const SizedBox(height: 8),
+        _CompactTimerPanel(practice: practice),
       ],
+    );
+  }
+}
+
+class _MobilePracticeLandscape extends StatelessWidget {
+  const _MobilePracticeLandscape({
+    required this.practice,
+    required this.connection,
+    required this.onManualMoves,
+  });
+
+  final PracticeController practice;
+  final CubeConnectionController connection;
+  final VoidCallback onManualMoves;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 5,
+          child: _CompactCubePanel(practice: practice, connection: connection),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 6,
+          child: Column(
+            children: [
+              Expanded(
+                child: _CompactScramblePanel(
+                  practice: practice,
+                  onManualMoves: onManualMoves,
+                  landscape: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _CompactTimerPanel(practice: practice, landscape: true),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CompactCubePanel extends StatelessWidget {
+  const _CompactCubePanel({required this.practice, required this.connection});
+
+  final PracticeController practice;
+  final CubeConnectionController connection;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      padding: const EdgeInsets.all(10),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maximumDimension = constraints.maxWidth;
+          final availableDimension = constraints.maxHeight - 48;
+          final dimension =
+              availableDimension.clamp(96.0, maximumDimension).toDouble();
+          return Column(
+            children: [
+              Row(
+                children: [
+                  const _SectionLabel('LIVE CUBE'),
+                  const Spacer(),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color:
+                          connection.isConnected
+                              ? CrubikColors.lime
+                              : CrubikColors.muted,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    connection.isConnected ? 'LINKED' : 'MANUAL',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          connection.isConnected
+                              ? CrubikColors.lime
+                              : CrubikColors.muted,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: Cube3DView(
+                    state: practice.cubeState,
+                    lastMove: practice.lastAppliedMove,
+                    moveRevision: practice.cubeMoveRevision,
+                    dimension: dimension,
+                  ),
+                ),
+              ),
+              Text(
+                '${practice.currentMoves.length} moves captured',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CompactScramblePanel extends StatelessWidget {
+  const _CompactScramblePanel({
+    required this.practice,
+    required this.onManualMoves,
+    this.landscape = false,
+  });
+
+  final PracticeController practice;
+  final VoidCallback onManualMoves;
+  final bool landscape;
+
+  @override
+  Widget build(BuildContext context) {
+    final canReset = practice.timerPhase != SolveTimerPhase.running;
+    return _Panel(
+      padding: EdgeInsets.all(landscape ? 9 : 12),
+      child: Column(
+        mainAxisAlignment:
+            landscape
+                ? MainAxisAlignment.spaceBetween
+                : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionLabel('PRACTICE SCRAMBLE'),
+          SizedBox(height: landscape ? 3 : 7),
+          if (landscape)
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _scrambleText(context),
+              ),
+            )
+          else
+            _scrambleText(context),
+          SizedBox(height: landscape ? 3 : 7),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('new-scramble'),
+                  onPressed: canReset ? practice.newScramble : null,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.shuffle_rounded, size: 17),
+                  label: const Text('New'),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.outlined(
+                key: const Key('reset-scramble'),
+                onPressed: canReset ? practice.resetCubeToScramble : null,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.replay_rounded, size: 18),
+                tooltip: 'Reset visual cube to scramble',
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                key: const Key('manual-moves-button'),
+                onPressed: onManualMoves,
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 8,
+                  ),
+                ),
+                icon: const Icon(Icons.touch_app_outlined, size: 17),
+                label: const Text('Moves'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _scrambleText(BuildContext context) {
+    return SelectableText(
+      practice.scramble.toString(),
+      key: const Key('scramble-text'),
+      maxLines: landscape ? 2 : 3,
+      style: Theme.of(
+        context,
+      ).textTheme.titleSmall?.copyWith(fontFamily: 'monospace', height: 1.25),
+    );
+  }
+}
+
+class _CompactTimerPanel extends StatelessWidget {
+  const _CompactTimerPanel({required this.practice, this.landscape = false});
+
+  final PracticeController practice;
+  final bool landscape;
+
+  @override
+  Widget build(BuildContext context) {
+    final running = practice.timerPhase == SolveTimerPhase.running;
+    final phaseLabel = switch (practice.timerPhase) {
+      SolveTimerPhase.ready => 'READY',
+      SolveTimerPhase.running => 'SOLVING',
+      SolveTimerPhase.stopped => 'LAST SOLVE',
+    };
+    final time = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        _formatDuration(practice.elapsed),
+        key: const Key('timer-display'),
+        style: Theme.of(context).textTheme.displayLarge?.copyWith(
+          fontSize: landscape ? 42 : 50,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          color: running ? CrubikColors.lime : CrubikColors.text,
+        ),
+      ),
+    );
+    final button = FilledButton.icon(
+      key: const Key('timer-toggle'),
+      onPressed: practice.toggleTimer,
+      style: FilledButton.styleFrom(
+        backgroundColor: running ? CrubikColors.danger : CrubikColors.lime,
+        foregroundColor: CrubikColors.background,
+        padding: EdgeInsets.symmetric(vertical: landscape ? 10 : 12),
+      ),
+      icon: Icon(running ? Icons.stop_rounded : Icons.play_arrow_rounded),
+      label: Text(running ? 'STOP & SAVE' : 'START SOLVE'),
+    );
+
+    return _Panel(
+      padding: EdgeInsets.all(landscape ? 9 : 12),
+      child:
+          landscape
+              ? Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          phaseLabel,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelSmall?.copyWith(
+                            color:
+                                running
+                                    ? CrubikColors.lime
+                                    : CrubikColors.muted,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        time,
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(child: button),
+                ],
+              )
+              : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    phaseLabel,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: running ? CrubikColors.lime : CrubikColors.muted,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  time,
+                  SizedBox(width: double.infinity, child: button),
+                ],
+              ),
     );
   }
 }
@@ -423,78 +764,6 @@ class _ConnectionButton extends StatelessWidget {
         size: 18,
       ),
       label: Text(label),
-    );
-  }
-}
-
-class _MobileStatusCard extends StatelessWidget {
-  const _MobileStatusCard({
-    required this.connection,
-    required this.onConnectPressed,
-  });
-
-  final CubeConnectionController connection;
-  final VoidCallback onConnectPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color:
-                  connection.isConnected
-                      ? const Color(0x18B7F34A)
-                      : CrubikColors.elevated,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              connection.isConnected
-                  ? Icons.bluetooth_connected
-                  : Icons.cloud_off_outlined,
-              color:
-                  connection.isConnected
-                      ? CrubikColors.lime
-                      : CrubikColors.cyan,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  connection.isConnected
-                      ? connection.connectedDevice!.name
-                      : 'Offline practice ready',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: CrubikColors.text,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  connection.isConnected
-                      ? 'Cube link active'
-                      : 'Connect GAN or MoYu, or use manual input',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: onConnectPressed,
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Cube connection',
-          ),
-        ],
-      ),
     );
   }
 }
@@ -794,7 +1063,12 @@ class _MoveInputPanel extends StatelessWidget {
           const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
-              final columns = constraints.maxWidth > 580 ? 12 : 6;
+              final columns =
+                  constraints.maxWidth > 580
+                      ? 12
+                      : constraints.maxWidth < 300
+                      ? 3
+                      : 6;
               final spacing = 8.0;
               final buttonWidth =
                   (constraints.maxWidth - spacing * (columns - 1)) / columns;
@@ -831,6 +1105,24 @@ class _MoveInputPanel extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ManualMovesDialog extends StatelessWidget {
+  const _ManualMovesDialog({required this.practice});
+
+  final PracticeController practice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.all(12),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: _MoveInputPanel(practice: practice),
       ),
     );
   }
@@ -889,7 +1181,7 @@ class _SessionSidebar extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Expanded(child: _RecentSolves(practice: practice)),
+        Expanded(child: _RecentSolves(practice: practice, scrollable: true)),
       ],
     );
   }
@@ -967,17 +1259,29 @@ class _StatValue extends StatelessWidget {
 }
 
 class _RecentSolves extends StatelessWidget {
-  const _RecentSolves({required this.practice, this.limit});
+  const _RecentSolves({required this.practice, this.scrollable = false});
 
   final PracticeController practice;
-  final int? limit;
+  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
-    final solves =
-        limit == null
-            ? practice.solves
-            : practice.solves.take(limit!).toList(growable: false);
+    final solves = practice.solves;
+    final list =
+        solves.isEmpty
+            ? const _EmptySolves()
+            : ListView.separated(
+              key: const Key('recent-solves-list'),
+              padding: EdgeInsets.zero,
+              itemCount: solves.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder:
+                  (context, index) => _SolveRow(
+                    position: practice.solves.length - index,
+                    solve: solves[index],
+                    onDelete: () => practice.deleteSolve(solves[index].id),
+                  ),
+            );
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -993,8 +1297,10 @@ class _RecentSolves extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          if (solves.isEmpty)
-            const _EmptySolves()
+          if (scrollable)
+            Expanded(child: list)
+          else if (solves.isEmpty)
+            list
           else
             for (var index = 0; index < solves.length; index++) ...[
               _SolveRow(
@@ -1102,9 +1408,10 @@ class _SolveRow extends StatelessWidget {
 }
 
 class _SessionsView extends StatelessWidget {
-  const _SessionsView({required this.practice});
+  const _SessionsView({required this.practice, this.mobile = false});
 
   final PracticeController practice;
+  final bool mobile;
 
   Future<void> _copyExport(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: practice.exportJson()));
@@ -1116,6 +1423,41 @@ class _SessionsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (mobile) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Session',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('export-solves-button'),
+                    onPressed:
+                        practice.hasSolves ? () => _copyExport(context) : null,
+                    icon: const Icon(Icons.copy_all_outlined, size: 18),
+                    label: const Text('Export'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _MobileStats(practice: practice),
+              const SizedBox(height: 10),
+              Expanded(
+                child: _RecentSolves(practice: practice, scrollable: true),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
