@@ -1615,13 +1615,16 @@ class _ConnectionDialog extends StatelessWidget {
                                     connecting:
                                         controller.status ==
                                         CubeConnectionStatus.connecting,
-                                    onConnect: () async {
-                                      await controller.connect(device);
-                                      if (context.mounted &&
-                                          controller.isConnected) {
-                                        Navigator.of(context).pop();
-                                      }
-                                    },
+                                    onConnect:
+                                        device.isSupported
+                                            ? () async {
+                                              await controller.connect(device);
+                                              if (context.mounted &&
+                                                  controller.isConnected) {
+                                                Navigator.of(context).pop();
+                                              }
+                                            }
+                                            : null,
                                   );
                                 },
                               ),
@@ -1734,7 +1737,7 @@ class _DeviceResult extends StatelessWidget {
 
   final CubeDeviceCandidate device;
   final bool connecting;
-  final VoidCallback onConnect;
+  final VoidCallback? onConnect;
 
   @override
   Widget build(BuildContext context) {
@@ -1760,17 +1763,42 @@ class _DeviceResult extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
-                  '${device.vendor.name.toUpperCase()} · ${device.rssi ?? '—'} dBm',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                if (device.isSupported)
+                  Text(
+                    '${device.vendor.name.toUpperCase()} · ${device.rssi ?? '—'} dBm',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  )
+                else ...[
+                  Text(
+                    'MOYU · Detected, not supported yet',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: CrubikColors.warning,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    device.supportMessage ??
+                        'This smart-cube protocol is not supported yet.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ],
             ),
           ),
-          FilledButton(
-            onPressed: connecting ? null : onConnect,
-            child: Text(connecting ? 'Connecting…' : 'Connect'),
-          ),
+          if (device.isSupported)
+            FilledButton(
+              onPressed: connecting ? null : onConnect,
+              child: Text(connecting ? 'Connecting…' : 'Connect'),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(
+                Icons.info_outline,
+                semanticLabel: 'Protocol not supported',
+              ),
+            ),
         ],
       ),
     );
