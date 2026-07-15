@@ -23,6 +23,8 @@ final class CubeDeviceCandidate {
     this.rssi,
     this.isDemo = false,
     this.macAddress,
+    this.isSupported = true,
+    this.supportMessage,
   });
 
   final String id;
@@ -31,6 +33,20 @@ final class CubeDeviceCandidate {
   final int? rssi;
   final bool isDemo;
   final String? macAddress;
+  final bool isSupported;
+  final String? supportMessage;
+}
+
+final class CubeAdvertisementClassification {
+  const CubeAdvertisementClassification({
+    required this.vendor,
+    required this.isSupported,
+    this.supportMessage,
+  });
+
+  final CubeVendor vendor;
+  final bool isSupported;
+  final String? supportMessage;
 }
 
 abstract interface class BleCubeTransport {
@@ -41,6 +57,10 @@ abstract interface class BleCubeTransport {
   Stream<SmartCubeStateEvent> get stateEvents;
 
   Stream<bool> connectionState(String deviceId);
+
+  Future<bool> hasPermissions();
+
+  Future<void> requestPermissions();
 
   Future<void> startScan();
 
@@ -86,10 +106,13 @@ final class UniversalBleCubeTransport implements BleCubeTransport {
       UniversalBle.connectionStream(deviceId);
 
   @override
-  Future<void> startScan() async {
-    await UniversalBle.requestPermissions();
-    await UniversalBle.startScan();
-  }
+  Future<bool> hasPermissions() => UniversalBle.hasPermissions();
+
+  @override
+  Future<void> requestPermissions() => UniversalBle.requestPermissions();
+
+  @override
+  Future<void> startScan() => UniversalBle.startScan();
 
   @override
   Future<void> stopScan() => UniversalBle.stopScan();
@@ -225,26 +248,57 @@ final class UniversalBleCubeTransport implements BleCubeTransport {
   static CubeDeviceCandidate? _toSupportedCandidate(BleDevice device) {
     final name = (device.name ?? device.rawName ?? '').trim();
     if (name.isEmpty) return null;
-    final vendor = classifyCubeVendor(name);
-    if (vendor == null) return null;
+    final classification = classifyCubeAdvertisement(name);
+    if (classification == null) return null;
     return CubeDeviceCandidate(
       id: device.deviceId,
       name: name,
-      vendor: vendor,
+      vendor: classification.vendor,
       rssi: device.rssi,
       macAddress: extractGanMacAddress(device),
+      isSupported: classification.isSupported,
+      supportMessage: classification.supportMessage,
     );
   }
 }
 
-CubeVendor? classifyCubeVendor(String advertisedName) {
+CubeAdvertisementClassification? classifyCubeAdvertisement(
+  String advertisedName,
+) {
   final name = advertisedName.trim().toUpperCase();
-  if (name.startsWith('GAN')) return CubeVendor.gan;
-  if (name.startsWith('MOYU') || name.startsWith('AICUBE')) {
-    return CubeVendor.moyu;
+  if (name.startsWith('GAN')) {
+    return const CubeAdvertisementClassification(
+      vendor: CubeVendor.gan,
+      isSupported: true,
+    );
+  }
+  if (name.startsWith('AICUBE') || name.startsWith('MOYU AI')) {
+    return const CubeAdvertisementClassification(
+      vendor: CubeVendor.moyu,
+      isSupported: true,
+    );
+  }
+  if (name.startsWith('MHC')) {
+    return const CubeAdvertisementClassification(
+      vendor: CubeVendor.moyu,
+      isSupported: false,
+      supportMessage:
+          'MoYu MHC cubes such as the WeiLong V10 AI are detected, but their protocol is not supported yet.',
+    );
+  }
+  if (name.startsWith('MOYU')) {
+    return const CubeAdvertisementClassification(
+      vendor: CubeVendor.moyu,
+      isSupported: false,
+      supportMessage:
+          'This MoYu model is detected, but only the MoYu AI 2023 protocol is supported currently.',
+    );
   }
   return null;
 }
+
+CubeVendor? classifyCubeVendor(String advertisedName) =>
+    classifyCubeAdvertisement(advertisedName)?.vendor;
 
 String? extractGanMacAddress(BleDevice device) {
   final deviceIdMac = normalizeCubeMac(device.deviceId);
@@ -332,6 +386,12 @@ final class CubeConnectionController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (!await _transport.hasPermissions()) {
+        await _transport.requestPermissions();
+      }
+      if (!await _transport.hasPermissions()) {
+        throw StateError('Bluetooth permission was not granted.');
+      }
       await _transport.startScan();
       _scanTimeout?.cancel();
       _scanTimeout = Timer(const Duration(seconds: 7), stopScan);
@@ -359,6 +419,13 @@ final class CubeConnectionController extends ChangeNotifier {
   Future<void> connect(CubeDeviceCandidate device) async {
     await stopScan();
     _errorMessage = null;
+    if (!device.isSupported) {
+      _status = CubeConnectionStatus.error;
+      _errorMessage =
+          device.supportMessage ?? 'This smart-cube protocol is not supported.';
+      notifyListeners();
+      return;
+    }
     _status = CubeConnectionStatus.connecting;
     notifyListeners();
 
@@ -434,7 +501,7 @@ final class CubeConnectionController extends ChangeNotifier {
   static String _friendlyError(Object error) {
     final message = error.toString();
     if (message.toLowerCase().contains('permission')) {
-      return 'Bluetooth permission is required to find your cube.';
+      return 'Bluetooth permission is required to find your cube. Enable Nearby devices in Android Settings, then scan again.';
     }
     if (message.toLowerCase().contains('powered') ||
         message.toLowerCase().contains('available')) {

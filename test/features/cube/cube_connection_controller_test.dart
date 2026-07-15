@@ -12,10 +12,50 @@ void main() {
     expect(classifyCubeVendor('GAN12ui'), CubeVendor.gan);
     expect(classifyCubeVendor('MoYu AI'), CubeVendor.moyu);
     expect(classifyCubeVendor('AiCube-AB12'), CubeVendor.moyu);
-    expect(classifyCubeVendor('MHC-AB12'), isNull);
+    expect(classifyCubeVendor('MHC-AB12'), CubeVendor.moyu);
+    expect(classifyCubeAdvertisement('MHC-AB12')?.isSupported, isFalse);
+    expect(
+      classifyCubeAdvertisement('MHC-AB12')?.supportMessage,
+      contains('WeiLong V10 AI'),
+    );
     expect(classifyCubeVendor('GoCube'), isNull);
     expect(classifyCubeVendor('Giiker'), isNull);
   });
+
+  test('requests Bluetooth permission before starting a scan', () async {
+    final transport = _FakeBleTransport(permissionsGranted: false);
+    final controller = CubeConnectionController(transport: transport);
+
+    await controller.startScan();
+
+    expect(transport.permissionRequestCount, 1);
+    expect(transport.scanStartCount, 1);
+    expect(controller.status, CubeConnectionStatus.scanning);
+
+    controller.dispose();
+    await transport.dispose();
+  });
+
+  test(
+    'explains how to recover when Bluetooth permission stays disabled',
+    () async {
+      final transport = _FakeBleTransport(
+        permissionsGranted: false,
+        grantPermissionOnRequest: false,
+      );
+      final controller = CubeConnectionController(transport: transport);
+
+      await controller.startScan();
+
+      expect(transport.permissionRequestCount, 1);
+      expect(transport.scanStartCount, 0);
+      expect(controller.status, CubeConnectionStatus.error);
+      expect(controller.errorMessage, contains('Enable Nearby devices'));
+
+      controller.dispose();
+      await transport.dispose();
+    },
+  );
 
   test('scans, connects, and reacts to disconnect events', () async {
     final transport = _FakeBleTransport();
@@ -93,10 +133,19 @@ void main() {
 }
 
 final class _FakeBleTransport implements BleCubeTransport {
+  _FakeBleTransport({
+    this.permissionsGranted = true,
+    this.grantPermissionOnRequest = true,
+  });
+
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _moveController = StreamController<SmartCubeMoveEvent>.broadcast();
   final _stateController = StreamController<SmartCubeStateEvent>.broadcast();
   final _connections = <String, StreamController<bool>>{};
+  bool permissionsGranted;
+  final bool grantPermissionOnRequest;
+  int permissionRequestCount = 0;
+  int scanStartCount = 0;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
@@ -124,7 +173,18 @@ final class _FakeBleTransport implements BleCubeTransport {
   }
 
   @override
-  Future<void> startScan() async {}
+  Future<bool> hasPermissions() async => permissionsGranted;
+
+  @override
+  Future<void> requestPermissions() async {
+    permissionRequestCount++;
+    if (grantPermissionOnRequest) permissionsGranted = true;
+  }
+
+  @override
+  Future<void> startScan() async {
+    scanStartCount++;
+  }
 
   @override
   Future<void> stopScan() async {}

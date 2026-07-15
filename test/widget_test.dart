@@ -240,6 +240,50 @@ void main() {
     expect(connection.isConnected, isTrue);
     expect(connection.isDemo, isTrue);
   });
+
+  testWidgets('connection dialog explains unsupported MoYu MHC cubes', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final transport = _SilentBleTransport();
+    final connection = CubeConnectionController(transport: transport);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan nearby'));
+    await tester.pump();
+
+    transport.addDevice(
+      const CubeDeviceCandidate(
+        id: 'moyu-v10',
+        name: 'MHC-AB12',
+        vendor: CubeVendor.moyu,
+        rssi: -35,
+        isSupported: false,
+        supportMessage:
+            'MoYu MHC cubes such as the WeiLong V10 AI are detected, but their protocol is not supported yet.',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('MHC-AB12'), findsOneWidget);
+    expect(find.text('MOYU · Detected, not supported yet'), findsOneWidget);
+    expect(find.textContaining('WeiLong V10 AI'), findsOneWidget);
+    expect(find.text('Connect'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await connection.stopScan();
+    await tester.pump();
+  });
 }
 
 final class _FakeSolveClock implements SolveClock {
@@ -282,6 +326,12 @@ final class _SilentBleTransport implements BleCubeTransport {
   Future<void> disconnect(String deviceId) async {}
 
   @override
+  Future<bool> hasPermissions() async => true;
+
+  @override
+  Future<void> requestPermissions() async {}
+
+  @override
   Future<void> startScan() async {}
 
   @override
@@ -290,4 +340,6 @@ final class _SilentBleTransport implements BleCubeTransport {
   void addMove(SmartCubeMoveEvent event) => _moveController.add(event);
 
   void addState(SmartCubeStateEvent event) => _stateController.add(event);
+
+  void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
 }
