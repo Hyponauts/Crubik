@@ -34,6 +34,8 @@ void main() {
     expect(find.byKey(const Key('practice-mobile-layout')), findsOneWidget);
     expect(find.text('Offline practice ready'), findsOneWidget);
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-reset-view')), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const Key('timer-toggle')));
@@ -79,6 +81,7 @@ void main() {
     expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
     expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     expect(find.text('PRACTICE SCRAMBLE'), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
 
     transport.addMove(
       SmartCubeMoveEvent(

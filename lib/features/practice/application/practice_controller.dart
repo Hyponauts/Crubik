@@ -61,6 +61,8 @@ final class PracticeController extends ChangeNotifier {
   SolveTimerPhase _timerPhase = SolveTimerPhase.ready;
   Timer? _ticker;
   bool _smartCubeConnected = false;
+  CubeMove? _lastAppliedMove;
+  int _cubeMoveRevision = 0;
   Future<void> _persistenceQueue = Future.value();
   Object? _persistenceError;
 
@@ -71,6 +73,8 @@ final class PracticeController extends ChangeNotifier {
   SolveTimerPhase get timerPhase => _timerPhase;
   Duration get elapsed => _clock.elapsed;
   bool get smartCubeConnected => _smartCubeConnected;
+  CubeMove? get lastAppliedMove => _lastAppliedMove;
+  int get cubeMoveRevision => _cubeMoveRevision;
   Object? get persistenceError => _persistenceError;
 
   bool get hasSolves => _solves.isNotEmpty;
@@ -203,6 +207,8 @@ final class PracticeController extends ChangeNotifier {
   }
 
   void applyMove(CubeMove move, {bool fromSmartCube = false}) {
+    _lastAppliedMove = move;
+    _cubeMoveRevision++;
     _cubeState.apply(move);
     _currentMoves.add(move);
     if (_timerPhase == SolveTimerPhase.running &&
