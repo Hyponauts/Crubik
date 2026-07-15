@@ -32,10 +32,12 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('practice-mobile-layout')), findsOneWidget);
-    expect(find.text('Offline practice ready'), findsOneWidget);
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-reset-view')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byType(ListView), findsNothing);
+    expect(find.byType(SingleChildScrollView), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const Key('timer-toggle')));
@@ -47,16 +49,117 @@ void main() {
     await tester.pump();
     expect(practice.solves, hasLength(1));
 
-    await tester.fling(
-      find.byType(ListView).first,
-      const Offset(0, -900),
-      1200,
-    );
+    await tester.tap(find.byKey(const Key('manual-moves-button')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
     await tester.tap(find.byKey(const Key('cube-move-R')));
     await tester.pump();
     expect(practice.currentMoves, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile practice fits a compact landscape viewport', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(640, 360);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final connection = CubeConnectionController(
+      transport: _SilentBleTransport(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('practice-mobile-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byType(ListView), findsNothing);
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    await tester.tap(find.byKey(const Key('manual-moves-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile practice fits at 1.3 text scaling', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    final practice = PracticeController();
+    final connection = CubeConnectionController(
+      transport: _SilentBleTransport(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsNothing);
+  });
+
+  testWidgets('mobile session fixes its summary above a bounded history list', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    addTearDown(tester.view.reset);
+
+    final clock = _FakeSolveClock();
+    var timestamp = DateTime.utc(2026);
+    final practice = PracticeController(
+      clock: clock,
+      now: () => timestamp = timestamp.add(const Duration(seconds: 1)),
+    );
+    for (var index = 0; index < 8; index++) {
+      practice.startSolve();
+      clock.value = Duration(seconds: 10 + index);
+      practice.stopSolve();
+    }
+    final connection = CubeConnectionController(
+      transport: _SilentBleTransport(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.text('Session'));
+    await tester.pump();
+
+    expect(find.byKey(const Key('export-solves-button')), findsOneWidget);
+    expect(find.text('BEST'), findsOneWidget);
+    expect(find.text('MEAN'), findsOneWidget);
+    expect(find.text('AO5'), findsOneWidget);
+    expect(find.byKey(const Key('recent-solves-list')), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    await tester.fling(
+      find.byKey(const Key('recent-solves-list')),
+      const Offset(0, -300),
+      800,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('export-solves-button')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
