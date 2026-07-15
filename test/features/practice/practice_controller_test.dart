@@ -48,6 +48,26 @@ void main() {
     controller.dispose();
   });
 
+  test('publishes monotonic move metadata only for applied moves', () {
+    final controller = PracticeController();
+
+    expect(controller.lastAppliedMove, isNull);
+    expect(controller.cubeMoveRevision, 0);
+
+    controller.syncCubeState(CubeState.solved());
+    expect(controller.cubeMoveRevision, 0);
+
+    controller.applyMove(CubeMove.parse('R'));
+    expect(controller.lastAppliedMove, CubeMove.parse('R'));
+    expect(controller.cubeMoveRevision, 1);
+
+    controller.applyMove(CubeMove.parse("U'"));
+    expect(controller.lastAppliedMove, CubeMove.parse("U'"));
+    expect(controller.cubeMoveRevision, 2);
+
+    controller.dispose();
+  });
+
   test('exports a versioned and lossless JSON solve history', () {
     final clock = _FakeSolveClock();
     final exportedAt = DateTime.utc(2026, 1, 1, 12);

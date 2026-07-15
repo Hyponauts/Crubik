@@ -6,7 +6,7 @@ import '../../cube/data/cube_connection_controller.dart';
 import '../../cube/domain/cube_model.dart';
 import '../application/practice_controller.dart';
 import '../domain/solve_record.dart';
-import 'widgets/isometric_cube.dart';
+import 'widgets/cube_3d_view.dart';
 
 class PracticePage extends StatefulWidget {
   const PracticePage({
@@ -583,8 +583,10 @@ class _CubeStage extends StatelessWidget {
             ),
           ],
         ),
-        IsometricCube(
+        Cube3DView(
           state: practice.cubeState,
+          lastMove: practice.lastAppliedMove,
+          moveRevision: practice.cubeMoveRevision,
           dimension: compact ? 225 : 280,
         ),
         Row(
