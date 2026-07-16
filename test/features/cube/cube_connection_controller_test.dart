@@ -8,6 +8,7 @@ import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/ble/ble_central.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
+import 'package:crubik/features/cube/data/moyu32_cube_protocol.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
@@ -29,8 +30,15 @@ void main() {
     final wcu = registry.identify(_advertisement('WCU_MY32'));
     expect(wcu.vendor, CubeVendor.moyu);
     expect(wcu.protocolFamily, CubeProtocolFamily.moyu32);
-    expect(wcu.supportStatus, CubeSupportStatus.detectedUnsupported);
-    expect(wcu.supportMessage, contains('MoYu32'));
+    expect(wcu.supportStatus, CubeSupportStatus.supported);
+    expect(wcu.adapterId, 'moyu32');
+    expect(wcu.canConnect, isTrue);
+
+    final serviceOnly = registry.identify(
+      _advertisement(null, services: const [moyu32Service]),
+    );
+    expect(serviceOnly.protocolFamily, CubeProtocolFamily.moyu32);
+    expect(serviceOnly.supportStatus, CubeSupportStatus.supported);
 
     final mhc = registry.identify(_advertisement('MHC-AB12'));
     expect(mhc.protocolFamily, CubeProtocolFamily.moyuMhc);
@@ -229,6 +237,42 @@ void main() {
     controller.dispose();
   });
 
+  test(
+    'publishes battery snapshots and keeps data-loss errors nonfatal',
+    () async {
+      final gateway = _FakeCubeConnectionGateway();
+      final controller = CubeConnectionController(gateway: gateway);
+      const device = CubeDeviceCandidate(
+        id: 'moyu-1',
+        name: 'WCU_MY32_ABCD',
+        vendor: CubeVendor.moyu,
+        protocolFamily: CubeProtocolFamily.moyu32,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'moyu32',
+      );
+      await controller.connect(device);
+      final session = gateway.sessionFor(device.id);
+
+      session.addBatteryLevel(72);
+      session.addError(
+        const CubeConnectionFailure(
+          CubeConnectionFailureCode.dataLoss,
+          'Move history gap.',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.batteryLevel, 72);
+      expect(controller.status, CubeConnectionStatus.connected);
+      expect(controller.errorMessage, contains('requested'));
+
+      await controller.connectDemo();
+      expect(controller.batteryLevel, isNull);
+      await controller.close();
+      controller.dispose();
+    },
+  );
+
   test('switching to demo mode closes the active adapter session', () async {
     final gateway = _FakeCubeConnectionGateway();
     final controller = CubeConnectionController(gateway: gateway);
@@ -258,12 +302,13 @@ BleAdvertisement _advertisement(
   String? name, {
   String deviceId = 'platform-device-id',
   List<BleManufacturerData> manufacturerData = const [],
+  List<String> services = const [],
 }) => BleAdvertisement(
   deviceId: deviceId,
   name: name,
   rawName: name,
   rssi: -42,
-  services: const [],
+  services: services,
   manufacturerData: manufacturerData,
 );
 
@@ -325,6 +370,7 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
 
 final class _FakeSmartCubeSession implements SmartCubeSession {
   final _eventController = StreamController<SmartCubeEvent>.broadcast();
+  final _batteryController = StreamController<int>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
   bool _closed = false;
 
@@ -335,15 +381,24 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
     initialState: true,
     moveHistory: true,
     cubeTimestamps: true,
+    battery: true,
   );
 
   @override
   Stream<bool> get connectionStates => _connectionController.stream;
 
   @override
+  Stream<int> get batteryLevels => _batteryController.stream;
+
+  @override
   Stream<SmartCubeEvent> get events => _eventController.stream;
 
   void addEvent(SmartCubeEvent event) => _eventController.add(event);
+
+  void addError(Object error) => _eventController.addError(error);
+
+  void addBatteryLevel(int batteryLevel) =>
+      _batteryController.add(batteryLevel);
 
   void setConnected(bool connected) => _connectionController.add(connected);
 
@@ -352,6 +407,7 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
     if (_closed) return;
     _closed = true;
     await _eventController.close();
+    await _batteryController.close();
     await _connectionController.close();
   }
 }

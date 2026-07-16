@@ -233,7 +233,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('MVP protocols: GAN Gen2–4 and MoYu AI 2023'),
+      find.text('MVP protocols: GAN Gen2–4, MoYu AI 2023, and MoYu32'),
       findsOneWidget,
     );
     expect(find.text('Scan nearby'), findsOneWidget);
@@ -273,10 +273,9 @@ void main() {
           name: 'WCU_MY32',
           vendor: CubeVendor.moyu,
           protocolFamily: CubeProtocolFamily.moyu32,
-          supportStatus: CubeSupportStatus.detectedUnsupported,
+          supportStatus: CubeSupportStatus.supported,
+          adapterId: 'moyu32',
           rssi: -35,
-          supportMessage:
-              'This WCU MoYu cube uses the MoYu32 protocol, which is detected but not supported yet.',
         ),
       )
       ..addDevice(
@@ -291,8 +290,7 @@ void main() {
     expect(find.text('Cubes'), findsOneWidget);
     expect(find.text('Other available devices'), findsOneWidget);
     expect(find.text('WCU_MY32'), findsOneWidget);
-    expect(find.text('MOYU · Detected, not supported yet'), findsOneWidget);
-    expect(find.textContaining('MoYu32 protocol'), findsOneWidget);
+    expect(find.text('MOYU · -35 dBm'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('WCU_MY32')).dy,
       lessThan(tester.getTopLeft(find.text('Other available devices')).dy),
@@ -309,12 +307,45 @@ void main() {
       find.textContaining('Not identified as a smart cube'),
       findsOneWidget,
     );
-    expect(find.text('Connect'), findsNothing);
+    expect(find.text('Connect'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await connection.stopScan();
     await tester.pump();
   });
+
+  for (final size in [const Size(390, 844), const Size(1200, 800)]) {
+    testWidgets(
+      'connected MoYu32 battery fits ${size.width.toInt()}px viewport',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.reset);
+
+        final practice = PracticeController();
+        final gateway = _SilentCubeConnectionGateway();
+        final connection = CubeConnectionController(gateway: gateway);
+        addTearDown(practice.dispose);
+        addTearDown(connection.dispose);
+        await connection.connect(_supportedMoyu32);
+        gateway.addBatteryLevel(64);
+        await tester.pump();
+
+        await tester.pumpWidget(
+          CrubikApp(
+            practiceController: practice,
+            connectionController: connection,
+          ),
+        );
+        await tester.tap(find.byKey(const Key('connect-cube-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(find.text('BLE link active · 64% battery'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('connection dialog explains unsupported MoYu MHC cubes', (
     tester,
@@ -387,6 +418,15 @@ const _supportedGan = CubeDeviceCandidate(
   adapterId: 'gan-family',
 );
 
+const _supportedMoyu32 = CubeDeviceCandidate(
+  id: 'moyu32-test',
+  name: 'WCU_MY32_ABCD',
+  vendor: CubeVendor.moyu,
+  protocolFamily: CubeProtocolFamily.moyu32,
+  supportStatus: CubeSupportStatus.supported,
+  adapterId: 'moyu32',
+);
+
 final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _session = _SilentSmartCubeSession();
@@ -413,6 +453,9 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
 
   void addEvent(SmartCubeEvent event) => _session.addEvent(event);
 
+  void addBatteryLevel(int batteryLevel) =>
+      _session.addBatteryLevel(batteryLevel);
+
   void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
 
   @override
@@ -426,24 +469,32 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
 
 final class _SilentSmartCubeSession implements SmartCubeSession {
   final _eventController = StreamController<SmartCubeEvent>.broadcast();
+  final _batteryController = StreamController<int>.broadcast();
   bool _closed = false;
 
   @override
   CubeCapabilities get capabilities =>
-      const CubeCapabilities(initialState: true);
+      const CubeCapabilities(initialState: true, battery: true);
 
   @override
   Stream<bool> get connectionStates => const Stream.empty();
+
+  @override
+  Stream<int> get batteryLevels => _batteryController.stream;
 
   @override
   Stream<SmartCubeEvent> get events => _eventController.stream;
 
   void addEvent(SmartCubeEvent event) => _eventController.add(event);
 
+  void addBatteryLevel(int batteryLevel) =>
+      _batteryController.add(batteryLevel);
+
   @override
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
     await _eventController.close();
+    await _batteryController.close();
   }
 }

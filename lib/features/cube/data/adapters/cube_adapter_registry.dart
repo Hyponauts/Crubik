@@ -2,12 +2,14 @@ import '../../domain/smart_cube_device.dart';
 import '../ble/ble_central.dart';
 import 'gan/gan_cube_adapter.dart';
 import 'moyu/known_moyu_recognizer.dart';
+import 'moyu/moyu32_cube_adapter.dart';
 import 'smart_cube_adapter.dart';
 
 final class CubeAdapterRegistry {
   factory CubeAdapterRegistry.defaults() => CubeAdapterRegistry(const [
     // Supported adapters must precede detection-only fallbacks for a vendor.
     GanCubeAdapter(),
+    Moyu32CubeAdapter(),
     KnownMoyuRecognizer(),
   ]);
 

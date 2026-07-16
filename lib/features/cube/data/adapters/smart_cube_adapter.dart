@@ -8,6 +8,7 @@ enum CubeConnectionFailureCode {
   unsupportedProtocol,
   identityUnavailable,
   packetMalformed,
+  dataLoss,
   connectionFailed,
 }
 
@@ -56,6 +57,8 @@ abstract interface class SmartCubeSession {
   CubeCapabilities get capabilities;
 
   Stream<SmartCubeEvent> get events;
+
+  Stream<int> get batteryLevels;
 
   Stream<bool> get connectionStates;
 

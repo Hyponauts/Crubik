@@ -27,6 +27,7 @@ final class CubeConnectionController extends ChangeNotifier {
   final CubeConnectionGateway _gateway;
   late final StreamSubscription<CubeDeviceCandidate> _scanSubscription;
   StreamSubscription<SmartCubeEvent>? _sessionEventSubscription;
+  StreamSubscription<int>? _batterySubscription;
   StreamSubscription<bool>? _connectionSubscription;
   final StreamController<SmartCubeEvent> _eventController =
       StreamController.broadcast();
@@ -37,10 +38,12 @@ final class CubeConnectionController extends ChangeNotifier {
   final Map<String, CubeDeviceCandidate> _discovered = {};
   CubeConnectionStatus _status = CubeConnectionStatus.disconnected;
   ConnectedCube? _connectedCube;
+  int? _batteryLevel;
   String? _errorMessage;
 
   CubeConnectionStatus get status => _status;
   ConnectedCube? get connectedCube => _connectedCube;
+  int? get batteryLevel => _batteryLevel;
   String? get errorMessage => _errorMessage;
   bool get isConnected => _status == CubeConnectionStatus.connected;
   bool get isDemo => _connectedCube?.isDemo ?? false;
@@ -115,6 +118,7 @@ final class CubeConnectionController extends ChangeNotifier {
     }
     await _releaseActiveSession();
     _connectedCube = null;
+    _batteryLevel = null;
     _status = CubeConnectionStatus.connecting;
     notifyListeners();
 
@@ -131,6 +135,12 @@ final class CubeConnectionController extends ChangeNotifier {
         _eventController.add,
         onError: _onProtocolError,
       );
+      await _batterySubscription?.cancel();
+      _batterySubscription = session.batteryLevels.listen((batteryLevel) {
+        if (_closed || !identical(_session, session)) return;
+        _batteryLevel = batteryLevel;
+        notifyListeners();
+      }, onError: _onProtocolError);
       await _connectionSubscription?.cancel();
       _connectionSubscription = session.connectionStates.listen((connected) {
         if (!connected && identical(_session, session)) {
@@ -142,6 +152,7 @@ final class CubeConnectionController extends ChangeNotifier {
     } catch (error) {
       await _releaseActiveSession();
       _connectedCube = null;
+      _batteryLevel = null;
       _status = CubeConnectionStatus.error;
       _errorMessage = _friendlyError(error);
       notifyListeners();
@@ -154,6 +165,7 @@ final class CubeConnectionController extends ChangeNotifier {
     await _releaseActiveSession();
     if (_closed) return;
     _connectedCube = const ConnectedCube.demo();
+    _batteryLevel = null;
     _errorMessage = null;
     _status = CubeConnectionStatus.connected;
     notifyListeners();
@@ -161,6 +173,7 @@ final class CubeConnectionController extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _connectedCube = null;
+    _batteryLevel = null;
     _errorMessage = null;
     _status = CubeConnectionStatus.disconnected;
     notifyListeners();
@@ -171,11 +184,14 @@ final class CubeConnectionController extends ChangeNotifier {
     if (!identical(_session, session)) return;
     _session = null;
     _connectedCube = null;
+    _batteryLevel = null;
     _status = CubeConnectionStatus.disconnected;
     await _connectionSubscription?.cancel();
     _connectionSubscription = null;
     await _sessionEventSubscription?.cancel();
     _sessionEventSubscription = null;
+    await _batterySubscription?.cancel();
+    _batterySubscription = null;
     await session.close();
     if (!_closed) notifyListeners();
   }
@@ -187,6 +203,8 @@ final class CubeConnectionController extends ChangeNotifier {
     _connectionSubscription = null;
     await _sessionEventSubscription?.cancel();
     _sessionEventSubscription = null;
+    await _batterySubscription?.cancel();
+    _batterySubscription = null;
     await session?.close();
   }
 
@@ -206,9 +224,14 @@ final class CubeConnectionController extends ChangeNotifier {
   void _onProtocolError(Object error, StackTrace stackTrace) {
     if (_closed) return;
     _errorMessage =
-        error is CubeConnectionFailure &&
-                error.code == CubeConnectionFailureCode.packetMalformed
-            ? 'A cube packet could not be decoded. The live state may need resyncing.'
+        error is CubeConnectionFailure
+            ? switch (error.code) {
+              CubeConnectionFailureCode.packetMalformed =>
+                'A cube packet could not be decoded. The live state may need resyncing.',
+              CubeConnectionFailureCode.dataLoss =>
+                'Some cube moves were missed. Crubik requested the current physical state to resync.',
+              _ => _friendlyError(error),
+            }
             : _friendlyError(error);
     notifyListeners();
   }
@@ -232,6 +255,8 @@ final class CubeConnectionController extends ChangeNotifier {
           'Crubik could not read this cube identity. Wake it, scan again, and keep it close.',
         CubeConnectionFailureCode.packetMalformed =>
           'A cube packet could not be decoded. The live state may need resyncing.',
+        CubeConnectionFailureCode.dataLoss =>
+          'Some cube moves were missed. Crubik requested the current physical state to resync.',
         CubeConnectionFailureCode.connectionFailed =>
           'Could not connect to the cube. Please wake it and try again.',
       };

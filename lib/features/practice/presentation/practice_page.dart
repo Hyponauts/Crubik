@@ -1546,7 +1546,7 @@ class _ConnectionDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'MVP protocols: GAN Gen2–4 and MoYu AI 2023',
+                              'MVP protocols: GAN Gen2–4, MoYu AI 2023, and MoYu32',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
@@ -1631,6 +1631,13 @@ class _ConnectedCubeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final device = controller.connectedCube!;
+    final batteryLevel = controller.batteryLevel;
+    final connectionStatus =
+        device.isDemo
+            ? 'Demo movement source'
+            : batteryLevel == null
+            ? 'BLE link active'
+            : 'BLE link active · $batteryLevel% battery';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1651,7 +1658,11 @@ class _ConnectedCubeCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 Text(
-                  device.isDemo ? 'Demo movement source' : 'BLE link active',
+                  connectionStatus,
+                  semanticsLabel:
+                      batteryLevel == null
+                          ? connectionStatus
+                          : 'BLE link active, battery $batteryLevel percent',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
