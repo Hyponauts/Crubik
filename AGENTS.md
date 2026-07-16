@@ -48,11 +48,17 @@ aligned whenever an approved decision changes the product direction.
 - `lib/features/cube/domain/cube_model.dart`: pure-Dart 54-sticker 3x3 model,
   URFDLB notation, transformations, and Kociemba facelet interchange.
 - `lib/features/cube/domain/scramble_generator.dart`: local practice scrambles.
+- `lib/features/cube/domain/smart_cube_device.dart` and
+  `smart_cube_event.dart`: vendor-neutral discovery, capability, connection,
+  move, and state models.
 - `lib/features/cube/data/gan_cube_protocol.dart`: GAN Gen2-4 and MoYu AI 2023
   encryption, packet decoding, state conversion, and missed-move recovery.
-- `lib/features/cube/data/cube_connection_controller.dart`: BLE transport,
-  supported-device filtering, connection lifecycle, and normalized event
-  streams.
+- `lib/features/cube/data/adapters/`: device recognition and protocol-specific
+  smart-cube sessions, selected through `CubeAdapterRegistry`.
+- `lib/features/cube/data/ble/ble_central.dart` and
+  `cube_connection_gateway.dart`: BLE plugin boundary and adapter orchestration.
+- `lib/features/cube/application/cube_connection_controller.dart`: discovery,
+  connection lifecycle, demo mode, and normalized event delivery to the UI.
 - `lib/features/practice/application/practice_controller.dart`: timer, live
   cube state, solve lifecycle, statistics, JSON export, and serialized writes.
 - `lib/features/practice/data/crubik_database.dart`: Drift schema and local

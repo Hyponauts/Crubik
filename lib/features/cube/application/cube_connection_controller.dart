@@ -1,0 +1,264 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import '../data/adapters/smart_cube_adapter.dart';
+import '../data/cube_connection_gateway.dart';
+import '../domain/smart_cube_device.dart';
+import '../domain/smart_cube_event.dart';
+
+enum CubeConnectionStatus {
+  disconnected,
+  scanning,
+  connecting,
+  connected,
+  error,
+}
+
+final class CubeConnectionController extends ChangeNotifier {
+  CubeConnectionController({CubeConnectionGateway? gateway})
+    : _gateway = gateway ?? BleCubeConnectionGateway() {
+    _scanSubscription = _gateway.scanResults.listen(
+      _onScanResult,
+      onError: _onScanError,
+    );
+  }
+
+  final CubeConnectionGateway _gateway;
+  late final StreamSubscription<CubeDeviceCandidate> _scanSubscription;
+  StreamSubscription<SmartCubeEvent>? _sessionEventSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
+  final StreamController<SmartCubeEvent> _eventController =
+      StreamController.broadcast();
+  Timer? _scanTimeout;
+  SmartCubeSession? _session;
+  bool _closed = false;
+
+  final Map<String, CubeDeviceCandidate> _discovered = {};
+  CubeConnectionStatus _status = CubeConnectionStatus.disconnected;
+  ConnectedCube? _connectedCube;
+  String? _errorMessage;
+
+  CubeConnectionStatus get status => _status;
+  ConnectedCube? get connectedCube => _connectedCube;
+  String? get errorMessage => _errorMessage;
+  bool get isConnected => _status == CubeConnectionStatus.connected;
+  bool get isDemo => _connectedCube?.isDemo ?? false;
+  Stream<SmartCubeEvent> get events => _eventController.stream;
+
+  List<CubeDeviceCandidate> get discoveredDevices {
+    final devices = _discovered.values.toList()..sort(_compareDevices);
+    return List.unmodifiable(devices);
+  }
+
+  List<CubeDeviceCandidate> get discoveredCubes => List.unmodifiable(
+    discoveredDevices.where((device) => device.isIdentifiedCube),
+  );
+
+  List<CubeDeviceCandidate> get otherDiscoveredDevices => List.unmodifiable(
+    discoveredDevices.where((device) => !device.isIdentifiedCube),
+  );
+
+  Future<void> startScan() async {
+    if (_status == CubeConnectionStatus.connecting || _closed) return;
+    _errorMessage = null;
+    _discovered.clear();
+    _status = CubeConnectionStatus.scanning;
+    notifyListeners();
+
+    try {
+      if (!await _gateway.hasPermissions()) {
+        await _gateway.requestPermissions();
+      }
+      if (!await _gateway.hasPermissions()) {
+        throw const CubeConnectionFailure(
+          CubeConnectionFailureCode.permissionDenied,
+          'Bluetooth permission was not granted.',
+        );
+      }
+      await _gateway.startScan();
+      _scanTimeout?.cancel();
+      _scanTimeout = Timer(const Duration(seconds: 7), stopScan);
+    } catch (error) {
+      _status = CubeConnectionStatus.error;
+      _errorMessage = _friendlyError(error);
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopScan() async {
+    _scanTimeout?.cancel();
+    _scanTimeout = null;
+    try {
+      await _gateway.stopScan();
+    } catch (_) {
+      // Some platforms report an error when a scan already ended.
+    }
+    if (_status == CubeConnectionStatus.scanning) {
+      _status = CubeConnectionStatus.disconnected;
+      notifyListeners();
+    }
+  }
+
+  Future<void> connect(CubeDeviceCandidate device) async {
+    await stopScan();
+    _errorMessage = null;
+    if (!device.canConnect) {
+      _status = CubeConnectionStatus.error;
+      _errorMessage =
+          device.supportMessage ??
+          (device.isIdentifiedCube
+              ? 'This smart-cube protocol is not supported.'
+              : 'This Bluetooth device was not identified as a smart cube.');
+      notifyListeners();
+      return;
+    }
+    await _releaseActiveSession();
+    _connectedCube = null;
+    _status = CubeConnectionStatus.connecting;
+    notifyListeners();
+
+    try {
+      final session = await _gateway.connect(device);
+      if (_closed) {
+        await session.close();
+        return;
+      }
+      _session = session;
+      _connectedCube = ConnectedCube.bluetooth(device, session.capabilities);
+      await _sessionEventSubscription?.cancel();
+      _sessionEventSubscription = session.events.listen(
+        _eventController.add,
+        onError: _onProtocolError,
+      );
+      await _connectionSubscription?.cancel();
+      _connectionSubscription = session.connectionStates.listen((connected) {
+        if (!connected && identical(_session, session)) {
+          unawaited(_handleLinkLoss(session));
+        }
+      });
+      _status = CubeConnectionStatus.connected;
+      notifyListeners();
+    } catch (error) {
+      await _releaseActiveSession();
+      _connectedCube = null;
+      _status = CubeConnectionStatus.error;
+      _errorMessage = _friendlyError(error);
+      notifyListeners();
+    }
+  }
+
+  Future<void> connectDemo() async {
+    _scanTimeout?.cancel();
+    await stopScan();
+    await _releaseActiveSession();
+    if (_closed) return;
+    _connectedCube = const ConnectedCube.demo();
+    _errorMessage = null;
+    _status = CubeConnectionStatus.connected;
+    notifyListeners();
+  }
+
+  Future<void> disconnect() async {
+    _connectedCube = null;
+    _errorMessage = null;
+    _status = CubeConnectionStatus.disconnected;
+    notifyListeners();
+    await _releaseActiveSession();
+  }
+
+  Future<void> _handleLinkLoss(SmartCubeSession session) async {
+    if (!identical(_session, session)) return;
+    _session = null;
+    _connectedCube = null;
+    _status = CubeConnectionStatus.disconnected;
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    await _sessionEventSubscription?.cancel();
+    _sessionEventSubscription = null;
+    await session.close();
+    if (!_closed) notifyListeners();
+  }
+
+  Future<void> _releaseActiveSession() async {
+    final session = _session;
+    _session = null;
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    await _sessionEventSubscription?.cancel();
+    _sessionEventSubscription = null;
+    await session?.close();
+  }
+
+  void _onScanResult(CubeDeviceCandidate device) {
+    if (_closed) return;
+    _discovered[device.id] = device;
+    notifyListeners();
+  }
+
+  void _onScanError(Object error, StackTrace stackTrace) {
+    if (_closed) return;
+    _status = CubeConnectionStatus.error;
+    _errorMessage = _friendlyError(error);
+    notifyListeners();
+  }
+
+  void _onProtocolError(Object error, StackTrace stackTrace) {
+    if (_closed) return;
+    _errorMessage =
+        error is CubeConnectionFailure &&
+                error.code == CubeConnectionFailureCode.packetMalformed
+            ? 'A cube packet could not be decoded. The live state may need resyncing.'
+            : _friendlyError(error);
+    notifyListeners();
+  }
+
+  static int _compareDevices(CubeDeviceCandidate a, CubeDeviceCandidate b) {
+    if (a.isIdentifiedCube != b.isIdentifiedCube) {
+      return a.isIdentifiedCube ? -1 : 1;
+    }
+    return (b.rssi ?? -100).compareTo(a.rssi ?? -100);
+  }
+
+  static String _friendlyError(Object error) {
+    if (error is CubeConnectionFailure) {
+      return switch (error.code) {
+        CubeConnectionFailureCode.permissionDenied =>
+          'Bluetooth permission is required to find your cube. Enable Nearby devices in Android Settings, then scan again.',
+        CubeConnectionFailureCode.bluetoothUnavailable =>
+          'Turn Bluetooth on, then try scanning again.',
+        CubeConnectionFailureCode.unsupportedProtocol => error.message,
+        CubeConnectionFailureCode.identityUnavailable =>
+          'Crubik could not read this cube identity. Wake it, scan again, and keep it close.',
+        CubeConnectionFailureCode.packetMalformed =>
+          'A cube packet could not be decoded. The live state may need resyncing.',
+        CubeConnectionFailureCode.connectionFailed =>
+          'Could not connect to the cube. Please wake it and try again.',
+      };
+    }
+    final message = error.toString().toLowerCase();
+    if (message.contains('permission')) {
+      return 'Bluetooth permission is required to find your cube. Enable Nearby devices in Android Settings, then scan again.';
+    }
+    if (message.contains('powered') || message.contains('available')) {
+      return 'Turn Bluetooth on, then try scanning again.';
+    }
+    return 'Could not connect to the cube. Please wake it and try again.';
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    _scanTimeout?.cancel();
+    await _scanSubscription.cancel();
+    await _releaseActiveSession();
+    await _gateway.close();
+    await _eventController.close();
+  }
+
+  @override
+  void dispose() {
+    unawaited(close());
+    super.dispose();
+  }
+}

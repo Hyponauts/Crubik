@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../cube/data/cube_connection_controller.dart';
+import '../../cube/application/cube_connection_controller.dart';
+import '../../cube/domain/smart_cube_device.dart';
 import '../../cube/domain/cube_model.dart';
 import '../application/practice_controller.dart';
 import '../domain/solve_record.dart';
@@ -742,7 +743,7 @@ class _ConnectionButton extends StatelessWidget {
     final isConnected = connection.isConnected;
     final label =
         isConnected
-            ? (compact ? 'LIVE' : connection.connectedDevice!.name)
+            ? (compact ? 'LIVE' : connection.connectedCube!.name)
             : (compact ? 'CONNECT' : 'Connect cube');
     return OutlinedButton.icon(
       key: const Key('connect-cube-button'),
@@ -1577,9 +1578,9 @@ class _ConnectionDialog extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         OutlinedButton.icon(
-                          onPressed: () {
-                            controller.connectDemo();
-                            Navigator.of(context).pop();
+                          onPressed: () async {
+                            await controller.connectDemo();
+                            if (context.mounted) Navigator.of(context).pop();
                           },
                           icon: const Icon(Icons.science_outlined),
                           label: const Text('Demo'),
@@ -1629,7 +1630,7 @@ class _ConnectedCubeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final device = controller.connectedDevice!;
+    final device = controller.connectedCube!;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

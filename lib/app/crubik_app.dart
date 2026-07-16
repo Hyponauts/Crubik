@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
-import '../features/cube/data/cube_connection_controller.dart';
-import '../features/cube/data/gan_cube_protocol.dart';
+import '../features/cube/application/cube_connection_controller.dart';
+import '../features/cube/domain/smart_cube_event.dart';
 import '../features/practice/application/practice_controller.dart';
 import '../features/practice/data/crubik_database.dart';
 import '../features/practice/presentation/practice_page.dart';
@@ -26,8 +26,7 @@ class CrubikApp extends StatefulWidget {
 class _CrubikAppState extends State<CrubikApp> {
   late final PracticeController _practiceController;
   late final CubeConnectionController _connectionController;
-  late final StreamSubscription<SmartCubeMoveEvent> _cubeMoveSubscription;
-  late final StreamSubscription<SmartCubeStateEvent> _cubeStateSubscription;
+  late final StreamSubscription<SmartCubeEvent> _cubeEventSubscription;
   CrubikDatabase? _database;
   late final bool _ownsPracticeController;
   late final bool _ownsConnectionController;
@@ -47,15 +46,21 @@ class _CrubikAppState extends State<CrubikApp> {
     }
     _connectionController =
         widget.connectionController ?? CubeConnectionController();
-    _cubeMoveSubscription = _connectionController.moveEvents.listen(
-      (event) => _practiceController.applyMove(event.move, fromSmartCube: true),
-    );
-    _cubeStateSubscription = _connectionController.stateEvents.listen(
-      (event) => _practiceController.syncCubeState(event.state),
+    _cubeEventSubscription = _connectionController.events.listen(
+      _handleCubeEvent,
     );
     _connectionController.addListener(_syncCubeConnectionMode);
     _syncCubeConnectionMode();
     _practiceController.initialize();
+  }
+
+  void _handleCubeEvent(SmartCubeEvent event) {
+    switch (event) {
+      case SmartCubeMoveEvent(:final move):
+        _practiceController.applyMove(move, fromSmartCube: true);
+      case SmartCubeStateEvent(:final state):
+        _practiceController.syncCubeState(state);
+    }
   }
 
   void _syncCubeConnectionMode() {
@@ -67,8 +72,7 @@ class _CrubikAppState extends State<CrubikApp> {
   @override
   void dispose() {
     _connectionController.removeListener(_syncCubeConnectionMode);
-    unawaited(_cubeMoveSubscription.cancel());
-    unawaited(_cubeStateSubscription.cancel());
+    unawaited(_cubeEventSubscription.cancel());
     if (_ownsPracticeController) {
       final database = _database;
       final flush = _practiceController.flushPersistence();

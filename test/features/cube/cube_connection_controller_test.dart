@@ -1,47 +1,47 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:crubik/features/cube/data/cube_connection_controller.dart';
+import 'package:crubik/features/cube/application/cube_connection_controller.dart';
+import 'package:crubik/features/cube/data/adapters/cube_adapter_registry.dart';
+import 'package:crubik/features/cube/data/adapters/gan/gan_cube_adapter.dart';
+import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
+import 'package:crubik/features/cube/data/ble/ble_central.dart';
+import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/smart_cube_device.dart';
+import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:universal_ble/universal_ble.dart';
 
 void main() {
-  test('classifies known GAN and MoYu advertisement names', () {
-    expect(classifyCubeVendor('GAN12ui'), CubeVendor.gan);
-    expect(classifyCubeVendor('MoYu AI'), CubeVendor.moyu);
-    expect(classifyCubeVendor('AiCube-AB12'), CubeVendor.moyu);
-    expect(classifyCubeVendor('WCU_MY32'), CubeVendor.moyu);
-    expect(classifyCubeAdvertisement('WCU_MY32')?.isSupported, isFalse);
+  test('registry identifies known GAN and MoYu advertisement families', () {
+    final registry = _registry();
+
+    expect(registry.identify(_advertisement('GAN12ui')).vendor, CubeVendor.gan);
     expect(
-      classifyCubeAdvertisement('WCU_MY32')?.supportMessage,
-      contains('MoYu32'),
+      registry.identify(_advertisement('MoYu AI')).protocolFamily,
+      CubeProtocolFamily.moyuAi2023,
     );
-    expect(classifyCubeVendor('MHC-AB12'), CubeVendor.moyu);
-    expect(classifyCubeAdvertisement('MHC-AB12')?.isSupported, isFalse);
     expect(
-      classifyCubeAdvertisement('MHC-AB12')?.supportMessage,
-      contains('WeiLong V10 AI'),
+      registry.identify(_advertisement('AiCube-AB12')).supportStatus,
+      CubeSupportStatus.supported,
     );
-    expect(classifyCubeVendor('GoCube'), isNull);
-    expect(classifyCubeVendor('Giiker'), isNull);
+    final wcu = registry.identify(_advertisement('WCU_MY32'));
+    expect(wcu.vendor, CubeVendor.moyu);
+    expect(wcu.protocolFamily, CubeProtocolFamily.moyu32);
+    expect(wcu.supportStatus, CubeSupportStatus.detectedUnsupported);
+    expect(wcu.supportMessage, contains('MoYu32'));
+
+    final mhc = registry.identify(_advertisement('MHC-AB12'));
+    expect(mhc.protocolFamily, CubeProtocolFamily.moyuMhc);
+    expect(mhc.supportMessage, contains('WeiLong V10 AI'));
   });
 
-  test('turns every BLE result into a visible device candidate', () {
-    final wcu = cubeDeviceCandidateFromBleDevice(
-      BleDevice(deviceId: 'wcu-id', name: 'WCU_MY32', rssi: -42),
-    );
-    final headphones = cubeDeviceCandidateFromBleDevice(
-      BleDevice(deviceId: 'audio-id', name: 'Headphones', rssi: -30),
-    );
-    final unnamed = cubeDeviceCandidateFromBleDevice(
-      BleDevice(deviceId: 'unnamed-id', name: null),
-    );
+  test('registry turns every BLE result into a visible device candidate', () {
+    final registry = _registry();
+    final headphones = registry.identify(_advertisement('Headphones'));
+    final unnamed = registry.identify(_advertisement(null));
 
-    expect(wcu.vendor, CubeVendor.moyu);
-    expect(wcu.isIdentifiedCube, isTrue);
-    expect(wcu.canConnect, isFalse);
     expect(headphones.vendor, CubeVendor.unknown);
     expect(headphones.isIdentifiedCube, isFalse);
     expect(headphones.name, 'Headphones');
@@ -49,52 +49,55 @@ void main() {
   });
 
   test('requests Bluetooth permission before starting a scan', () async {
-    final transport = _FakeBleTransport(permissionsGranted: false);
-    final controller = CubeConnectionController(transport: transport);
+    final gateway = _FakeCubeConnectionGateway(permissionsGranted: false);
+    final controller = CubeConnectionController(gateway: gateway);
 
     await controller.startScan();
 
-    expect(transport.permissionRequestCount, 1);
-    expect(transport.scanStartCount, 1);
+    expect(gateway.permissionRequestCount, 1);
+    expect(gateway.scanStartCount, 1);
     expect(controller.status, CubeConnectionStatus.scanning);
 
+    await controller.close();
     controller.dispose();
-    await transport.dispose();
   });
 
   test(
     'explains how to recover when Bluetooth permission stays disabled',
     () async {
-      final transport = _FakeBleTransport(
+      final gateway = _FakeCubeConnectionGateway(
         permissionsGranted: false,
         grantPermissionOnRequest: false,
       );
-      final controller = CubeConnectionController(transport: transport);
+      final controller = CubeConnectionController(gateway: gateway);
 
       await controller.startScan();
 
-      expect(transport.permissionRequestCount, 1);
-      expect(transport.scanStartCount, 0);
+      expect(gateway.permissionRequestCount, 1);
+      expect(gateway.scanStartCount, 0);
       expect(controller.status, CubeConnectionStatus.error);
       expect(controller.errorMessage, contains('Enable Nearby devices'));
 
+      await controller.close();
       controller.dispose();
-      await transport.dispose();
     },
   );
 
   test('scans, connects, and reacts to disconnect events', () async {
-    final transport = _FakeBleTransport();
-    final controller = CubeConnectionController(transport: transport);
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(gateway: gateway);
     const device = CubeDeviceCandidate(
       id: 'gan-1',
       name: 'GAN12ui',
       vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
       rssi: -40,
     );
 
     await controller.startScan();
-    transport.addDevice(device);
+    gateway.addDevice(device);
     await Future<void>.delayed(Duration.zero);
 
     expect(controller.status, CubeConnectionStatus.scanning);
@@ -102,44 +105,47 @@ void main() {
 
     await controller.connect(device);
     expect(controller.isConnected, isTrue);
-    expect(controller.connectedDevice, device);
+    expect(controller.connectedCube?.name, device.name);
+    expect(controller.connectedCube?.capabilities.initialState, isTrue);
 
-    transport.setConnected(device.id, false);
+    gateway.sessionFor(device.id).setConnected(false);
     await Future<void>.delayed(Duration.zero);
     expect(controller.status, CubeConnectionStatus.disconnected);
 
+    await controller.close();
     controller.dispose();
-    await transport.dispose();
   });
 
   test(
     'groups cubes ahead of other devices and blocks other connections',
     () async {
-      final transport = _FakeBleTransport();
-      final controller = CubeConnectionController(transport: transport);
+      final gateway = _FakeCubeConnectionGateway();
+      final controller = CubeConnectionController(gateway: gateway);
       const wcu = CubeDeviceCandidate(
         id: 'wcu',
         name: 'WCU_MY32',
         vendor: CubeVendor.moyu,
+        protocolFamily: CubeProtocolFamily.moyu32,
+        supportStatus: CubeSupportStatus.detectedUnsupported,
         rssi: -70,
-        isSupported: false,
       );
       const headphones = CubeDeviceCandidate(
         id: 'headphones',
         name: 'Headphones',
-        vendor: CubeVendor.unknown,
         rssi: -20,
-        isSupported: false,
       );
       const gan = CubeDeviceCandidate(
         id: 'gan',
         name: 'GAN12ui',
         vendor: CubeVendor.gan,
+        protocolFamily: CubeProtocolFamily.gan,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'gan-family',
         rssi: -40,
       );
 
       await controller.startScan();
-      transport
+      gateway
         ..addDevice(headphones)
         ..addDevice(wcu)
         ..addDevice(gan);
@@ -151,24 +157,33 @@ void main() {
 
       await controller.connect(headphones);
 
-      expect(transport.connectCount, 0);
+      expect(gateway.connectCount, 0);
       expect(controller.status, CubeConnectionStatus.error);
       expect(controller.errorMessage, contains('not identified'));
 
+      await controller.close();
       controller.dispose();
-      await transport.dispose();
     },
   );
 
-  test('extracts GAN MAC from native id or manufacturer payload', () {
-    final native = BleDevice(deviceId: 'AA:BB:CC:DD:EE:FF', name: 'GAN12ui');
-    final advertised = BleDevice(
-      deviceId: 'platform-device-id',
-      name: 'AiCube',
-      manufacturerDataList: [
-        ManufacturerData(
-          0x1201,
-          Uint8List.fromList([0, 0, 0, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]),
+  test('GAN adapter extracts MAC from native id or manufacturer data', () {
+    final native = _advertisement('GAN12ui', deviceId: 'AA:BB:CC:DD:EE:FF');
+    final advertised = _advertisement(
+      'AiCube',
+      manufacturerData: [
+        BleManufacturerData(
+          companyId: 0x1201,
+          payload: Uint8List.fromList([
+            0,
+            0,
+            0,
+            0x66,
+            0x55,
+            0x44,
+            0x33,
+            0x22,
+            0x11,
+          ]),
         ),
       ],
     );
@@ -185,67 +200,95 @@ void main() {
     ]);
   });
 
-  test('forwards decoded cube moves to subscribers', () async {
-    final transport = _FakeBleTransport();
-    final controller = CubeConnectionController(transport: transport);
+  test('forwards ordered smart-cube events to subscribers', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(gateway: gateway);
+    const device = CubeDeviceCandidate(
+      id: 'gan-1',
+      name: 'GAN12ui',
+      vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
+    );
+    await controller.connect(device);
     final event = SmartCubeMoveEvent(
       move: CubeMove.parse("R'"),
       serial: 1,
       receivedAt: DateTime.utc(2026),
     );
-    final received = <SmartCubeMoveEvent>[];
-    final subscription = controller.moveEvents.listen(received.add);
+    final received = <SmartCubeEvent>[];
+    final subscription = controller.events.listen(received.add);
 
-    transport.addMove(event);
+    gateway.sessionFor(device.id).addEvent(event);
     await Future<void>.delayed(Duration.zero);
 
-    expect(received.single.move.notation, "R'");
+    expect((received.single as SmartCubeMoveEvent).move.notation, "R'");
     await subscription.cancel();
+    await controller.close();
     controller.dispose();
-    await transport.dispose();
+  });
+
+  test('switching to demo mode closes the active adapter session', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(gateway: gateway);
+    const device = CubeDeviceCandidate(
+      id: 'gan-1',
+      name: 'GAN12ui',
+      vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
+    );
+    await controller.connect(device);
+    final session = gateway.sessionFor(device.id);
+
+    await controller.connectDemo();
+
+    expect(session.isClosed, isTrue);
+    expect(controller.connectedCube?.mode, CubeConnectionMode.demo);
+    await controller.close();
+    controller.dispose();
   });
 }
 
-final class _FakeBleTransport implements BleCubeTransport {
-  _FakeBleTransport({
+CubeAdapterRegistry _registry() => CubeAdapterRegistry.defaults();
+
+BleAdvertisement _advertisement(
+  String? name, {
+  String deviceId = 'platform-device-id',
+  List<BleManufacturerData> manufacturerData = const [],
+}) => BleAdvertisement(
+  deviceId: deviceId,
+  name: name,
+  rawName: name,
+  rssi: -42,
+  services: const [],
+  manufacturerData: manufacturerData,
+);
+
+final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
+  _FakeCubeConnectionGateway({
     this.permissionsGranted = true,
     this.grantPermissionOnRequest = true,
   });
 
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
-  final _moveController = StreamController<SmartCubeMoveEvent>.broadcast();
-  final _stateController = StreamController<SmartCubeStateEvent>.broadcast();
-  final _connections = <String, StreamController<bool>>{};
+  final _sessions = <String, _FakeSmartCubeSession>{};
   bool permissionsGranted;
   final bool grantPermissionOnRequest;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
   int connectCount = 0;
+  bool _closed = false;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
 
   @override
-  Stream<SmartCubeMoveEvent> get moveEvents => _moveController.stream;
-
-  @override
-  Stream<SmartCubeStateEvent> get stateEvents => _stateController.stream;
-
-  @override
-  Future<void> connect(CubeDeviceCandidate device) async {
+  Future<SmartCubeSession> connect(CubeDeviceCandidate device) async {
     connectCount++;
-    _connections.putIfAbsent(device.id, StreamController<bool>.broadcast);
-  }
-
-  @override
-  Stream<bool> connectionState(String deviceId) =>
-      _connections
-          .putIfAbsent(deviceId, StreamController<bool>.broadcast)
-          .stream;
-
-  @override
-  Future<void> disconnect(String deviceId) async {
-    setConnected(deviceId, false);
+    return _sessions.putIfAbsent(device.id, _FakeSmartCubeSession.new);
   }
 
   @override
@@ -267,20 +310,48 @@ final class _FakeBleTransport implements BleCubeTransport {
 
   void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
 
-  void addMove(SmartCubeMoveEvent event) => _moveController.add(event);
+  _FakeSmartCubeSession sessionFor(String deviceId) => _sessions[deviceId]!;
 
-  void setConnected(String deviceId, bool connected) {
-    _connections
-        .putIfAbsent(deviceId, StreamController<bool>.broadcast)
-        .add(connected);
-  }
-
-  Future<void> dispose() async {
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
     await _scanController.close();
-    await _moveController.close();
-    await _stateController.close();
-    for (final controller in _connections.values) {
-      await controller.close();
+    for (final session in _sessions.values) {
+      await session.close();
     }
+  }
+}
+
+final class _FakeSmartCubeSession implements SmartCubeSession {
+  final _eventController = StreamController<SmartCubeEvent>.broadcast();
+  final _connectionController = StreamController<bool>.broadcast();
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+
+  @override
+  CubeCapabilities get capabilities => const CubeCapabilities(
+    initialState: true,
+    moveHistory: true,
+    cubeTimestamps: true,
+  );
+
+  @override
+  Stream<bool> get connectionStates => _connectionController.stream;
+
+  @override
+  Stream<SmartCubeEvent> get events => _eventController.stream;
+
+  void addEvent(SmartCubeEvent event) => _eventController.add(event);
+
+  void setConnected(bool connected) => _connectionController.add(connected);
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _eventController.close();
+    await _connectionController.close();
   }
 }
