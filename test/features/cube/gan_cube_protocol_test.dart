@@ -27,7 +27,7 @@ void main() {
     final ganCipher = GanCubeCipher(macSalt: [6, 5, 4, 3, 2, 1]);
     final moyuCipher = GanCubeCipher(
       macSalt: [6, 5, 4, 3, 2, 1],
-      useMoyuAiKey: true,
+      encryptionKey: GanEncryptionKey.moyuAi2023,
     );
 
     for (final length in [16, 20]) {
@@ -97,6 +97,8 @@ void main() {
 
   test('Gen3 decoder translates a packet into a standard cube move', () {
     final decoder = GanModernPacketDecoder.gen3();
+    expect(decoder.requestFaceletsCommand, hasLength(16));
+    expect(decoder.requestFaceletsCommand.take(2), [0x68, 0x01]);
     final receivedAt = DateTime.utc(2026);
     final facelets =
         Uint8List(20)
@@ -128,6 +130,15 @@ void main() {
 
   test('Gen4 decoder translates a packet into a standard cube move', () {
     final decoder = GanModernPacketDecoder.gen4();
+    expect(decoder.requestFaceletsCommand, hasLength(20));
+    expect(decoder.requestFaceletsCommand.take(6), [
+      0xdd,
+      0x04,
+      0x00,
+      0xed,
+      0,
+      0,
+    ]);
     final receivedAt = DateTime.utc(2026);
     final facelets =
         Uint8List(20)

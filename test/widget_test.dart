@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:crubik/app/crubik_app.dart';
-import 'package:crubik/features/cube/data/cube_connection_controller.dart';
-import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
+import 'package:crubik/features/cube/application/cube_connection_controller.dart';
+import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
+import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/smart_cube_device.dart';
+import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +24,7 @@ void main() {
     final clock = _FakeSolveClock();
     final practice = PracticeController(clock: clock);
     final connection = CubeConnectionController(
-      transport: _SilentBleTransport(),
+      gateway: _SilentCubeConnectionGateway(),
     );
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -67,7 +70,7 @@ void main() {
 
     final practice = PracticeController();
     final connection = CubeConnectionController(
-      transport: _SilentBleTransport(),
+      gateway: _SilentCubeConnectionGateway(),
     );
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -99,7 +102,7 @@ void main() {
 
     final practice = PracticeController();
     final connection = CubeConnectionController(
-      transport: _SilentBleTransport(),
+      gateway: _SilentCubeConnectionGateway(),
     );
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -135,7 +138,7 @@ void main() {
       practice.stopSolve();
     }
     final connection = CubeConnectionController(
-      transport: _SilentBleTransport(),
+      gateway: _SilentCubeConnectionGateway(),
     );
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -171,8 +174,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final transport = _SilentBleTransport();
-    final connection = CubeConnectionController(transport: transport);
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
 
@@ -180,13 +183,14 @@ void main() {
       CrubikApp(practiceController: practice, connectionController: connection),
     );
     await tester.pump();
+    await connection.connect(_supportedGan);
 
     expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
     expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     expect(find.text('PRACTICE SCRAMBLE'), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
 
-    transport.addMove(
+    gateway.addEvent(
       SmartCubeMoveEvent(
         move: CubeMove.parse('R'),
         serial: 1,
@@ -196,7 +200,7 @@ void main() {
     await tester.pump();
     expect(practice.currentMoves.single.notation, 'R');
 
-    transport.addState(
+    gateway.addEvent(
       SmartCubeStateEvent(
         state: CubeState.solved(),
         serial: 1,
@@ -217,7 +221,7 @@ void main() {
 
     final practice = PracticeController();
     final connection = CubeConnectionController(
-      transport: _SilentBleTransport(),
+      gateway: _SilentCubeConnectionGateway(),
     );
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -249,8 +253,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final transport = _SilentBleTransport();
-    final connection = CubeConnectionController(transport: transport);
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
 
@@ -262,14 +266,15 @@ void main() {
     await tester.tap(find.text('Scan nearby'));
     await tester.pump();
 
-    transport
+    gateway
       ..addDevice(
         const CubeDeviceCandidate(
           id: 'moyu-wcu',
           name: 'WCU_MY32',
           vendor: CubeVendor.moyu,
+          protocolFamily: CubeProtocolFamily.moyu32,
+          supportStatus: CubeSupportStatus.detectedUnsupported,
           rssi: -35,
-          isSupported: false,
           supportMessage:
               'This WCU MoYu cube uses the MoYu32 protocol, which is detected but not supported yet.',
         ),
@@ -278,9 +283,7 @@ void main() {
         const CubeDeviceCandidate(
           id: 'speaker',
           name: 'Desk speaker',
-          vendor: CubeVendor.unknown,
           rssi: -20,
-          isSupported: false,
         ),
       );
     await tester.pump();
@@ -321,8 +324,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final transport = _SilentBleTransport();
-    final connection = CubeConnectionController(transport: transport);
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
 
@@ -334,13 +337,14 @@ void main() {
     await tester.tap(find.text('Scan nearby'));
     await tester.pump();
 
-    transport.addDevice(
+    gateway.addDevice(
       const CubeDeviceCandidate(
         id: 'moyu-v10',
         name: 'MHC-AB12',
         vendor: CubeVendor.moyu,
+        protocolFamily: CubeProtocolFamily.moyuMhc,
+        supportStatus: CubeSupportStatus.detectedUnsupported,
         rssi: -35,
-        isSupported: false,
         supportMessage:
             'MoYu MHC cubes such as the WeiLong V10 AI are detected, but their protocol is not supported yet.',
       ),
@@ -374,28 +378,26 @@ final class _FakeSolveClock implements SolveClock {
   void stop() {}
 }
 
-final class _SilentBleTransport implements BleCubeTransport {
+const _supportedGan = CubeDeviceCandidate(
+  id: 'gan-test',
+  name: 'GAN12ui',
+  vendor: CubeVendor.gan,
+  protocolFamily: CubeProtocolFamily.gan,
+  supportStatus: CubeSupportStatus.supported,
+  adapterId: 'gan-family',
+);
+
+final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
-  final _moveController = StreamController<SmartCubeMoveEvent>.broadcast();
-  final _stateController = StreamController<SmartCubeStateEvent>.broadcast();
+  final _session = _SilentSmartCubeSession();
+  bool _closed = false;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
 
   @override
-  Stream<SmartCubeMoveEvent> get moveEvents => _moveController.stream;
-
-  @override
-  Stream<SmartCubeStateEvent> get stateEvents => _stateController.stream;
-
-  @override
-  Future<void> connect(CubeDeviceCandidate device) async {}
-
-  @override
-  Stream<bool> connectionState(String deviceId) => const Stream.empty();
-
-  @override
-  Future<void> disconnect(String deviceId) async {}
+  Future<SmartCubeSession> connect(CubeDeviceCandidate device) async =>
+      _session;
 
   @override
   Future<bool> hasPermissions() async => true;
@@ -409,9 +411,39 @@ final class _SilentBleTransport implements BleCubeTransport {
   @override
   Future<void> stopScan() async {}
 
-  void addMove(SmartCubeMoveEvent event) => _moveController.add(event);
-
-  void addState(SmartCubeStateEvent event) => _stateController.add(event);
+  void addEvent(SmartCubeEvent event) => _session.addEvent(event);
 
   void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _scanController.close();
+    await _session.close();
+  }
+}
+
+final class _SilentSmartCubeSession implements SmartCubeSession {
+  final _eventController = StreamController<SmartCubeEvent>.broadcast();
+  bool _closed = false;
+
+  @override
+  CubeCapabilities get capabilities =>
+      const CubeCapabilities(initialState: true);
+
+  @override
+  Stream<bool> get connectionStates => const Stream.empty();
+
+  @override
+  Stream<SmartCubeEvent> get events => _eventController.stream;
+
+  void addEvent(SmartCubeEvent event) => _eventController.add(event);
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _eventController.close();
+  }
 }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
 
 import '../domain/cube_model.dart';
+import '../domain/smart_cube_event.dart';
 
 // Protocol constants and packet layouts are adapted from the MIT-licensed
 // gan-web-bluetooth project by Andy Fedotov. See THIRD_PARTY_NOTICES.md.
@@ -63,44 +64,15 @@ GanProtocolDefinition? ganProtocolForServices(Iterable<String> services) {
   return null;
 }
 
-final class SmartCubeMoveEvent {
-  const SmartCubeMoveEvent({
-    required this.move,
-    required this.serial,
-    required this.receivedAt,
-    this.cubeTimestamp,
-    this.recovered = false,
-  });
-
-  final CubeMove move;
-  final int serial;
-  final DateTime receivedAt;
-  final Duration? cubeTimestamp;
-  final bool recovered;
-}
-
-final class SmartCubeStateEvent {
-  const SmartCubeStateEvent({
-    required this.state,
-    required this.serial,
-    required this.receivedAt,
-  });
-
-  final CubeState state;
-  final int serial;
-  final DateTime receivedAt;
-}
-
 final class GanDecodedPacket {
-  const GanDecodedPacket({
-    this.moves = const [],
-    this.states = const [],
-    this.commands = const [],
-  });
+  const GanDecodedPacket({this.events = const [], this.commands = const []});
 
-  final List<SmartCubeMoveEvent> moves;
-  final List<SmartCubeStateEvent> states;
+  final List<SmartCubeEvent> events;
   final List<Uint8List> commands;
+
+  Iterable<SmartCubeMoveEvent> get moves => events.whereType();
+
+  Iterable<SmartCubeStateEvent> get states => events.whereType();
 }
 
 abstract interface class GanPacketDecoder {
@@ -117,12 +89,20 @@ GanPacketDecoder createGanPacketDecoder(GanProtocolGeneration generation) {
   };
 }
 
+enum GanEncryptionKey { gan, moyuAi2023 }
+
 final class GanCubeCipher {
-  GanCubeCipher({required List<int> macSalt, bool useMoyuAiKey = false}) {
+  GanCubeCipher({
+    required List<int> macSalt,
+    GanEncryptionKey encryptionKey = GanEncryptionKey.gan,
+  }) {
     if (macSalt.length != 6) {
       throw const FormatException('GAN cube MAC salt must contain 6 bytes.');
     }
-    final material = useMoyuAiKey ? _moyuAiKeyMaterial : _ganKeyMaterial;
+    final material = switch (encryptionKey) {
+      GanEncryptionKey.gan => _ganKeyMaterial,
+      GanEncryptionKey.moyuAi2023 => _moyuAiKeyMaterial,
+    };
     _key = Uint8List.fromList(material.key);
     _iv = Uint8List.fromList(material.iv);
     for (var index = 0; index < macSalt.length; index++) {
@@ -165,6 +145,27 @@ final class GanCubeCipher {
     cipher.processBlock(buffer, offset, output, 0);
     buffer.setRange(offset, offset + 16, output);
   }
+}
+
+String? normalizeCubeMac(String value) {
+  final match = RegExp(
+    r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$',
+  ).firstMatch(value.trim());
+  if (match == null) return null;
+  return value.trim().replaceAll('-', ':').toUpperCase();
+}
+
+List<int> cubeMacSalt(String macAddress) {
+  final normalized = normalizeCubeMac(macAddress);
+  if (normalized == null) {
+    throw const FormatException('Invalid cube MAC address.');
+  }
+  return normalized
+      .split(':')
+      .map((part) => int.parse(part, radix: 16))
+      .toList(growable: false)
+      .reversed
+      .toList(growable: false);
 }
 
 const _ganKeyMaterial = (
@@ -293,7 +294,7 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
     if (eventType == 0x04) {
       _lastSerial = message.getBitWord(4, 8);
       return GanDecodedPacket(
-        states: [
+        events: [
           _decodeCubeState(
             message,
             serial: _lastSerial,
@@ -336,16 +337,16 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
       );
     }
     _lastReceivedAt = receivedAt;
-    return GanDecodedPacket(moves: moves);
+    return GanDecodedPacket(events: moves);
   }
 }
 
 final class GanModernPacketDecoder implements GanPacketDecoder {
-  GanModernPacketDecoder.gen3() : _isGen4 = false;
+  GanModernPacketDecoder.gen3() : _layout = _ganGen3Layout;
 
-  GanModernPacketDecoder.gen4() : _isGen4 = true;
+  GanModernPacketDecoder.gen4() : _layout = _ganGen4Layout;
 
-  final bool _isGen4;
+  final _GanModernPacketLayout _layout;
   int _serial = -1;
   int _lastSerial = -1;
   DateTime? _lastLocalTimestamp;
@@ -353,30 +354,30 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
 
   @override
   Uint8List get requestFaceletsCommand {
-    if (_isGen4) {
-      return Uint8List(20)..setRange(0, 6, [0xdd, 0x04, 0x00, 0xed, 0, 0]);
-    }
-    return Uint8List(16)..setRange(0, 2, [0x68, 0x01]);
+    return Uint8List(_layout.commandLength)..setRange(
+      0,
+      _layout.faceletsCommandPrefix.length,
+      _layout.faceletsCommandPrefix,
+    );
   }
 
   @override
   GanDecodedPacket decode(Uint8List packet, DateTime receivedAt) {
     final message = GanProtocolMessageView(packet);
-    final eventType =
-        _isGen4 ? message.getBitWord(0, 8) : message.getBitWord(8, 8);
-    final dataLength =
-        _isGen4 ? message.getBitWord(8, 8) : message.getBitWord(16, 8);
-    if (!_isGen4 && message.getBitWord(0, 8) != 0x55) {
+    final eventType = message.getBitWord(_layout.eventTypeStart, 8);
+    final dataLength = message.getBitWord(_layout.dataLengthStart, 8);
+    final header = _layout.header;
+    if (header != null && message.getBitWord(0, 8) != header) {
       return const GanDecodedPacket();
     }
 
     if (eventType == 0x01) {
       return _decodeMove(message, receivedAt);
     }
-    if (eventType == (_isGen4 ? 0xd1 : 0x06)) {
+    if (eventType == _layout.moveHistoryEvent) {
       return _decodeMoveHistory(message, dataLength, receivedAt);
     }
-    if (eventType == (_isGen4 ? 0xed : 0x02)) {
+    if (eventType == _layout.faceletsEvent) {
       return _decodeFacelets(message, receivedAt);
     }
     return const GanDecodedPacket();
@@ -388,7 +389,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
   ) {
     if (_lastSerial == -1) return const GanDecodedPacket();
     _lastLocalTimestamp = receivedAt;
-    final base = _isGen4 ? 16 : 24;
+    final base = _layout.dataStart;
     final cubeTimestamp = message.getBitWord(base, 32, littleEndian: true);
     final serial = message.getBitWord(base + 32, 16, littleEndian: true);
     _serial = serial;
@@ -413,7 +414,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     int dataLength,
     DateTime receivedAt,
   ) {
-    final base = _isGen4 ? 16 : 24;
+    final base = _layout.dataStart;
     final startSerial = message.getBitWord(base, 8);
     final count = (dataLength - 1) * 2;
     for (var index = 0; index < count; index++) {
@@ -437,20 +438,19 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     GanProtocolMessageView message,
     DateTime receivedAt,
   ) {
-    final serialOffset = _isGen4 ? 16 : 24;
-    _serial = message.getBitWord(serialOffset, 16, littleEndian: true);
+    _serial = message.getBitWord(_layout.dataStart, 16, littleEndian: true);
     final state = _decodeCubeState(
       message,
       serial: _serial,
       receivedAt: receivedAt,
-      cornerPermutationStart: _isGen4 ? 32 : 40,
-      cornerOrientationStart: _isGen4 ? 53 : 61,
-      edgePermutationStart: _isGen4 ? 69 : 77,
-      edgeOrientationStart: _isGen4 ? 113 : 121,
+      cornerPermutationStart: _layout.cornerPermutationStart,
+      cornerOrientationStart: _layout.cornerOrientationStart,
+      edgePermutationStart: _layout.edgePermutationStart,
+      edgeOrientationStart: _layout.edgeOrientationStart,
     );
     if (_lastSerial == -1) {
       _lastSerial = _serial;
-      return GanDecodedPacket(states: [state]);
+      return GanDecodedPacket(events: [state]);
     }
     final quietFor = receivedAt.difference(_lastLocalTimestamp ?? receivedAt);
     final difference = (_serial - _lastSerial) & 0xff;
@@ -458,11 +458,11 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       final bufferHead = _moveBuffer.firstOrNull;
       final startSerial = bufferHead?.serial ?? ((_serial + 1) & 0xff);
       return GanDecodedPacket(
-        states: [state],
+        events: [state],
         commands: [_requestMoveHistory(startSerial, difference + 1)],
       );
     }
-    return GanDecodedPacket(states: [state]);
+    return GanDecodedPacket(events: [state]);
   }
 
   GanDecodedPacket _evictMoveBuffer({required bool requestMissing}) {
@@ -481,7 +481,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       moves.add(_moveBuffer.removeAt(0));
       _lastSerial = head.serial;
     }
-    return GanDecodedPacket(moves: moves, commands: commands);
+    return GanDecodedPacket(events: moves, commands: commands);
   }
 
   void _injectRecoveredMove(SmartCubeMoveEvent move) {
@@ -517,17 +517,80 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     if (alignedSerial.isEven) alignedSerial = (alignedSerial - 1) & 0xff;
     if (alignedCount.isOdd) alignedCount++;
     alignedCount = alignedCount.clamp(0, alignedSerial + 1);
-    final command = Uint8List(_isGen4 ? 20 : 16);
-    command.setRange(
+    final command = Uint8List(_layout.commandLength);
+    command.setRange(0, 6, [
+      ..._layout.moveHistoryCommandPrefix,
+      alignedSerial,
       0,
-      6,
-      _isGen4
-          ? [0xd1, 0x04, alignedSerial, 0, alignedCount, 0]
-          : [0x68, 0x03, alignedSerial, 0, alignedCount, 0],
-    );
+      alignedCount,
+      0,
+    ]);
     return command;
   }
 }
+
+final class _GanModernPacketLayout {
+  const _GanModernPacketLayout({
+    required this.commandLength,
+    required this.faceletsCommandPrefix,
+    required this.moveHistoryCommandPrefix,
+    required this.eventTypeStart,
+    required this.dataLengthStart,
+    required this.dataStart,
+    required this.moveHistoryEvent,
+    required this.faceletsEvent,
+    required this.cornerPermutationStart,
+    required this.cornerOrientationStart,
+    required this.edgePermutationStart,
+    required this.edgeOrientationStart,
+    this.header,
+  });
+
+  final int commandLength;
+  final List<int> faceletsCommandPrefix;
+  final List<int> moveHistoryCommandPrefix;
+  final int eventTypeStart;
+  final int dataLengthStart;
+  final int dataStart;
+  final int moveHistoryEvent;
+  final int faceletsEvent;
+  final int cornerPermutationStart;
+  final int cornerOrientationStart;
+  final int edgePermutationStart;
+  final int edgeOrientationStart;
+  final int? header;
+}
+
+const _ganGen3Layout = _GanModernPacketLayout(
+  commandLength: 16,
+  faceletsCommandPrefix: [0x68, 0x01],
+  moveHistoryCommandPrefix: [0x68, 0x03],
+  eventTypeStart: 8,
+  dataLengthStart: 16,
+  dataStart: 24,
+  moveHistoryEvent: 0x06,
+  faceletsEvent: 0x02,
+  cornerPermutationStart: 40,
+  cornerOrientationStart: 61,
+  edgePermutationStart: 77,
+  edgeOrientationStart: 121,
+  header: 0x55,
+);
+
+const _ganGen4Layout = _GanModernPacketLayout(
+  commandLength: 20,
+  faceletsCommandPrefix: [0xdd, 0x04, 0x00, 0xed, 0, 0],
+  moveHistoryCommandPrefix: [0xd1, 0x04],
+  eventTypeStart: 0,
+  dataLengthStart: 8,
+  dataStart: 16,
+  moveHistoryEvent: 0xd1,
+  faceletsEvent: 0xed,
+  cornerPermutationStart: 32,
+  cornerOrientationStart: 53,
+  edgePermutationStart: 69,
+  edgeOrientationStart: 113,
+);
 
 const _faceNames = 'URFDLB';
 
