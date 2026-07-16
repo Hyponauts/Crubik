@@ -8,10 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 void main() {
-  test('classifies only GAN and MoYu advertisement names', () {
+  test('classifies known GAN and MoYu advertisement names', () {
     expect(classifyCubeVendor('GAN12ui'), CubeVendor.gan);
     expect(classifyCubeVendor('MoYu AI'), CubeVendor.moyu);
     expect(classifyCubeVendor('AiCube-AB12'), CubeVendor.moyu);
+    expect(classifyCubeVendor('WCU_MY32'), CubeVendor.moyu);
+    expect(classifyCubeAdvertisement('WCU_MY32')?.isSupported, isFalse);
+    expect(
+      classifyCubeAdvertisement('WCU_MY32')?.supportMessage,
+      contains('MoYu32'),
+    );
     expect(classifyCubeVendor('MHC-AB12'), CubeVendor.moyu);
     expect(classifyCubeAdvertisement('MHC-AB12')?.isSupported, isFalse);
     expect(
@@ -20,6 +26,26 @@ void main() {
     );
     expect(classifyCubeVendor('GoCube'), isNull);
     expect(classifyCubeVendor('Giiker'), isNull);
+  });
+
+  test('turns every BLE result into a visible device candidate', () {
+    final wcu = cubeDeviceCandidateFromBleDevice(
+      BleDevice(deviceId: 'wcu-id', name: 'WCU_MY32', rssi: -42),
+    );
+    final headphones = cubeDeviceCandidateFromBleDevice(
+      BleDevice(deviceId: 'audio-id', name: 'Headphones', rssi: -30),
+    );
+    final unnamed = cubeDeviceCandidateFromBleDevice(
+      BleDevice(deviceId: 'unnamed-id', name: null),
+    );
+
+    expect(wcu.vendor, CubeVendor.moyu);
+    expect(wcu.isIdentifiedCube, isTrue);
+    expect(wcu.canConnect, isFalse);
+    expect(headphones.vendor, CubeVendor.unknown);
+    expect(headphones.isIdentifiedCube, isFalse);
+    expect(headphones.name, 'Headphones');
+    expect(unnamed.name, 'Unnamed Bluetooth device');
   });
 
   test('requests Bluetooth permission before starting a scan', () async {
@@ -86,6 +112,54 @@ void main() {
     await transport.dispose();
   });
 
+  test(
+    'groups cubes ahead of other devices and blocks other connections',
+    () async {
+      final transport = _FakeBleTransport();
+      final controller = CubeConnectionController(transport: transport);
+      const wcu = CubeDeviceCandidate(
+        id: 'wcu',
+        name: 'WCU_MY32',
+        vendor: CubeVendor.moyu,
+        rssi: -70,
+        isSupported: false,
+      );
+      const headphones = CubeDeviceCandidate(
+        id: 'headphones',
+        name: 'Headphones',
+        vendor: CubeVendor.unknown,
+        rssi: -20,
+        isSupported: false,
+      );
+      const gan = CubeDeviceCandidate(
+        id: 'gan',
+        name: 'GAN12ui',
+        vendor: CubeVendor.gan,
+        rssi: -40,
+      );
+
+      await controller.startScan();
+      transport
+        ..addDevice(headphones)
+        ..addDevice(wcu)
+        ..addDevice(gan);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.discoveredCubes, [gan, wcu]);
+      expect(controller.otherDiscoveredDevices, [headphones]);
+      expect(controller.discoveredDevices, [gan, wcu, headphones]);
+
+      await controller.connect(headphones);
+
+      expect(transport.connectCount, 0);
+      expect(controller.status, CubeConnectionStatus.error);
+      expect(controller.errorMessage, contains('not identified'));
+
+      controller.dispose();
+      await transport.dispose();
+    },
+  );
+
   test('extracts GAN MAC from native id or manufacturer payload', () {
     final native = BleDevice(deviceId: 'AA:BB:CC:DD:EE:FF', name: 'GAN12ui');
     final advertised = BleDevice(
@@ -146,6 +220,7 @@ final class _FakeBleTransport implements BleCubeTransport {
   final bool grantPermissionOnRequest;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
+  int connectCount = 0;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
@@ -158,6 +233,7 @@ final class _FakeBleTransport implements BleCubeTransport {
 
   @override
   Future<void> connect(CubeDeviceCandidate device) async {
+    connectCount++;
     _connections.putIfAbsent(device.id, StreamController<bool>.broadcast);
   }
 

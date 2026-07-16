@@ -1602,32 +1602,7 @@ class _ConnectionDialog extends StatelessWidget {
                       child:
                           controller.discoveredDevices.isEmpty
                               ? _EmptyDeviceSearch(scanning: scanning)
-                              : ListView.separated(
-                                shrinkWrap: true,
-                                itemCount: controller.discoveredDevices.length,
-                                separatorBuilder:
-                                    (_, __) => const SizedBox(height: 8),
-                                itemBuilder: (context, index) {
-                                  final device =
-                                      controller.discoveredDevices[index];
-                                  return _DeviceResult(
-                                    device: device,
-                                    connecting:
-                                        controller.status ==
-                                        CubeConnectionStatus.connecting,
-                                    onConnect:
-                                        device.isSupported
-                                            ? () async {
-                                              await controller.connect(device);
-                                              if (context.mounted &&
-                                                  controller.isConnected) {
-                                                Navigator.of(context).pop();
-                                              }
-                                            }
-                                            : null,
-                                  );
-                                },
-                              ),
+                              : _DiscoveredDeviceList(controller: controller),
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -1710,7 +1685,9 @@ class _EmptyDeviceSearch extends StatelessWidget {
           Icon(scanning ? Icons.radar : Icons.bluetooth_disabled, size: 30),
           const SizedBox(height: 10),
           Text(
-            scanning ? 'Looking for GAN and MoYu cubes…' : 'No cubes found yet',
+            scanning
+                ? 'Looking for nearby Bluetooth devices…'
+                : 'No Bluetooth devices found yet',
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
@@ -1718,11 +1695,113 @@ class _EmptyDeviceSearch extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Wake the cube with a turn and keep it close to this device.',
+            'Wake your cube with a turn and keep nearby devices in range.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DiscoveredDeviceList extends StatelessWidget {
+  const _DiscoveredDeviceList({required this.controller});
+
+  final CubeConnectionController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubes = controller.discoveredCubes;
+    final otherDevices = controller.otherDiscoveredDevices;
+    final connecting = controller.status == CubeConnectionStatus.connecting;
+
+    return ListView(
+      key: const Key('discovered-device-list'),
+      shrinkWrap: true,
+      children: [
+        _DeviceGroupHeader(title: 'Cubes', count: cubes.length),
+        const SizedBox(height: 8),
+        if (cubes.isEmpty)
+          const _NoIdentifiedCubes()
+        else
+          for (var index = 0; index < cubes.length; index++) ...[
+            if (index > 0) const SizedBox(height: 8),
+            _DeviceResult(
+              device: cubes[index],
+              connecting: connecting,
+              onConnect:
+                  cubes[index].canConnect
+                      ? () async {
+                        await controller.connect(cubes[index]);
+                        if (context.mounted && controller.isConnected) {
+                          Navigator.of(context).pop();
+                        }
+                      }
+                      : null,
+            ),
+          ],
+        if (otherDevices.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          _DeviceGroupHeader(
+            title: 'Other available devices',
+            count: otherDevices.length,
+          ),
+          const SizedBox(height: 8),
+          for (var index = 0; index < otherDevices.length; index++) ...[
+            if (index > 0) const SizedBox(height: 8),
+            _DeviceResult(
+              device: otherDevices[index],
+              connecting: connecting,
+              onConnect: null,
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _DeviceGroupHeader extends StatelessWidget {
+  const _DeviceGroupHeader({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        ),
+        Text(
+          '$count',
+          semanticsLabel: '$count devices',
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: CrubikColors.muted),
+        ),
+      ],
+    );
+  }
+}
+
+class _NoIdentifiedCubes extends StatelessWidget {
+  const _NoIdentifiedCubes();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: CrubikColors.elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: CrubikColors.border),
+      ),
+      child: Text(
+        'No identified cubes found yet.',
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }
@@ -1741,6 +1820,7 @@ class _DeviceResult extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isOtherDevice = !device.isIdentifiedCube;
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
@@ -1750,7 +1830,7 @@ class _DeviceResult extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.view_in_ar_outlined),
+          Icon(isOtherDevice ? Icons.bluetooth : Icons.view_in_ar_outlined),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1763,14 +1843,19 @@ class _DeviceResult extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (device.isSupported)
+                if (isOtherDevice)
+                  Text(
+                    '${device.rssi ?? '—'} dBm · Not identified as a smart cube',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  )
+                else if (device.isSupported)
                   Text(
                     '${device.vendor.name.toUpperCase()} · ${device.rssi ?? '—'} dBm',
                     style: Theme.of(context).textTheme.bodySmall,
                   )
                 else ...[
                   Text(
-                    'MOYU · Detected, not supported yet',
+                    '${device.vendor.name.toUpperCase()} · Detected, not supported yet',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: CrubikColors.warning,
                       fontWeight: FontWeight.w600,
@@ -1786,12 +1871,12 @@ class _DeviceResult extends StatelessWidget {
               ],
             ),
           ),
-          if (device.isSupported)
+          if (device.canConnect)
             FilledButton(
               onPressed: connecting ? null : onConnect,
               child: Text(connecting ? 'Connecting…' : 'Connect'),
             )
-          else
+          else if (device.isIdentifiedCube)
             const Padding(
               padding: EdgeInsets.only(left: 8),
               child: Icon(

@@ -241,6 +241,78 @@ void main() {
     expect(connection.isDemo, isTrue);
   });
 
+  testWidgets('connection dialog groups cubes and other BLE devices', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final transport = _SilentBleTransport();
+    final connection = CubeConnectionController(transport: transport);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan nearby'));
+    await tester.pump();
+
+    transport
+      ..addDevice(
+        const CubeDeviceCandidate(
+          id: 'moyu-wcu',
+          name: 'WCU_MY32',
+          vendor: CubeVendor.moyu,
+          rssi: -35,
+          isSupported: false,
+          supportMessage:
+              'This WCU MoYu cube uses the MoYu32 protocol, which is detected but not supported yet.',
+        ),
+      )
+      ..addDevice(
+        const CubeDeviceCandidate(
+          id: 'speaker',
+          name: 'Desk speaker',
+          vendor: CubeVendor.unknown,
+          rssi: -20,
+          isSupported: false,
+        ),
+      );
+    await tester.pump();
+
+    expect(find.text('Cubes'), findsOneWidget);
+    expect(find.text('Other available devices'), findsOneWidget);
+    expect(find.text('WCU_MY32'), findsOneWidget);
+    expect(find.text('MOYU · Detected, not supported yet'), findsOneWidget);
+    expect(find.textContaining('MoYu32 protocol'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('WCU_MY32')).dy,
+      lessThan(tester.getTopLeft(find.text('Other available devices')).dy),
+    );
+
+    await tester.drag(
+      find.byKey(const Key('discovered-device-list')),
+      const Offset(0, -220),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Desk speaker'), findsOneWidget);
+    expect(
+      find.textContaining('Not identified as a smart cube'),
+      findsOneWidget,
+    );
+    expect(find.text('Connect'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await connection.stopScan();
+    await tester.pump();
+  });
+
   testWidgets('connection dialog explains unsupported MoYu MHC cubes', (
     tester,
   ) async {
