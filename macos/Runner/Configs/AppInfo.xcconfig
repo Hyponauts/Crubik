@@ -8,7 +8,7 @@
 PRODUCT_NAME = crubik
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.crubik
+PRODUCT_BUNDLE_IDENTIFIER = com.hyponauts.crubik
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 Hyponauts. All rights reserved.
