@@ -5,7 +5,7 @@ import 'package:universal_ble/universal_ble.dart';
 
 import 'gan_cube_protocol.dart';
 
-enum CubeVendor { gan, moyu, demo }
+enum CubeVendor { gan, moyu, unknown, demo }
 
 enum CubeConnectionStatus {
   disconnected,
@@ -35,6 +35,11 @@ final class CubeDeviceCandidate {
   final String? macAddress;
   final bool isSupported;
   final String? supportMessage;
+
+  bool get isIdentifiedCube =>
+      vendor == CubeVendor.gan || vendor == CubeVendor.moyu;
+
+  bool get canConnect => isIdentifiedCube && isSupported;
 }
 
 final class CubeAdvertisementClassification {
@@ -74,8 +79,7 @@ abstract interface class BleCubeTransport {
 final class UniversalBleCubeTransport implements BleCubeTransport {
   UniversalBleCubeTransport() {
     _scanSubscription = UniversalBle.scanStream.listen((device) {
-      final candidate = _toSupportedCandidate(device);
-      if (candidate != null) _scanController.add(candidate);
+      _scanController.add(cubeDeviceCandidateFromBleDevice(device));
     });
   }
 
@@ -244,22 +248,27 @@ final class UniversalBleCubeTransport implements BleCubeTransport {
     await _moveController.close();
     await _stateController.close();
   }
+}
 
-  static CubeDeviceCandidate? _toSupportedCandidate(BleDevice device) {
-    final name = (device.name ?? device.rawName ?? '').trim();
-    if (name.isEmpty) return null;
-    final classification = classifyCubeAdvertisement(name);
-    if (classification == null) return null;
-    return CubeDeviceCandidate(
-      id: device.deviceId,
-      name: name,
-      vendor: classification.vendor,
-      rssi: device.rssi,
-      macAddress: extractGanMacAddress(device),
-      isSupported: classification.isSupported,
-      supportMessage: classification.supportMessage,
-    );
-  }
+CubeDeviceCandidate cubeDeviceCandidateFromBleDevice(BleDevice device) {
+  final sanitizedName = device.name?.trim();
+  final rawName = device.rawName?.trim();
+  final name =
+      sanitizedName != null && sanitizedName.isNotEmpty
+          ? sanitizedName
+          : rawName != null && rawName.isNotEmpty
+          ? rawName
+          : 'Unnamed Bluetooth device';
+  final classification = classifyCubeAdvertisement(name);
+  return CubeDeviceCandidate(
+    id: device.deviceId,
+    name: name,
+    vendor: classification?.vendor ?? CubeVendor.unknown,
+    rssi: device.rssi,
+    macAddress: classification == null ? null : extractGanMacAddress(device),
+    isSupported: classification?.isSupported ?? false,
+    supportMessage: classification?.supportMessage,
+  );
 }
 
 CubeAdvertisementClassification? classifyCubeAdvertisement(
@@ -276,6 +285,14 @@ CubeAdvertisementClassification? classifyCubeAdvertisement(
     return const CubeAdvertisementClassification(
       vendor: CubeVendor.moyu,
       isSupported: true,
+    );
+  }
+  if (name.startsWith('WCU_MY3')) {
+    return const CubeAdvertisementClassification(
+      vendor: CubeVendor.moyu,
+      isSupported: false,
+      supportMessage:
+          'This WCU MoYu cube uses the MoYu32 protocol, which is detected but not supported yet.',
     );
   }
   if (name.startsWith('MHC')) {
@@ -373,10 +390,22 @@ final class CubeConnectionController extends ChangeNotifier {
   Stream<SmartCubeStateEvent> get stateEvents => _stateController.stream;
   List<CubeDeviceCandidate> get discoveredDevices {
     final devices =
-        _discovered.values.toList()
-          ..sort((a, b) => (b.rssi ?? -100).compareTo(a.rssi ?? -100));
+        _discovered.values.toList()..sort((a, b) {
+          if (a.isIdentifiedCube != b.isIdentifiedCube) {
+            return a.isIdentifiedCube ? -1 : 1;
+          }
+          return (b.rssi ?? -100).compareTo(a.rssi ?? -100);
+        });
     return List.unmodifiable(devices);
   }
+
+  List<CubeDeviceCandidate> get discoveredCubes => List.unmodifiable(
+    discoveredDevices.where((device) => device.isIdentifiedCube),
+  );
+
+  List<CubeDeviceCandidate> get otherDiscoveredDevices => List.unmodifiable(
+    discoveredDevices.where((device) => !device.isIdentifiedCube),
+  );
 
   Future<void> startScan() async {
     if (_status == CubeConnectionStatus.connecting) return;
@@ -419,10 +448,13 @@ final class CubeConnectionController extends ChangeNotifier {
   Future<void> connect(CubeDeviceCandidate device) async {
     await stopScan();
     _errorMessage = null;
-    if (!device.isSupported) {
+    if (!device.canConnect) {
       _status = CubeConnectionStatus.error;
       _errorMessage =
-          device.supportMessage ?? 'This smart-cube protocol is not supported.';
+          device.supportMessage ??
+          (device.isIdentifiedCube
+              ? 'This smart-cube protocol is not supported.'
+              : 'This Bluetooth device was not identified as a smart cube.');
       notifyListeners();
       return;
     }
