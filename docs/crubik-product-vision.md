@@ -1,7 +1,7 @@
 # Crubik Product Vision
 
 **Status:** Draft for product and architecture alignment  
-**Date:** 2026-07-15  
+**Date:** 2026-07-16
 **Product:** Crubik — an offline-first companion for smart Rubik's cubes and twisty-puzzle training
 
 ## Executive summary
@@ -224,7 +224,7 @@ The following is the intended support roadmap, not a claim that the current star
 | Tier | Vendor/protocol family | Target models or families | Rationale |
 | --- | --- | --- | --- |
 | Launch/P0 | GAN legacy and Gen 2–4 protocols | GAN 356i family; GAN Mini ui FreePlay; GAN12 ui / ui FreePlay / ui Maglev; GAN356 i Carry, Carry S, i 3, and Carry 2; GAN14 ui FreePlay | Large installed base and multiple protocol generations; native access can also avoid some Web Bluetooth MAC-address friction. |
-| Launch/P0 | MoYu AI | MoYu AI 2023 first; certify newer MoYu AI models and firmware individually | Major alternative vendor and important proof of vendor neutrality. |
+| Launch/P0 | MoYu AI and MoYu32 | MoYu AI 2023 plus packet-tested `WCU_MY32`; certify exact MoYu models and firmware individually | Major alternative vendor and important proof of vendor neutrality without treating packet coverage as hardware certification. |
 | Expansion/P1 | Monster Go / GAN-compatible | Monster Go 3Ai and compatible `MG`/`AiCube` devices after hardware certification | Reuses GAN-family protocol work while reaching a lower-cost segment, without expanding the P0 certification promise beyond GAN and MoYu. |
 | Expansion/P1 | GoCube family | GoCube and Rubik's Connected | Established non-GAN protocol family and beginner-friendly hardware. |
 | Expansion/P1 | Giiker/Xiaomi family | Giiker Super Cube i3S and Xiaomi Mi Smart Magic Cube | Common legacy/entry devices; Cubio provides a Flutter reference for the Giiker i3S but is not a general protocol library. |

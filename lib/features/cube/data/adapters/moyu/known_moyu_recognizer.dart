@@ -14,7 +14,7 @@ final class KnownMoyuRecognizer implements CubeDeviceRecognizer {
         protocolFamily: CubeProtocolFamily.moyu32,
         supportStatus: CubeSupportStatus.detectedUnsupported,
         supportMessage:
-            'This WCU MoYu cube uses the MoYu32 protocol, which is detected but not supported yet.',
+            'This WCU MoYu cube is detected, but only the WCU_MY32 MoYu32 family is supported currently.',
       );
     }
     if (name.startsWith('MHC')) {
@@ -32,7 +32,7 @@ final class KnownMoyuRecognizer implements CubeDeviceRecognizer {
         protocolFamily: CubeProtocolFamily.unknown,
         supportStatus: CubeSupportStatus.detectedUnsupported,
         supportMessage:
-            'This MoYu model is detected, but only the MoYu AI 2023 protocol is supported currently.',
+            'This MoYu model is detected, but only the MoYu AI 2023 and MoYu32 protocols are supported currently.',
       );
     }
     return null;

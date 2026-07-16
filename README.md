@@ -8,7 +8,8 @@ session without an account or network connection.
 ## MVP capabilities
 
 - Responsive phone, tablet, and desktop practice layouts.
-- GAN Gen2, Gen3, and Gen4 BLE services, plus the MoYu AI 2023 Gen2 variant.
+- GAN Gen2, Gen3, and Gen4 BLE services, plus the MoYu AI 2023 Gen2 variant
+  and the MoYu32 `WCU_MY32` protocol.
 - MAC-salted AES packet decryption, initial facelet-state synchronization, and
   move-history recovery for supported protocols.
 - A pure-Dart 54-sticker cube model, notation parser, and 20-move practice
@@ -34,10 +35,12 @@ The P0 vendor scope is intentionally limited to GAN and MoYu:
 - GAN Gen4: GAN12 ui Maglev and GAN14 ui FreePlay protocol.
 - MoYu: MoYu AI 2023 using its GAN Gen2-compatible protocol and MoYu key
   material.
+- MoYu32: `WCU_MY32` service with encrypted initial-state synchronization,
+  five-move packet recovery, cube-relative timestamps, and battery reporting.
 
-The adapters are implemented and packet-tested, but every marketed
-model/firmware/platform combination still needs physical-device certification
-before a production compatibility promise is made.
+The adapters are implemented and packet-tested, including MoYu32, but every
+marketed model/firmware/platform combination still needs physical-device
+certification before a production compatibility promise is made.
 
 ## Run and verify
 

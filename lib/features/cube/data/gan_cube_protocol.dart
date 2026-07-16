@@ -1,9 +1,10 @@
 import 'dart:typed_data';
 
-import 'package:pointycastle/export.dart';
-
 import '../domain/cube_model.dart';
 import '../domain/smart_cube_event.dart';
+import 'cube_packet_cipher.dart';
+
+export 'cube_packet_cipher.dart' show cubeMacSalt, normalizeCubeMac;
 
 // Protocol constants and packet layouts are adapted from the MIT-licensed
 // gan-web-bluetooth project by Andy Fedotov. See THIRD_PARTY_NOTICES.md.
@@ -96,76 +97,22 @@ final class GanCubeCipher {
     required List<int> macSalt,
     GanEncryptionKey encryptionKey = GanEncryptionKey.gan,
   }) {
-    if (macSalt.length != 6) {
-      throw const FormatException('GAN cube MAC salt must contain 6 bytes.');
-    }
     final material = switch (encryptionKey) {
       GanEncryptionKey.gan => _ganKeyMaterial,
       GanEncryptionKey.moyuAi2023 => _moyuAiKeyMaterial,
     };
-    _key = Uint8List.fromList(material.key);
-    _iv = Uint8List.fromList(material.iv);
-    for (var index = 0; index < macSalt.length; index++) {
-      _key[index] = (material.key[index] + macSalt[index]) % 0xff;
-      _iv[index] = (material.iv[index] + macSalt[index]) % 0xff;
-    }
+    _cipher = MacSaltedAesCubeCipher(
+      key: material.key,
+      iv: material.iv,
+      macSalt: macSalt,
+    );
   }
 
-  late final Uint8List _key;
-  late final Uint8List _iv;
+  late final MacSaltedAesCubeCipher _cipher;
 
-  Uint8List encrypt(Uint8List data) {
-    if (data.length < 16) {
-      throw const FormatException('GAN packets must be at least 16 bytes.');
-    }
-    final result = Uint8List.fromList(data);
-    _transformChunk(result, 0, encrypt: true);
-    if (result.length > 16) {
-      _transformChunk(result, result.length - 16, encrypt: true);
-    }
-    return result;
-  }
+  Uint8List encrypt(Uint8List data) => _cipher.encrypt(data);
 
-  Uint8List decrypt(Uint8List data) {
-    if (data.length < 16) {
-      throw const FormatException('GAN packets must be at least 16 bytes.');
-    }
-    final result = Uint8List.fromList(data);
-    if (result.length > 16) {
-      _transformChunk(result, result.length - 16, encrypt: false);
-    }
-    _transformChunk(result, 0, encrypt: false);
-    return result;
-  }
-
-  void _transformChunk(Uint8List buffer, int offset, {required bool encrypt}) {
-    final cipher = CBCBlockCipher(AESEngine())
-      ..init(encrypt, ParametersWithIV(KeyParameter(_key), _iv));
-    final output = Uint8List(16);
-    cipher.processBlock(buffer, offset, output, 0);
-    buffer.setRange(offset, offset + 16, output);
-  }
-}
-
-String? normalizeCubeMac(String value) {
-  final match = RegExp(
-    r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$',
-  ).firstMatch(value.trim());
-  if (match == null) return null;
-  return value.trim().replaceAll('-', ':').toUpperCase();
-}
-
-List<int> cubeMacSalt(String macAddress) {
-  final normalized = normalizeCubeMac(macAddress);
-  if (normalized == null) {
-    throw const FormatException('Invalid cube MAC address.');
-  }
-  return normalized
-      .split(':')
-      .map((part) => int.parse(part, radix: 16))
-      .toList(growable: false)
-      .reversed
-      .toList(growable: false);
+  Uint8List decrypt(Uint8List data) => _cipher.decrypt(data);
 }
 
 const _ganKeyMaterial = (
