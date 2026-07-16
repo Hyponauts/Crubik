@@ -53,6 +53,8 @@ aligned whenever an approved decision changes the product direction.
   move, and state models.
 - `lib/features/cube/data/gan_cube_protocol.dart`: GAN Gen2-4 and MoYu AI 2023
   encryption, packet decoding, state conversion, and missed-move recovery.
+- `lib/features/cube/data/moyu32_cube_protocol.dart`: MoYu32 packet encryption,
+  facelet/move decoding, five-move recovery, timestamps, and battery parsing.
 - `lib/features/cube/data/adapters/`: device recognition and protocol-specific
   smart-cube sessions, selected through `CubeAdapterRegistry`.
 - `lib/features/cube/data/ble/ble_central.dart` and
@@ -97,6 +99,9 @@ The implemented protocol targets are:
 - GAN Gen3: GAN356 i Carry 2 protocol.
 - GAN Gen4: GAN12 ui Maglev and GAN14 ui FreePlay protocol.
 - MoYu AI 2023 using its GAN Gen2-compatible packet format and MoYu key.
+- MoYu32 `WCU_MY32` service, currently packet-tested only; exact marketed
+  models, firmware, platforms, fast turns, and reconnect behavior remain to be
+  certified with physical hardware.
 
 Protocol constants and behavior are adapted from the MIT-licensed
 `afedotov/gan-web-bluetooth` project at commit

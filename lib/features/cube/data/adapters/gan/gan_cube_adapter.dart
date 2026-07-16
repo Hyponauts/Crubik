@@ -126,6 +126,9 @@ final class _GanCubeSession implements SmartCubeSession {
   Stream<SmartCubeEvent> get events => _eventController.stream;
 
   @override
+  Stream<int> get batteryLevels => const Stream.empty();
+
+  @override
   Stream<bool> get connectionStates => _central.connectionState(deviceId);
 
   Future<void> initialize() async {
