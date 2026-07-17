@@ -64,16 +64,15 @@ final class GanCubeAdapter implements SmartCubeAdapter {
         );
       }
       session = _GanCubeSession(
-        central: central,
+        central,
         deviceId: device.id,
         protocol: protocol,
         decoder: createGanPacketDecoder(protocol.generation),
         cipher: GanCubeCipher(
           macSalt: cubeMacSalt(macAddress),
-          encryptionKey:
-              device.protocolFamily == CubeProtocolFamily.moyuAi2023
-                  ? GanEncryptionKey.moyuAi2023
-                  : GanEncryptionKey.gan,
+          encryptionKey: device.protocolFamily == CubeProtocolFamily.moyuAi2023
+              ? GanEncryptionKey.moyuAi2023
+              : GanEncryptionKey.gan,
         ),
       );
       await session.initialize();
@@ -98,13 +97,13 @@ final class GanCubeAdapter implements SmartCubeAdapter {
 }
 
 final class _GanCubeSession implements SmartCubeSession {
-  _GanCubeSession({
-    required BleCentral central,
+  _GanCubeSession(
+    this._central, {
     required this.deviceId,
     required this.protocol,
     required this.decoder,
     required this.cipher,
-  }) : _central = central;
+  });
 
   final BleCentral _central;
   final String deviceId;
