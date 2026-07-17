@@ -61,7 +61,7 @@ final class Moyu32CubeAdapter implements SmartCubeAdapter {
         );
       }
       session = _Moyu32CubeSession(
-        central: central,
+        central,
         deviceId: device.id,
         cipher: Moyu32CubeCipher(macSalt: cubeMacSalt(macAddress)),
         decoder: Moyu32PacketDecoder(),
@@ -89,13 +89,13 @@ final class Moyu32CubeAdapter implements SmartCubeAdapter {
 }
 
 final class _Moyu32CubeSession implements SmartCubeSession {
-  _Moyu32CubeSession({
-    required BleCentral central,
+  _Moyu32CubeSession(
+    this._central, {
     required this.deviceId,
     required this.cipher,
     required this.decoder,
     required this.handshakeTimeout,
-  }) : _central = central;
+  });
 
   final BleCentral _central;
   final String deviceId;
