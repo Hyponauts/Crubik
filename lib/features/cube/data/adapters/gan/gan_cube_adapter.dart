@@ -154,7 +154,7 @@ final class _GanCubeSession implements SmartCubeSession {
       protocol.service,
       protocol.stateCharacteristic,
     );
-    await _sendProtocolCommand(decoder.requestFaceletsCommand);
+    await requestState();
   }
 
   void _handleEncryptedPacket(Uint8List encryptedPacket) {
@@ -196,6 +196,10 @@ final class _GanCubeSession implements SmartCubeSession {
     protocol.commandCharacteristic,
     cipher.encrypt(command),
   );
+
+  @override
+  Future<void> requestState() =>
+      _sendProtocolCommand(decoder.requestFaceletsCommand);
 
   @override
   Future<void> close() async {

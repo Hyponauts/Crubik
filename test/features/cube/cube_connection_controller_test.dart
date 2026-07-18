@@ -113,6 +113,7 @@ void main() {
     expect(controller.discoveredDevices, [device]);
 
     await controller.connect(device);
+    expect(gateway.sessionFor(device.id).stateRequestCount, 1);
     expect(controller.isConnected, isTrue);
     expect(controller.connectedCube?.name, device.name);
     expect(controller.connectedCube?.capabilities.initialState, isTrue);
@@ -209,7 +210,7 @@ void main() {
     ]);
   });
 
-  test('forwards ordered smart-cube events to subscribers', () async {
+  test('forwards events and retains the latest physical state', () async {
     final gateway = _FakeCubeConnectionGateway();
     final controller = CubeConnectionController(gateway: gateway);
     const device = CubeDeviceCandidate(
@@ -221,7 +222,12 @@ void main() {
       adapterId: 'gan-family',
     );
     await controller.connect(device);
-    final event = SmartCubeMoveEvent(
+    final stateEvent = SmartCubeStateEvent(
+      state: CubeState.solved()..apply(CubeMove.parse('F')),
+      serial: 0,
+      receivedAt: DateTime.utc(2026),
+    );
+    final moveEvent = SmartCubeMoveEvent(
       move: CubeMove.parse("R'"),
       serial: 1,
       receivedAt: DateTime.utc(2026),
@@ -229,10 +235,13 @@ void main() {
     final received = <SmartCubeEvent>[];
     final subscription = controller.events.listen(received.add);
 
-    gateway.sessionFor(device.id).addEvent(event);
+    gateway.sessionFor(device.id)
+      ..addEvent(stateEvent)
+      ..addEvent(moveEvent);
     await Future<void>.delayed(Duration.zero);
 
-    expect((received.single as SmartCubeMoveEvent).move.notation, "R'");
+    expect(received, [stateEvent, moveEvent]);
+    expect(controller.latestStateEvent, same(stateEvent));
     await subscription.cancel();
     await controller.close();
     controller.dispose();
@@ -267,14 +276,14 @@ void main() {
       expect(controller.status, CubeConnectionStatus.connected);
       expect(controller.errorMessage, contains('requested'));
 
-      await controller.connectDemo();
+      await controller.disconnect();
       expect(controller.batteryLevel, isNull);
       await controller.close();
       controller.dispose();
     },
   );
 
-  test('switching to demo mode closes the active adapter session', () async {
+  test('disconnect closes the active adapter session', () async {
     final gateway = _FakeCubeConnectionGateway();
     final controller = CubeConnectionController(gateway: gateway);
     const device = CubeDeviceCandidate(
@@ -288,10 +297,11 @@ void main() {
     await controller.connect(device);
     final session = gateway.sessionFor(device.id);
 
-    await controller.connectDemo();
+    await controller.disconnect();
 
     expect(session.isClosed, isTrue);
-    expect(controller.connectedCube?.mode, CubeConnectionMode.demo);
+    expect(controller.connectedCube, isNull);
+    expect(controller.status, CubeConnectionStatus.disconnected);
     await controller.close();
     controller.dispose();
   });
@@ -408,6 +418,7 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
   final _batteryController = StreamController<int>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
   bool _closed = false;
+  int stateRequestCount = 0;
 
   bool get isClosed => _closed;
 
@@ -436,6 +447,11 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
       _batteryController.add(batteryLevel);
 
   void setConnected(bool connected) => _connectionController.add(connected);
+
+  @override
+  Future<void> requestState() async {
+    stateRequestCount++;
+  }
 
   @override
   Future<void> close() async {

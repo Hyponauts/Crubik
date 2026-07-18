@@ -65,5 +65,8 @@ abstract interface class SmartCubeSession {
 
   Stream<bool> get connectionStates;
 
+  /// Requests a fresh authoritative state after consumers are listening.
+  Future<void> requestState();
+
   Future<void> close();
 }

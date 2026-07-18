@@ -172,7 +172,7 @@ final class _Moyu32CubeSession implements SmartCubeSession {
     await _sendCommand(decoder.requestInfoCommand);
     onDiagnostic?.call('protocol.request.completed', 'message=info');
     onDiagnostic?.call('protocol.request.started', 'message=state');
-    await _sendCommand(decoder.requestStateCommand);
+    await requestState();
     onDiagnostic?.call('protocol.request.completed', 'message=state');
     onDiagnostic?.call('protocol.request.started', 'message=battery');
     await _sendCommand(decoder.requestBatteryCommand);
@@ -263,7 +263,7 @@ final class _Moyu32CubeSession implements SmartCubeSession {
     if (_closed || _resyncPending) return;
     _resyncPending = true;
     unawaited(
-      _sendCommand(decoder.requestStateCommand).onError((error, stackTrace) {
+      requestState().onError((error, stackTrace) {
         _resyncPending = false;
         if (_closed) return;
         _eventController.addError(
@@ -283,6 +283,9 @@ final class _Moyu32CubeSession implements SmartCubeSession {
     moyu32WriteCharacteristic,
     cipher.encrypt(command),
   );
+
+  @override
+  Future<void> requestState() => _sendCommand(decoder.requestStateCommand);
 
   @override
   Future<void> close() async {

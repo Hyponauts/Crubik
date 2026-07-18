@@ -4,8 +4,6 @@ enum CubeProtocolFamily { gan, moyuAi2023, moyu32, moyuMhc, unknown }
 
 enum CubeSupportStatus { supported, detectedUnsupported, unidentified }
 
-enum CubeConnectionMode { bluetooth, demo }
-
 final class CubeCapabilities {
   const CubeCapabilities({
     this.initialState = false,
@@ -59,19 +57,10 @@ final class ConnectedCube {
   const ConnectedCube({
     required this.id,
     required this.name,
-    required this.mode,
     required this.vendor,
     required this.protocolFamily,
     required this.capabilities,
   });
-
-  const ConnectedCube.demo()
-    : id = 'demo-cube',
-      name = 'Demo cube',
-      mode = CubeConnectionMode.demo,
-      vendor = CubeVendor.unknown,
-      protocolFamily = CubeProtocolFamily.unknown,
-      capabilities = const CubeCapabilities();
 
   factory ConnectedCube.bluetooth(
     CubeDeviceCandidate device,
@@ -79,7 +68,6 @@ final class ConnectedCube {
   ) => ConnectedCube(
     id: device.id,
     name: device.name,
-    mode: CubeConnectionMode.bluetooth,
     vendor: device.vendor,
     protocolFamily: device.protocolFamily,
     capabilities: capabilities,
@@ -87,10 +75,7 @@ final class ConnectedCube {
 
   final String id;
   final String name;
-  final CubeConnectionMode mode;
   final CubeVendor vendor;
   final CubeProtocolFamily protocolFamily;
   final CubeCapabilities capabilities;
-
-  bool get isDemo => mode == CubeConnectionMode.demo;
 }
