@@ -1747,7 +1747,8 @@ class _DiscoveredDeviceList extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubes = controller.discoveredCubes;
     final otherDevices = controller.otherDiscoveredDevices;
-    final connecting = controller.status == CubeConnectionStatus.connecting;
+    final connectionBusy =
+        controller.status == CubeConnectionStatus.connecting;
 
     return ListView(
       key: const Key('discovered-device-list'),
@@ -1762,7 +1763,8 @@ class _DiscoveredDeviceList extends StatelessWidget {
             if (index > 0) const SizedBox(height: 8),
             _DeviceResult(
               device: cubes[index],
-              connecting: connecting,
+              connecting: controller.connectingDeviceId == cubes[index].id,
+              connectionBusy: connectionBusy,
               onConnect:
                   cubes[index].canConnect
                       ? () async {
@@ -1785,7 +1787,8 @@ class _DiscoveredDeviceList extends StatelessWidget {
             if (index > 0) const SizedBox(height: 8),
             _DeviceResult(
               device: otherDevices[index],
-              connecting: connecting,
+              connecting: false,
+              connectionBusy: connectionBusy,
               onConnect: null,
             ),
           ],
@@ -1844,11 +1847,13 @@ class _DeviceResult extends StatelessWidget {
   const _DeviceResult({
     required this.device,
     required this.connecting,
+    required this.connectionBusy,
     required this.onConnect,
   });
 
   final CubeDeviceCandidate device;
   final bool connecting;
+  final bool connectionBusy;
   final VoidCallback? onConnect;
 
   @override
@@ -1906,7 +1911,8 @@ class _DeviceResult extends StatelessWidget {
           ),
           if (device.canConnect)
             FilledButton(
-              onPressed: connecting ? null : onConnect,
+              key: Key('connect-device-${device.id}'),
+              onPressed: connectionBusy ? null : onConnect,
               child: Text(connecting ? 'Connecting…' : 'Connect'),
             )
           else if (device.isIdentifiedCube)

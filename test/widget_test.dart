@@ -316,6 +316,64 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('only the selected cube shows a connecting label', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final connectGate = Completer<void>();
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway(connectGate: connectGate);
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan nearby'));
+    await tester.pump();
+
+    gateway
+      ..addDevice(_supportedMoyu32)
+      ..addDevice(
+        const CubeDeviceCandidate(
+          id: 'gan-test',
+          name: 'GAN12ui',
+          vendor: CubeVendor.gan,
+          protocolFamily: CubeProtocolFamily.gan,
+          supportStatus: CubeSupportStatus.supported,
+          adapterId: 'gan-family',
+          rssi: -50,
+        ),
+      );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('connect-device-moyu32-test')));
+    await tester.pump();
+
+    expect(find.text('Connecting…'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget);
+    expect(connection.connectingDeviceId, _supportedMoyu32.id);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('connect-device-gan-test')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    connectGate.complete();
+    await tester.pumpAndSettle();
+    expect(connection.isConnected, isTrue);
+    expect(connection.connectingDeviceId, isNull);
+  });
+
   for (final size in [const Size(390, 844), const Size(1200, 800)]) {
     testWidgets(
       'connected MoYu32 battery fits ${size.width.toInt()}px viewport',
@@ -486,9 +544,10 @@ const _supportedMoyu32 = CubeDeviceCandidate(
 );
 
 final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
-  _SilentCubeConnectionGateway({this.connectError});
+  _SilentCubeConnectionGateway({this.connectError, this.connectGate});
 
   final Object? connectError;
+  final Completer<void>? connectGate;
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _session = _SilentSmartCubeSession();
   bool _closed = false;
@@ -502,6 +561,7 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
     CubeDiagnosticSink? onDiagnostic,
   }) async {
     onDiagnostic?.call('adapter.selected', device.adapterId);
+    await connectGate?.future;
     final error = connectError;
     if (error != null) throw error;
     return _session;
