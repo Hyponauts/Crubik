@@ -73,6 +73,27 @@ class $SolveEntriesTable extends SolveEntries
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _inspectionElapsedMsMeta =
+      const VerificationMeta('inspectionElapsedMs');
+  @override
+  late final GeneratedColumn<int> inspectionElapsedMs = GeneratedColumn<int>(
+    'inspection_elapsed_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _startTriggerMeta = const VerificationMeta(
+    'startTrigger',
+  );
+  @override
+  late final GeneratedColumn<String> startTrigger = GeneratedColumn<String>(
+    'start_trigger',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -81,6 +102,8 @@ class $SolveEntriesTable extends SolveEntries
     moveCount,
     createdAt,
     inputSource,
+    inspectionElapsedMs,
+    startTrigger,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -142,6 +165,24 @@ class $SolveEntriesTable extends SolveEntries
     } else if (isInserting) {
       context.missing(_inputSourceMeta);
     }
+    if (data.containsKey('inspection_elapsed_ms')) {
+      context.handle(
+        _inspectionElapsedMsMeta,
+        inspectionElapsedMs.isAcceptableOrUnknown(
+          data['inspection_elapsed_ms']!,
+          _inspectionElapsedMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('start_trigger')) {
+      context.handle(
+        _startTriggerMeta,
+        startTrigger.isAcceptableOrUnknown(
+          data['start_trigger']!,
+          _startTriggerMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -151,36 +192,38 @@ class $SolveEntriesTable extends SolveEntries
   SolveEntry map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return SolveEntry(
-      id:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.string,
-            data['${effectivePrefix}id'],
-          )!,
-      scramble:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.string,
-            data['${effectivePrefix}scramble'],
-          )!,
-      elapsedMs:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.int,
-            data['${effectivePrefix}elapsed_ms'],
-          )!,
-      moveCount:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.int,
-            data['${effectivePrefix}move_count'],
-          )!,
-      createdAt:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.dateTime,
-            data['${effectivePrefix}created_at'],
-          )!,
-      inputSource:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.string,
-            data['${effectivePrefix}input_source'],
-          )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      scramble: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scramble'],
+      )!,
+      elapsedMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}elapsed_ms'],
+      )!,
+      moveCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}move_count'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      inputSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}input_source'],
+      )!,
+      inspectionElapsedMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}inspection_elapsed_ms'],
+      ),
+      startTrigger: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}start_trigger'],
+      ),
     );
   }
 
@@ -197,6 +240,8 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
   final int moveCount;
   final DateTime createdAt;
   final String inputSource;
+  final int? inspectionElapsedMs;
+  final String? startTrigger;
   const SolveEntry({
     required this.id,
     required this.scramble,
@@ -204,6 +249,8 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
     required this.moveCount,
     required this.createdAt,
     required this.inputSource,
+    this.inspectionElapsedMs,
+    this.startTrigger,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -214,6 +261,12 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
     map['move_count'] = Variable<int>(moveCount);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['input_source'] = Variable<String>(inputSource);
+    if (!nullToAbsent || inspectionElapsedMs != null) {
+      map['inspection_elapsed_ms'] = Variable<int>(inspectionElapsedMs);
+    }
+    if (!nullToAbsent || startTrigger != null) {
+      map['start_trigger'] = Variable<String>(startTrigger);
+    }
     return map;
   }
 
@@ -225,6 +278,12 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
       moveCount: Value(moveCount),
       createdAt: Value(createdAt),
       inputSource: Value(inputSource),
+      inspectionElapsedMs: inspectionElapsedMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(inspectionElapsedMs),
+      startTrigger: startTrigger == null && nullToAbsent
+          ? const Value.absent()
+          : Value(startTrigger),
     );
   }
 
@@ -240,6 +299,10 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
       moveCount: serializer.fromJson<int>(json['moveCount']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       inputSource: serializer.fromJson<String>(json['inputSource']),
+      inspectionElapsedMs: serializer.fromJson<int?>(
+        json['inspectionElapsedMs'],
+      ),
+      startTrigger: serializer.fromJson<String?>(json['startTrigger']),
     );
   }
   @override
@@ -252,6 +315,8 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
       'moveCount': serializer.toJson<int>(moveCount),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'inputSource': serializer.toJson<String>(inputSource),
+      'inspectionElapsedMs': serializer.toJson<int?>(inspectionElapsedMs),
+      'startTrigger': serializer.toJson<String?>(startTrigger),
     };
   }
 
@@ -262,6 +327,8 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
     int? moveCount,
     DateTime? createdAt,
     String? inputSource,
+    Value<int?> inspectionElapsedMs = const Value.absent(),
+    Value<String?> startTrigger = const Value.absent(),
   }) => SolveEntry(
     id: id ?? this.id,
     scramble: scramble ?? this.scramble,
@@ -269,6 +336,10 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
     moveCount: moveCount ?? this.moveCount,
     createdAt: createdAt ?? this.createdAt,
     inputSource: inputSource ?? this.inputSource,
+    inspectionElapsedMs: inspectionElapsedMs.present
+        ? inspectionElapsedMs.value
+        : this.inspectionElapsedMs,
+    startTrigger: startTrigger.present ? startTrigger.value : this.startTrigger,
   );
   SolveEntry copyWithCompanion(SolveEntriesCompanion data) {
     return SolveEntry(
@@ -277,8 +348,15 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
       elapsedMs: data.elapsedMs.present ? data.elapsedMs.value : this.elapsedMs,
       moveCount: data.moveCount.present ? data.moveCount.value : this.moveCount,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      inputSource:
-          data.inputSource.present ? data.inputSource.value : this.inputSource,
+      inputSource: data.inputSource.present
+          ? data.inputSource.value
+          : this.inputSource,
+      inspectionElapsedMs: data.inspectionElapsedMs.present
+          ? data.inspectionElapsedMs.value
+          : this.inspectionElapsedMs,
+      startTrigger: data.startTrigger.present
+          ? data.startTrigger.value
+          : this.startTrigger,
     );
   }
 
@@ -290,14 +368,24 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
           ..write('elapsedMs: $elapsedMs, ')
           ..write('moveCount: $moveCount, ')
           ..write('createdAt: $createdAt, ')
-          ..write('inputSource: $inputSource')
+          ..write('inputSource: $inputSource, ')
+          ..write('inspectionElapsedMs: $inspectionElapsedMs, ')
+          ..write('startTrigger: $startTrigger')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, scramble, elapsedMs, moveCount, createdAt, inputSource);
+  int get hashCode => Object.hash(
+    id,
+    scramble,
+    elapsedMs,
+    moveCount,
+    createdAt,
+    inputSource,
+    inspectionElapsedMs,
+    startTrigger,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -307,7 +395,9 @@ class SolveEntry extends DataClass implements Insertable<SolveEntry> {
           other.elapsedMs == this.elapsedMs &&
           other.moveCount == this.moveCount &&
           other.createdAt == this.createdAt &&
-          other.inputSource == this.inputSource);
+          other.inputSource == this.inputSource &&
+          other.inspectionElapsedMs == this.inspectionElapsedMs &&
+          other.startTrigger == this.startTrigger);
 }
 
 class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
@@ -317,6 +407,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
   final Value<int> moveCount;
   final Value<DateTime> createdAt;
   final Value<String> inputSource;
+  final Value<int?> inspectionElapsedMs;
+  final Value<String?> startTrigger;
   final Value<int> rowid;
   const SolveEntriesCompanion({
     this.id = const Value.absent(),
@@ -325,6 +417,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
     this.moveCount = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.inputSource = const Value.absent(),
+    this.inspectionElapsedMs = const Value.absent(),
+    this.startTrigger = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SolveEntriesCompanion.insert({
@@ -334,6 +428,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
     required int moveCount,
     required DateTime createdAt,
     required String inputSource,
+    this.inspectionElapsedMs = const Value.absent(),
+    this.startTrigger = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        scramble = Value(scramble),
@@ -348,6 +444,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
     Expression<int>? moveCount,
     Expression<DateTime>? createdAt,
     Expression<String>? inputSource,
+    Expression<int>? inspectionElapsedMs,
+    Expression<String>? startTrigger,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -357,6 +455,9 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
       if (moveCount != null) 'move_count': moveCount,
       if (createdAt != null) 'created_at': createdAt,
       if (inputSource != null) 'input_source': inputSource,
+      if (inspectionElapsedMs != null)
+        'inspection_elapsed_ms': inspectionElapsedMs,
+      if (startTrigger != null) 'start_trigger': startTrigger,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -368,6 +469,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
     Value<int>? moveCount,
     Value<DateTime>? createdAt,
     Value<String>? inputSource,
+    Value<int?>? inspectionElapsedMs,
+    Value<String?>? startTrigger,
     Value<int>? rowid,
   }) {
     return SolveEntriesCompanion(
@@ -377,6 +480,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
       moveCount: moveCount ?? this.moveCount,
       createdAt: createdAt ?? this.createdAt,
       inputSource: inputSource ?? this.inputSource,
+      inspectionElapsedMs: inspectionElapsedMs ?? this.inspectionElapsedMs,
+      startTrigger: startTrigger ?? this.startTrigger,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -402,6 +507,12 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
     if (inputSource.present) {
       map['input_source'] = Variable<String>(inputSource.value);
     }
+    if (inspectionElapsedMs.present) {
+      map['inspection_elapsed_ms'] = Variable<int>(inspectionElapsedMs.value);
+    }
+    if (startTrigger.present) {
+      map['start_trigger'] = Variable<String>(startTrigger.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -417,6 +528,8 @@ class SolveEntriesCompanion extends UpdateCompanion<SolveEntry> {
           ..write('moveCount: $moveCount, ')
           ..write('createdAt: $createdAt, ')
           ..write('inputSource: $inputSource, ')
+          ..write('inspectionElapsedMs: $inspectionElapsedMs, ')
+          ..write('startTrigger: $startTrigger, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -442,6 +555,8 @@ typedef $$SolveEntriesTableCreateCompanionBuilder =
       required int moveCount,
       required DateTime createdAt,
       required String inputSource,
+      Value<int?> inspectionElapsedMs,
+      Value<String?> startTrigger,
       Value<int> rowid,
     });
 typedef $$SolveEntriesTableUpdateCompanionBuilder =
@@ -452,6 +567,8 @@ typedef $$SolveEntriesTableUpdateCompanionBuilder =
       Value<int> moveCount,
       Value<DateTime> createdAt,
       Value<String> inputSource,
+      Value<int?> inspectionElapsedMs,
+      Value<String?> startTrigger,
       Value<int> rowid,
     });
 
@@ -491,6 +608,16 @@ class $$SolveEntriesTableFilterComposer
 
   ColumnFilters<String> get inputSource => $composableBuilder(
     column: $table.inputSource,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get inspectionElapsedMs => $composableBuilder(
+    column: $table.inspectionElapsedMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get startTrigger => $composableBuilder(
+    column: $table.startTrigger,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -533,6 +660,16 @@ class $$SolveEntriesTableOrderingComposer
     column: $table.inputSource,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get inspectionElapsedMs => $composableBuilder(
+    column: $table.inspectionElapsedMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startTrigger => $composableBuilder(
+    column: $table.startTrigger,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SolveEntriesTableAnnotationComposer
@@ -563,6 +700,16 @@ class $$SolveEntriesTableAnnotationComposer
     column: $table.inputSource,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get inspectionElapsedMs => $composableBuilder(
+    column: $table.inspectionElapsedMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get startTrigger => $composableBuilder(
+    column: $table.startTrigger,
+    builder: (column) => column,
+  );
 }
 
 class $$SolveEntriesTableTableManager
@@ -588,13 +735,12 @@ class $$SolveEntriesTableTableManager
         TableManagerState(
           db: db,
           table: table,
-          createFilteringComposer:
-              () => $$SolveEntriesTableFilterComposer($db: db, $table: table),
-          createOrderingComposer:
-              () => $$SolveEntriesTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer:
-              () =>
-                  $$SolveEntriesTableAnnotationComposer($db: db, $table: table),
+          createFilteringComposer: () =>
+              $$SolveEntriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SolveEntriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SolveEntriesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
@@ -603,6 +749,8 @@ class $$SolveEntriesTableTableManager
                 Value<int> moveCount = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<String> inputSource = const Value.absent(),
+                Value<int?> inspectionElapsedMs = const Value.absent(),
+                Value<String?> startTrigger = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SolveEntriesCompanion(
                 id: id,
@@ -611,6 +759,8 @@ class $$SolveEntriesTableTableManager
                 moveCount: moveCount,
                 createdAt: createdAt,
                 inputSource: inputSource,
+                inspectionElapsedMs: inspectionElapsedMs,
+                startTrigger: startTrigger,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -621,6 +771,8 @@ class $$SolveEntriesTableTableManager
                 required int moveCount,
                 required DateTime createdAt,
                 required String inputSource,
+                Value<int?> inspectionElapsedMs = const Value.absent(),
+                Value<String?> startTrigger = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SolveEntriesCompanion.insert(
                 id: id,
@@ -629,18 +781,13 @@ class $$SolveEntriesTableTableManager
                 moveCount: moveCount,
                 createdAt: createdAt,
                 inputSource: inputSource,
+                inspectionElapsedMs: inspectionElapsedMs,
+                startTrigger: startTrigger,
                 rowid: rowid,
               ),
-          withReferenceMapper:
-              (p0) =>
-                  p0
-                      .map(
-                        (e) => (
-                          e.readTable(table),
-                          BaseReferences(db, table, e),
-                        ),
-                      )
-                      .toList(),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
           prefetchHooksCallback: null,
         ),
       );

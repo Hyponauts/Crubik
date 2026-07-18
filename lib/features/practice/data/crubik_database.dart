@@ -18,6 +18,10 @@ class SolveEntries extends Table {
 
   TextColumn get inputSource => text()();
 
+  IntColumn get inspectionElapsedMs => integer().nullable()();
+
+  TextColumn get startTrigger => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -37,7 +41,20 @@ final class CrubikDatabase extends _$CrubikDatabase {
       );
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await migrator.addColumn(
+          solveEntries,
+          solveEntries.inspectionElapsedMs,
+        );
+        await migrator.addColumn(solveEntries, solveEntries.startTrigger);
+      }
+    },
+  );
 }
 
 final class DriftSolveHistoryRepository implements SolveHistoryRepository {
@@ -59,6 +76,12 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
             moveCount: row.moveCount,
             createdAt: row.createdAt.toUtc(),
             inputSource: row.inputSource,
+            inspectionElapsed: row.inspectionElapsedMs == null
+                ? null
+                : Duration(milliseconds: row.inspectionElapsedMs!),
+            startTrigger: SolveStartTrigger.fromSerializedValue(
+              row.startTrigger,
+            ),
           ),
         )
         .toList(growable: false);
@@ -80,6 +103,10 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
                   moveCount: solve.moveCount,
                   createdAt: solve.createdAt,
                   inputSource: solve.inputSource,
+                  inspectionElapsedMs: Value(
+                    solve.inspectionElapsed?.inMilliseconds,
+                  ),
+                  startTrigger: Value(solve.startTrigger?.serializedValue),
                 ),
               )
               .toList(growable: false),

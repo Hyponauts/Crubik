@@ -44,8 +44,9 @@ class _PracticePageState extends State<PracticePage> {
               },
               child: Focus(
                 autofocus: true,
-                child:
-                    isDesktop ? _buildDesktop(context) : _buildMobile(context),
+                child: isDesktop
+                    ? _buildDesktop(context)
+                    : _buildMobile(context),
               ),
             );
           },
@@ -62,19 +63,18 @@ class _PracticePageState extends State<PracticePage> {
           children: [
             _DesktopNavigation(
               selectedIndex: _selectedIndex,
-              onDestinationSelected:
-                  (index) => setState(() => _selectedIndex = index),
+              onDestinationSelected: (index) =>
+                  setState(() => _selectedIndex = index),
             ),
             const VerticalDivider(width: 1),
             Expanded(
-              child:
-                  _selectedIndex == 0
-                      ? _DesktopPractice(
-                        practice: widget.practiceController,
-                        connection: widget.connectionController,
-                        onConnectPressed: _showConnectionDialog,
-                      )
-                      : _SessionsView(practice: widget.practiceController),
+              child: _selectedIndex == 0
+                  ? _DesktopPractice(
+                      practice: widget.practiceController,
+                      connection: widget.connectionController,
+                      onConnectPressed: _showConnectionDialog,
+                    )
+                  : _SessionsView(practice: widget.practiceController),
             ),
           ],
         ),
@@ -103,16 +103,12 @@ class _PracticePageState extends State<PracticePage> {
           ),
         ],
       ),
-      body:
-          _selectedIndex == 0
-              ? _MobilePractice(
-                practice: widget.practiceController,
-                connection: widget.connectionController,
-              )
-              : _SessionsView(
-                practice: widget.practiceController,
-                mobile: true,
-              ),
+      body: _selectedIndex == 0
+          ? _MobilePractice(
+              practice: widget.practiceController,
+              connection: widget.connectionController,
+            )
+          : _SessionsView(practice: widget.practiceController, mobile: true),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
@@ -135,9 +131,8 @@ class _PracticePageState extends State<PracticePage> {
   Future<void> _showConnectionDialog() async {
     await showDialog<void>(
       context: context,
-      builder:
-          (context) =>
-              _ConnectionDialog(controller: widget.connectionController),
+      builder: (context) =>
+          _ConnectionDialog(controller: widget.connectionController),
     );
   }
 }
@@ -298,18 +293,17 @@ class _MobilePractice extends StatelessWidget {
         final landscape = constraints.maxWidth > constraints.maxHeight;
         return Padding(
           padding: EdgeInsets.all(landscape ? 8 : 12),
-          child:
-              landscape
-                  ? _MobilePracticeLandscape(
-                    practice: practice,
-                    connection: connection,
-                    onManualMoves: () => _showManualMoves(context),
-                  )
-                  : _MobilePracticePortrait(
-                    practice: practice,
-                    connection: connection,
-                    onManualMoves: () => _showManualMoves(context),
-                  ),
+          child: landscape
+              ? _MobilePracticeLandscape(
+                  practice: practice,
+                  connection: connection,
+                  onManualMoves: () => _showManualMoves(context),
+                )
+              : _MobilePracticePortrait(
+                  practice: practice,
+                  connection: connection,
+                  onManualMoves: () => _showManualMoves(context),
+                ),
         );
       },
     );
@@ -403,8 +397,9 @@ class _CompactCubePanel extends StatelessWidget {
         builder: (context, constraints) {
           final maximumDimension = constraints.maxWidth;
           final availableDimension = constraints.maxHeight - 48;
-          final dimension =
-              availableDimension.clamp(96.0, maximumDimension).toDouble();
+          final dimension = availableDimension
+              .clamp(96.0, maximumDimension)
+              .toDouble();
           return Column(
             children: [
               Row(
@@ -416,20 +411,26 @@ class _CompactCubePanel extends StatelessWidget {
                     height: 7,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color:
-                          connection.isConnected
-                              ? CrubikColors.lime
-                              : CrubikColors.muted,
+                      color: connection.isConnected
+                          ? CrubikColors.lime
+                          : practice.smartCubeWorkflowActive
+                          ? CrubikColors.warning
+                          : CrubikColors.muted,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    connection.isConnected ? 'LINKED' : 'MANUAL',
+                    connection.isConnected
+                        ? 'LINKED'
+                        : practice.smartCubeWorkflowActive
+                        ? 'RECONNECT'
+                        : 'MANUAL',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color:
-                          connection.isConnected
-                              ? CrubikColors.lime
-                              : CrubikColors.muted,
+                      color: connection.isConnected
+                          ? CrubikColors.lime
+                          : practice.smartCubeWorkflowActive
+                          ? CrubikColors.warning
+                          : CrubikColors.muted,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.6,
                     ),
@@ -473,14 +474,16 @@ class _CompactScramblePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canReset = practice.timerPhase != SolveTimerPhase.running;
+    final canChangeScramble =
+        practice.phase != PracticePhase.inspectionDelay &&
+        practice.phase != PracticePhase.inspection &&
+        practice.phase != PracticePhase.solving;
     return _Panel(
       padding: EdgeInsets.all(landscape ? 9 : 12),
       child: Column(
-        mainAxisAlignment:
-            landscape
-                ? MainAxisAlignment.spaceBetween
-                : MainAxisAlignment.start,
+        mainAxisAlignment: landscape
+            ? MainAxisAlignment.spaceBetween
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionLabel('PRACTICE SCRAMBLE'),
@@ -500,7 +503,7 @@ class _CompactScramblePanel extends StatelessWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   key: const Key('new-scramble'),
-                  onPressed: canReset ? practice.newScramble : null,
+                  onPressed: canChangeScramble ? practice.newScramble : null,
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -512,7 +515,10 @@ class _CompactScramblePanel extends StatelessWidget {
               const SizedBox(width: 6),
               IconButton.outlined(
                 key: const Key('reset-scramble'),
-                onPressed: canReset ? practice.resetCubeToScramble : null,
+                onPressed:
+                    canChangeScramble && !practice.smartCubeWorkflowActive
+                    ? practice.resetCubeToScramble
+                    : null,
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.replay_rounded, size: 18),
                 tooltip: 'Reset visual cube to scramble',
@@ -520,7 +526,9 @@ class _CompactScramblePanel extends StatelessWidget {
               const SizedBox(width: 6),
               OutlinedButton.icon(
                 key: const Key('manual-moves-button'),
-                onPressed: onManualMoves,
+                onPressed: practice.smartCubeWorkflowActive
+                    ? null
+                    : onManualMoves,
                 style: OutlinedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(
@@ -539,13 +547,24 @@ class _CompactScramblePanel extends StatelessWidget {
   }
 
   Widget _scrambleText(BuildContext context) {
-    return SelectableText(
-      practice.scramble.toString(),
-      key: const Key('scramble-text'),
-      maxLines: landscape ? 2 : 3,
-      style: Theme.of(
-        context,
-      ).textTheme.titleSmall?.copyWith(fontFamily: 'monospace', height: 1.25),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ScrambleProgressText(
+          practice: practice,
+          compact: true,
+          dense: landscape,
+        ),
+        if (practice.smartCubeWorkflowActive) ...[
+          SizedBox(height: landscape ? 1 : 5),
+          _ScrambleGuidance(
+            practice: practice,
+            compact: true,
+            dense: landscape,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -558,82 +577,75 @@ class _CompactTimerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final running = practice.timerPhase == SolveTimerPhase.running;
-    final phaseLabel = switch (practice.timerPhase) {
-      SolveTimerPhase.ready => 'READY',
-      SolveTimerPhase.running => 'SOLVING',
-      SolveTimerPhase.stopped => 'LAST SOLVE',
-    };
+    final phaseLabel = _phaseLabel(practice);
+    final phaseColor = _phaseColor(practice);
+    final aborting = _connectedAttemptActive(practice);
     final time = FittedBox(
       fit: BoxFit.scaleDown,
       child: Text(
-        _formatDuration(practice.elapsed),
+        _formatDuration(_displayedTime(practice)),
         key: const Key('timer-display'),
+        semanticsLabel:
+            '$phaseLabel ${_formatDuration(_displayedTime(practice))}',
         style: Theme.of(context).textTheme.displayLarge?.copyWith(
           fontSize: landscape ? 42 : 50,
           fontFeatures: const [FontFeature.tabularFigures()],
-          color: running ? CrubikColors.lime : CrubikColors.text,
+          color: phaseColor,
         ),
       ),
     );
     final button = FilledButton.icon(
       key: const Key('timer-toggle'),
-      onPressed: practice.toggleTimer,
+      onPressed: practice.primaryActionEnabled ? practice.toggleTimer : null,
       style: FilledButton.styleFrom(
-        backgroundColor: running ? CrubikColors.danger : CrubikColors.lime,
+        backgroundColor: aborting ? CrubikColors.danger : CrubikColors.lime,
         foregroundColor: CrubikColors.background,
         padding: EdgeInsets.symmetric(vertical: landscape ? 10 : 12),
       ),
-      icon: Icon(running ? Icons.stop_rounded : Icons.play_arrow_rounded),
-      label: Text(running ? 'STOP & SAVE' : 'START SOLVE'),
+      icon: Icon(_primaryActionIcon(practice)),
+      label: Text(_primaryActionLabel(practice)),
     );
 
     return _Panel(
       padding: EdgeInsets.all(landscape ? 9 : 12),
-      child:
-          landscape
-              ? Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          phaseLabel,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.labelSmall?.copyWith(
-                            color:
-                                running
-                                    ? CrubikColors.lime
-                                    : CrubikColors.muted,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2,
-                          ),
+      child: landscape
+          ? Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        phaseLabel,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: phaseColor,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
                         ),
-                        time,
-                      ],
-                    ),
+                      ),
+                      time,
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(child: button),
-                ],
-              )
-              : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    phaseLabel,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: running ? CrubikColors.lime : CrubikColors.muted,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: button),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  phaseLabel,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: phaseColor,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
                   ),
-                  time,
-                  SizedBox(width: double.infinity, child: button),
-                ],
-              ),
+                ),
+                time,
+                SizedBox(width: double.infinity, child: button),
+              ],
+            ),
     );
   }
 }
@@ -741,10 +753,9 @@ class _ConnectionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isConnected = connection.isConnected;
-    final label =
-        isConnected
-            ? (compact ? 'LIVE' : connection.connectedCube!.name)
-            : (compact ? 'CONNECT' : 'Connect cube');
+    final label = isConnected
+        ? (compact ? 'LIVE' : connection.connectedCube!.name)
+        : (compact ? 'CONNECT' : 'Connect cube');
     return OutlinedButton.icon(
       key: const Key('connect-cube-button'),
       onPressed: onPressed,
@@ -753,8 +764,9 @@ class _ConnectionButton extends StatelessWidget {
         side: BorderSide(
           color: isConnected ? CrubikColors.lime : CrubikColors.border,
         ),
-        backgroundColor:
-            isConnected ? const Color(0x12B7F34A) : CrubikColors.surface,
+        backgroundColor: isConnected
+            ? const Color(0x12B7F34A)
+            : CrubikColors.surface,
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 10 : 14,
           vertical: 11,
@@ -833,20 +845,26 @@ class _CubeStage extends StatelessWidget {
               height: 7,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color:
-                    connection.isConnected
-                        ? CrubikColors.lime
-                        : CrubikColors.muted,
+                color: connection.isConnected
+                    ? CrubikColors.lime
+                    : practice.smartCubeWorkflowActive
+                    ? CrubikColors.warning
+                    : CrubikColors.muted,
               ),
             ),
             const SizedBox(width: 7),
             Text(
-              connection.isConnected ? 'LINKED' : 'MANUAL',
+              connection.isConnected
+                  ? 'LINKED'
+                  : practice.smartCubeWorkflowActive
+                  ? 'RECONNECT'
+                  : 'MANUAL',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color:
-                    connection.isConnected
-                        ? CrubikColors.lime
-                        : CrubikColors.muted,
+                color: connection.isConnected
+                    ? CrubikColors.lime
+                    : practice.smartCubeWorkflowActive
+                    ? CrubikColors.warning
+                    : CrubikColors.muted,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.8,
               ),
@@ -885,12 +903,9 @@ class _TimerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final running = practice.timerPhase == SolveTimerPhase.running;
-    final phaseLabel = switch (practice.timerPhase) {
-      SolveTimerPhase.ready => 'READY',
-      SolveTimerPhase.running => 'SOLVING',
-      SolveTimerPhase.stopped => 'LAST SOLVE',
-    };
+    final phaseLabel = _phaseLabel(practice);
+    final phaseColor = _phaseColor(practice);
+    final aborting = _connectedAttemptActive(practice);
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 24),
       child: Column(
@@ -899,7 +914,7 @@ class _TimerPanel extends StatelessWidget {
           Text(
             phaseLabel,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: running ? CrubikColors.lime : CrubikColors.muted,
+              color: phaseColor,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.8,
             ),
@@ -908,12 +923,14 @@ class _TimerPanel extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              _formatDuration(practice.elapsed),
+              _formatDuration(_displayedTime(practice)),
               key: const Key('timer-display'),
+              semanticsLabel:
+                  '$phaseLabel ${_formatDuration(_displayedTime(practice))}',
               style: Theme.of(context).textTheme.displayLarge?.copyWith(
                 fontSize: compact ? 62 : 78,
                 fontFeatures: const [FontFeature.tabularFigures()],
-                color: running ? CrubikColors.lime : CrubikColors.text,
+                color: phaseColor,
               ),
             ),
           ),
@@ -922,25 +939,26 @@ class _TimerPanel extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.icon(
               key: const Key('timer-toggle'),
-              onPressed: practice.toggleTimer,
+              onPressed: practice.primaryActionEnabled
+                  ? practice.toggleTimer
+                  : null,
               style: FilledButton.styleFrom(
-                backgroundColor:
-                    running ? CrubikColors.danger : CrubikColors.lime,
+                backgroundColor: aborting
+                    ? CrubikColors.danger
+                    : CrubikColors.lime,
                 foregroundColor: CrubikColors.background,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              icon: Icon(
-                running ? Icons.stop_rounded : Icons.play_arrow_rounded,
-              ),
-              label: Text(running ? 'STOP & SAVE' : 'START SOLVE'),
+              icon: Icon(_primaryActionIcon(practice)),
+              label: Text(_primaryActionLabel(practice)),
             ),
           ),
           const SizedBox(height: 9),
           Text(
-            'Spacebar also starts and stops',
+            _shortcutHint(practice),
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
@@ -987,15 +1005,11 @@ class _ScramblePanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          SelectableText(
-            practice.scramble.toString(),
-            key: const Key('scramble-text'),
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontFamily: 'monospace',
-              height: 1.45,
-              letterSpacing: 0.4,
-            ),
-          ),
+          _ScrambleProgressText(practice: practice),
+          if (practice.smartCubeWorkflowActive) ...[
+            const SizedBox(height: 14),
+            _ScrambleGuidance(practice: practice),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -1003,9 +1017,11 @@ class _ScramblePanel extends StatelessWidget {
                 child: OutlinedButton.icon(
                   key: const Key('new-scramble'),
                   onPressed:
-                      practice.timerPhase == SolveTimerPhase.running
-                          ? null
-                          : practice.newScramble,
+                      practice.phase == PracticePhase.inspectionDelay ||
+                          practice.phase == PracticePhase.inspection ||
+                          practice.phase == PracticePhase.solving
+                      ? null
+                      : practice.newScramble,
                   icon: const Icon(Icons.shuffle_rounded, size: 18),
                   label: const Text('New scramble'),
                 ),
@@ -1013,9 +1029,12 @@ class _ScramblePanel extends StatelessWidget {
               const SizedBox(width: 10),
               IconButton.outlined(
                 onPressed:
-                    practice.timerPhase == SolveTimerPhase.running
-                        ? null
-                        : practice.resetCubeToScramble,
+                    practice.phase == PracticePhase.inspectionDelay ||
+                        practice.phase == PracticePhase.inspection ||
+                        practice.phase == PracticePhase.solving ||
+                        practice.smartCubeWorkflowActive
+                    ? null
+                    : practice.resetCubeToScramble,
                 icon: const Icon(Icons.replay_rounded),
                 tooltip: 'Reset visual cube to scramble',
               ),
@@ -1056,7 +1075,9 @@ class _MoveInputPanel extends StatelessWidget {
           const _SectionLabel('MANUAL MOVE INPUT'),
           const SizedBox(height: 7),
           Text(
-            'Use these controls to preview live cube movement without hardware.',
+            practice.smartCubeWorkflowActive
+                ? 'Manual moves are disabled while the physical cube is authoritative.'
+                : 'Use these controls to preview live cube movement without hardware.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
@@ -1064,12 +1085,11 @@ class _MoveInputPanel extends StatelessWidget {
           const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
-              final columns =
-                  constraints.maxWidth > 580
-                      ? 12
-                      : constraints.maxWidth < 300
-                      ? 3
-                      : 6;
+              final columns = constraints.maxWidth > 580
+                  ? 12
+                  : constraints.maxWidth < 300
+                  ? 3
+                  : 6;
               final spacing = 8.0;
               final buttonWidth =
                   (constraints.maxWidth - spacing * (columns - 1)) / columns;
@@ -1082,8 +1102,10 @@ class _MoveInputPanel extends StatelessWidget {
                       width: buttonWidth,
                       child: OutlinedButton(
                         key: Key('cube-move-$notation'),
-                        onPressed:
-                            () => practice.applyMove(CubeMove.parse(notation)),
+                        onPressed: practice.smartCubeWorkflowActive
+                            ? null
+                            : () =>
+                                  practice.applyMove(CubeMove.parse(notation)),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           foregroundColor: CrubikColors.text,
@@ -1268,21 +1290,19 @@ class _RecentSolves extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final solves = practice.solves;
-    final list =
-        solves.isEmpty
-            ? const _EmptySolves()
-            : ListView.separated(
-              key: const Key('recent-solves-list'),
-              padding: EdgeInsets.zero,
-              itemCount: solves.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder:
-                  (context, index) => _SolveRow(
-                    position: practice.solves.length - index,
-                    solve: solves[index],
-                    onDelete: () => practice.deleteSolve(solves[index].id),
-                  ),
-            );
+    final list = solves.isEmpty
+        ? const _EmptySolves()
+        : ListView.separated(
+            key: const Key('recent-solves-list'),
+            padding: EdgeInsets.zero,
+            itemCount: solves.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) => _SolveRow(
+              position: practice.solves.length - index,
+              solve: solves[index],
+              onDelete: () => practice.deleteSolve(solves[index].id),
+            ),
+          );
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1440,8 +1460,9 @@ class _SessionsView extends StatelessWidget {
                   ),
                   OutlinedButton.icon(
                     key: const Key('export-solves-button'),
-                    onPressed:
-                        practice.hasSolves ? () => _copyExport(context) : null,
+                    onPressed: practice.hasSolves
+                        ? () => _copyExport(context)
+                        : null,
                     icon: const Icon(Icons.copy_all_outlined, size: 18),
                     label: const Text('Export'),
                   ),
@@ -1473,8 +1494,9 @@ class _SessionsView extends StatelessWidget {
               ),
               OutlinedButton.icon(
                 key: const Key('export-solves-button'),
-                onPressed:
-                    practice.hasSolves ? () => _copyExport(context) : null,
+                onPressed: practice.hasSolves
+                    ? () => _copyExport(context)
+                    : null,
                 icon: const Icon(Icons.copy_all_outlined, size: 18),
                 label: const Text('Copy export'),
               ),
@@ -1566,10 +1588,9 @@ class _ConnectionDialog extends StatelessWidget {
                       children: [
                         Expanded(
                           child: FilledButton.icon(
-                            onPressed:
-                                scanning
-                                    ? controller.stopScan
-                                    : controller.startScan,
+                            onPressed: scanning
+                                ? controller.stopScan
+                                : controller.startScan,
                             icon: Icon(
                               scanning ? Icons.stop : Icons.bluetooth_searching,
                             ),
@@ -1621,10 +1642,9 @@ class _ConnectionDialog extends StatelessWidget {
                     ],
                     const SizedBox(height: 16),
                     Flexible(
-                      child:
-                          controller.discoveredDevices.isEmpty
-                              ? _EmptyDeviceSearch(scanning: scanning)
-                              : _DiscoveredDeviceList(controller: controller),
+                      child: controller.discoveredDevices.isEmpty
+                          ? _EmptyDeviceSearch(scanning: scanning)
+                          : _DiscoveredDeviceList(controller: controller),
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -1653,12 +1673,11 @@ class _ConnectedCubeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final device = controller.connectedCube!;
     final batteryLevel = controller.batteryLevel;
-    final connectionStatus =
-        device.isDemo
-            ? 'Demo movement source'
-            : batteryLevel == null
-            ? 'BLE link active'
-            : 'BLE link active · $batteryLevel% battery';
+    final connectionStatus = device.isDemo
+        ? 'Demo movement source'
+        : batteryLevel == null
+        ? 'BLE link active'
+        : 'BLE link active · $batteryLevel% battery';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1680,10 +1699,9 @@ class _ConnectedCubeCard extends StatelessWidget {
                 ),
                 Text(
                   connectionStatus,
-                  semanticsLabel:
-                      batteryLevel == null
-                          ? connectionStatus
-                          : 'BLE link active, battery $batteryLevel percent',
+                  semanticsLabel: batteryLevel == null
+                      ? connectionStatus
+                      : 'BLE link active, battery $batteryLevel percent',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -1747,8 +1765,7 @@ class _DiscoveredDeviceList extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubes = controller.discoveredCubes;
     final otherDevices = controller.otherDiscoveredDevices;
-    final connectionBusy =
-        controller.status == CubeConnectionStatus.connecting;
+    final connectionBusy = controller.status == CubeConnectionStatus.connecting;
 
     return ListView(
       key: const Key('discovered-device-list'),
@@ -1765,15 +1782,14 @@ class _DiscoveredDeviceList extends StatelessWidget {
               device: cubes[index],
               connecting: controller.connectingDeviceId == cubes[index].id,
               connectionBusy: connectionBusy,
-              onConnect:
-                  cubes[index].canConnect
-                      ? () async {
-                        await controller.connect(cubes[index]);
-                        if (context.mounted && controller.isConnected) {
-                          Navigator.of(context).pop();
-                        }
+              onConnect: cubes[index].canConnect
+                  ? () async {
+                      await controller.connect(cubes[index]);
+                      if (context.mounted && controller.isConnected) {
+                        Navigator.of(context).pop();
                       }
-                      : null,
+                    }
+                  : null,
             ),
           ],
         if (otherDevices.isNotEmpty) ...[
@@ -1973,6 +1989,377 @@ class _SectionLabel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ScrambleProgressText extends StatelessWidget {
+  const _ScrambleProgressText({
+    required this.practice,
+    this.compact = false,
+    this.dense = false,
+  });
+
+  final PracticeController practice;
+  final bool compact;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final completed = practice.completedScrambleMoveCount;
+    final partialTurns = practice.partialScrambleMoveTurnCount;
+    final correction = practice.guidanceIsCorrection;
+    final showNext = practice.phase == PracticePhase.scrambling && !correction;
+    final moves = practice.scramble.moves;
+
+    return Semantics(
+      label:
+          'Scramble. $completed of ${moves.length} moves completed. '
+          '${partialTurns > 0 ? 'The next move is partially completed. ' : ''}'
+          '${practice.scramble}',
+      child: Wrap(
+        key: const Key('scramble-text'),
+        spacing: dense
+            ? 2
+            : compact
+            ? 3
+            : 5,
+        runSpacing: dense
+            ? 2
+            : compact
+            ? 3
+            : 5,
+        children: [
+          for (var index = 0; index < moves.length; index++)
+            _ScrambleMoveToken(
+              move: moves[index],
+              index: index,
+              completed: index < completed,
+              next: showNext && index == completed,
+              partialTurns: index == completed ? partialTurns : 0,
+              compact: compact,
+              dense: dense,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScrambleMoveToken extends StatelessWidget {
+  const _ScrambleMoveToken({
+    required this.move,
+    required this.index,
+    required this.completed,
+    required this.next,
+    required this.partialTurns,
+    required this.compact,
+    required this.dense,
+  });
+
+  final CubeMove move;
+  final int index;
+  final bool completed;
+  final bool next;
+  final int partialTurns;
+  final bool compact;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final partiallyCompleted = partialTurns > 0 && !completed;
+    final partialFraction = partiallyCompleted
+        ? partialTurns / move.turns
+        : 0.0;
+    final color = completed
+        ? CrubikColors.lime
+        : partiallyCompleted
+        ? CrubikColors.lime
+        : next
+        ? CrubikColors.cyan
+        : CrubikColors.text;
+    return Semantics(
+      label:
+          '${move.notation}, '
+          '${completed
+              ? 'completed'
+              : partiallyCompleted
+              ? 'partially completed, $partialTurns of ${move.turns} turns'
+              : next
+              ? 'next move'
+              : 'not completed'}',
+      child: Container(
+        key: next
+            ? const Key('next-scramble-move')
+            : Key('scramble-step-$index'),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense
+              ? 2
+              : compact
+              ? 3
+              : 5,
+          vertical: dense
+              ? 1
+              : compact
+              ? 2
+              : 3,
+        ),
+        decoration: BoxDecoration(
+          color: completed ? CrubikColors.lime.withValues(alpha: 0.14) : null,
+          gradient: partiallyCompleted
+              ? LinearGradient(
+                  colors: [
+                    CrubikColors.lime.withValues(alpha: 0.24),
+                    CrubikColors.lime.withValues(alpha: 0.24),
+                    CrubikColors.cyan.withValues(alpha: 0.10),
+                    CrubikColors.cyan.withValues(alpha: 0.10),
+                  ],
+                  stops: [0, partialFraction, partialFraction, 1],
+                )
+              : next
+              ? LinearGradient(
+                  colors: [
+                    CrubikColors.cyan.withValues(alpha: 0.10),
+                    CrubikColors.cyan.withValues(alpha: 0.10),
+                  ],
+                )
+              : null,
+          borderRadius: BorderRadius.circular(5),
+          border: partiallyCompleted
+              ? Border.all(color: CrubikColors.lime.withValues(alpha: 0.8))
+              : next
+              ? Border.all(color: CrubikColors.cyan.withValues(alpha: 0.7))
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              move.notation,
+              style: TextStyle(
+                color: color,
+                fontFamily: 'monospace',
+                fontSize: dense
+                    ? 11
+                    : compact
+                    ? 13
+                    : 18,
+                fontWeight: completed || next
+                    ? FontWeight.w800
+                    : FontWeight.w600,
+                decoration: completed ? TextDecoration.lineThrough : null,
+                decorationColor: CrubikColors.lime,
+                decorationThickness: 1.5,
+              ),
+            ),
+            if (partiallyCompleted) ...[
+              SizedBox(width: dense ? 1 : 3),
+              Text(
+                '$partialTurns/${move.turns}',
+                key: const Key('partial-scramble-progress'),
+                style: TextStyle(
+                  color: CrubikColors.lime,
+                  fontFamily: 'monospace',
+                  fontSize: dense
+                      ? 7
+                      : compact
+                      ? 9
+                      : 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScrambleGuidance extends StatelessWidget {
+  const _ScrambleGuidance({
+    required this.practice,
+    this.compact = false,
+    this.dense = false,
+  });
+
+  final PracticeController practice;
+  final bool compact;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final nextMove = practice.nextScrambleMove;
+    final partialTurns = practice.partialScrambleMoveTurnCount;
+    final correction = practice.guidanceIsCorrection && nextMove != null;
+    final color = correction ? CrubikColors.warning : _phaseColor(practice);
+    final status = switch (practice.phase) {
+      PracticePhase.awaitingCubeState => 'Waiting for the physical cube state',
+      PracticePhase.needsSolvedCube =>
+        'Solve the physical cube before scrambling',
+      PracticePhase.scrambling when correction => 'Wrong turn detected',
+      PracticePhase.scrambling when partialTurns > 0 =>
+        '${practice.completedScrambleMoveCount} complete · current step '
+            '$partialTurns of ${practice.scramble.moves[practice.completedScrambleMoveCount].turns} turns',
+      PracticePhase.scrambling =>
+        '${practice.completedScrambleMoveCount} of '
+            '${practice.scramble.moves.length} moves complete',
+      PracticePhase.inspectionDelay =>
+        'Scramble verified · inspection starts in 3 seconds',
+      PracticePhase.inspection => 'Scramble verified · inspection started',
+      PracticePhase.solving => 'Scramble verified · solve in progress',
+      PracticePhase.stopped => 'Solve complete · choose a new scramble',
+      PracticePhase.manualReady => 'Ready',
+    };
+
+    return Semantics(
+      liveRegion: true,
+      label: correction ? '$status. Correct ${nextMove.notation}.' : status,
+      child: Container(
+        key: const Key('scramble-guidance'),
+        width: double.infinity,
+        padding: dense
+            ? const EdgeInsets.symmetric(horizontal: 4, vertical: 2)
+            : EdgeInsets.all(compact ? 7 : 11),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            if (!dense) ...[
+              Icon(
+                correction
+                    ? Icons.warning_amber_rounded
+                    : practice.phase == PracticePhase.needsSolvedCube
+                    ? Icons.restart_alt_rounded
+                    : Icons.route_rounded,
+                size: compact ? 15 : 18,
+                color: color,
+              ),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: Text(
+                status,
+                key: const Key('scramble-guidance-status'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: dense ? 10 : null,
+                  height: dense ? 1 : null,
+                ),
+              ),
+            ),
+            if (correction) ...[
+              const SizedBox(width: 6),
+              Container(
+                key: const Key('next-scramble-move'),
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 6 : 9,
+                  vertical: dense
+                      ? 1
+                      : compact
+                      ? 3
+                      : 5,
+                ),
+                decoration: BoxDecoration(
+                  color: CrubikColors.warning.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  'CORRECT ${nextMove.notation}',
+                  style: TextStyle(
+                    color: CrubikColors.text,
+                    fontFamily: 'monospace',
+                    fontSize: dense
+                        ? 10
+                        : compact
+                        ? 11
+                        : 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _phaseLabel(PracticeController practice) => switch (practice.phase) {
+  PracticePhase.manualReady => 'READY',
+  PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
+  PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
+  PracticePhase.scrambling => 'SCRAMBLING',
+  PracticePhase.inspectionDelay => 'GET READY',
+  PracticePhase.inspection => 'INSPECTION',
+  PracticePhase.solving => 'SOLVING',
+  PracticePhase.stopped =>
+    practice.smartCubeWorkflowActive ? 'SOLVE COMPLETE' : 'LAST SOLVE',
+};
+
+Color _phaseColor(PracticeController practice) => switch (practice.phase) {
+  PracticePhase.needsSolvedCube => CrubikColors.warning,
+  PracticePhase.scrambling ||
+  PracticePhase.inspectionDelay ||
+  PracticePhase.inspection => CrubikColors.cyan,
+  PracticePhase.solving => CrubikColors.lime,
+  PracticePhase.manualReady ||
+  PracticePhase.awaitingCubeState ||
+  PracticePhase.stopped => CrubikColors.muted,
+};
+
+Duration _displayedTime(PracticeController practice) =>
+    switch (practice.phase) {
+      PracticePhase.inspectionDelay => practice.preInspectionRemaining,
+      PracticePhase.inspection => practice.inspectionRemaining,
+      _ => practice.elapsed,
+    };
+
+bool _connectedAttemptActive(PracticeController practice) =>
+    practice.smartCubeWorkflowActive &&
+    (practice.phase == PracticePhase.inspection ||
+        practice.phase == PracticePhase.solving);
+
+String _primaryActionLabel(PracticeController practice) {
+  if (practice.smartCubeWorkflowActive) {
+    return switch (practice.phase) {
+      PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
+      PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
+      PracticePhase.scrambling => 'FOLLOW SCRAMBLE',
+      PracticePhase.inspectionDelay => 'GET READY',
+      PracticePhase.inspection || PracticePhase.solving => 'ABORT',
+      PracticePhase.stopped => 'SOLVE COMPLETE',
+      PracticePhase.manualReady => 'START SOLVE',
+    };
+  }
+  return practice.phase == PracticePhase.solving
+      ? 'STOP & SAVE'
+      : 'START SOLVE';
+}
+
+IconData _primaryActionIcon(PracticeController practice) {
+  if (_connectedAttemptActive(practice)) return Icons.close_rounded;
+  if (!practice.smartCubeWorkflowActive &&
+      practice.phase == PracticePhase.solving) {
+    return Icons.stop_rounded;
+  }
+  if (practice.smartCubeWorkflowActive) return Icons.sync_rounded;
+  return Icons.play_arrow_rounded;
+}
+
+String _shortcutHint(PracticeController practice) {
+  if (!practice.smartCubeWorkflowActive) {
+    return 'Spacebar also starts and stops';
+  }
+  if (_connectedAttemptActive(practice)) {
+    return 'Spacebar aborts this attempt';
+  }
+  return 'Timing starts automatically from the physical cube';
 }
 
 String _formatDuration(Duration duration) {
