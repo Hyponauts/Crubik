@@ -23,7 +23,7 @@ final class KnownMoyuRecognizer implements CubeDeviceRecognizer {
         protocolFamily: CubeProtocolFamily.moyuMhc,
         supportStatus: CubeSupportStatus.detectedUnsupported,
         supportMessage:
-            'MoYu MHC cubes such as the WeiLong V10 AI are detected, but their protocol is not supported yet.',
+            'Legacy MoYu MHC cubes are detected, but their protocol is not supported yet.',
       );
     }
     if (name.startsWith('MOYU')) {

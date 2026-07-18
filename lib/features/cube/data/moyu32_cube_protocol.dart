@@ -47,6 +47,8 @@ final class Moyu32PacketDecoder {
   int _cubeTimestampMs = 0;
   bool _awaitingResync = false;
 
+  Uint8List get requestInfoCommand => Uint8List(20)..[0] = 0xa1;
+
   Uint8List get requestStateCommand => Uint8List(20)..[0] = 0xa3;
 
   Uint8List get requestBatteryCommand => Uint8List(20)..[0] = 0xa4;

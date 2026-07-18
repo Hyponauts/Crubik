@@ -34,9 +34,10 @@ SOFTWARE.
 Crubik's MoYu32 implementation was written independently from wire-format
 facts documented by
 [`cs0x7f/cstimer`](https://github.com/cs0x7f/cstimer/blob/22a6aedde88fd59255ab6a8ae8c06180e7a55d64/src/js/hardware/moyu32cube.js)
-at commit `22a6aedde88fd59255ab6a8ae8c06180e7a55d64`. No csTimer source code is
-incorporated into Crubik. csTimer is distributed under the GNU General Public
-License v3.0; this entry records the protocol research source and its license.
+at commit `22a6aedde88fd59255ab6a8ae8c06180e7a55d64`, including the required
+Cube Info (`0xA1`) initialization request. No csTimer source code is incorporated
+into Crubik. csTimer is distributed under the GNU General Public License v3.0;
+this entry records the protocol research source and its license.
 
 ## Drift web worker
 

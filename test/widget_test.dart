@@ -5,10 +5,12 @@ import 'package:crubik/features/cube/application/cube_connection_controller.dart
 import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -347,7 +349,7 @@ void main() {
     );
   }
 
-  testWidgets('connection dialog explains unsupported MoYu MHC cubes', (
+  testWidgets('connection dialog explains unsupported legacy MoYu MHC cubes', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -377,19 +379,75 @@ void main() {
         supportStatus: CubeSupportStatus.detectedUnsupported,
         rssi: -35,
         supportMessage:
-            'MoYu MHC cubes such as the WeiLong V10 AI are detected, but their protocol is not supported yet.',
+            'Legacy MoYu MHC cubes are detected, but their protocol is not supported yet.',
       ),
     );
     await tester.pump();
 
     expect(find.text('MHC-AB12'), findsOneWidget);
     expect(find.text('MOYU · Detected, not supported yet'), findsOneWidget);
-    expect(find.textContaining('WeiLong V10 AI'), findsOneWidget);
+    expect(find.textContaining('Legacy MoYu MHC'), findsOneWidget);
     expect(find.text('Connect'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await connection.stopScan();
     await tester.pump();
+  });
+
+  testWidgets('failed connection offers redacted diagnostics export', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway(
+      connectError: const CubeConnectionFailure(
+        CubeConnectionFailureCode.handshakeFailed,
+        'Handshake timed out.',
+      ),
+    );
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+    String? copiedDiagnostics;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copiedDiagnostics =
+                (call.arguments as Map<Object?, Object?>)['text'] as String;
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan nearby'));
+    await tester.pump();
+    gateway.addDevice(_supportedMoyu32);
+    await tester.pump();
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('did not return a valid initial state'),
+      findsOneWidget,
+    );
+    expect(find.text('Copy diagnostics'), findsOneWidget);
+    await tester.tap(find.text('Copy diagnostics'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.takeException(), isNull);
+    expect(copiedDiagnostics, contains('protocol=moyu32'));
+    expect(copiedDiagnostics, isNot(contains(_supportedMoyu32.name)));
+    expect(find.text('Redacted Bluetooth diagnostics copied'), findsOneWidget);
   });
 }
 
@@ -428,6 +486,9 @@ const _supportedMoyu32 = CubeDeviceCandidate(
 );
 
 final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
+  _SilentCubeConnectionGateway({this.connectError});
+
+  final Object? connectError;
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _session = _SilentSmartCubeSession();
   bool _closed = false;
@@ -436,8 +497,15 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
 
   @override
-  Future<SmartCubeSession> connect(CubeDeviceCandidate device) async =>
-      _session;
+  Future<SmartCubeSession> connect(
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  }) async {
+    onDiagnostic?.call('adapter.selected', device.adapterId);
+    final error = connectError;
+    if (error != null) throw error;
+    return _session;
+  }
 
   @override
   Future<bool> hasPermissions() async => true;

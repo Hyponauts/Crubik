@@ -1,3 +1,4 @@
+import '../../domain/cube_connection_diagnostics.dart';
 import '../../domain/smart_cube_device.dart';
 import '../../domain/smart_cube_event.dart';
 import '../ble/ble_central.dart';
@@ -7,6 +8,7 @@ enum CubeConnectionFailureCode {
   bluetoothUnavailable,
   unsupportedProtocol,
   identityUnavailable,
+  handshakeFailed,
   packetMalformed,
   dataLoss,
   connectionFailed,
@@ -49,8 +51,9 @@ abstract interface class SmartCubeAdapter implements CubeDeviceRecognizer {
 
   Future<SmartCubeSession> connect(
     BleCentral central,
-    CubeDeviceCandidate device,
-  );
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  });
 }
 
 abstract interface class SmartCubeSession {
