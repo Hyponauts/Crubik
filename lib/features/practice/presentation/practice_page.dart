@@ -176,13 +176,6 @@ class _DesktopNavigation extends StatelessWidget {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(bottom: 20),
-            child: Tooltip(
-              message: 'Crubik works offline',
-              child: Icon(Icons.cloud_off_outlined, size: 20),
-            ),
-          ),
         ],
       ),
     );
@@ -210,8 +203,6 @@ class _DesktopPractice extends StatelessWidget {
           Row(
             children: [
               const Expanded(child: _Brand()),
-              const _OfflineBadge(),
-              const SizedBox(width: 10),
               _ConnectionButton(
                 connection: connection,
                 onPressed: onConnectPressed,
@@ -661,25 +652,11 @@ class _Brand extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!compact) ...[const _BrandMark(), const SizedBox(width: 12)],
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'CRUBIK',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(letterSpacing: 2.4),
-            ),
-            if (!compact)
-              Text(
-                'OFFLINE CUBE LAB',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: CrubikColors.muted,
-                  letterSpacing: 1.8,
-                ),
-              ),
-          ],
+        Text(
+          'CRUBIK',
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(letterSpacing: 2.4),
         ),
       ],
     );
@@ -702,38 +679,6 @@ class _BrandMark extends StatelessWidget {
         Icons.view_in_ar_rounded,
         color: CrubikColors.background,
         size: 23,
-      ),
-    );
-  }
-}
-
-class _OfflineBadge extends StatelessWidget {
-  const _OfflineBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: CrubikColors.elevated,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: CrubikColors.border),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_off_outlined, size: 16, color: CrubikColors.cyan),
-          SizedBox(width: 7),
-          Text(
-            'OFFLINE READY',
-            style: TextStyle(
-              color: CrubikColors.text,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.7,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -980,30 +925,7 @@ class _ScramblePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const _SectionLabel('PRACTICE SCRAMBLE'),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0x1458D8DA),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  'OFFLINE · 20 MOVES',
-                  style: TextStyle(
-                    color: CrubikColors.cyan,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 10,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          const _SectionLabel('PRACTICE SCRAMBLE'),
           const SizedBox(height: 14),
           _ScrambleProgressText(practice: practice),
           if (practice.smartCubeWorkflowActive) ...[
@@ -1360,11 +1282,6 @@ class _EmptySolves extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            'No account or internet needed',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
         ],
       ),
     );
@@ -1504,7 +1421,7 @@ class _SessionsView extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Local solve history and essential statistics.',
+            'Solve history and essential statistics.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 20),
@@ -1648,7 +1565,7 @@ class _ConnectionDialog extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Supported cube turns update the live model and timer locally. Demo mode stays available for practice without hardware.',
+                      'Cube turns update the live model and timer. Use Demo to practice without a smart cube.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: CrubikColors.muted,
                       ),
