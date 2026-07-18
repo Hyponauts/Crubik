@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:crubik/app/crubik_app.dart';
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
 import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/scramble_generator.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
@@ -59,7 +61,7 @@ void main() {
     expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
     await tester.tap(find.byKey(const Key('cube-move-R')));
     await tester.pump();
-    expect(practice.currentMoves, hasLength(1));
+    expect(practice.currentMoves, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -89,6 +91,14 @@ void main() {
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
+    practice.setSmartCubeConnected(true);
+    practice.syncCubeState(CubeState.solved());
+    await tester.pump();
+    expect(find.byKey(const Key('scramble-guidance')), findsOneWidget);
+    expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    practice.setSmartCubeConnected(false, demoMode: true);
+    await tester.pump();
     await tester.tap(find.byKey(const Key('manual-moves-button')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
@@ -200,7 +210,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(practice.currentMoves.single.notation, 'R');
+    expect(practice.currentMoves, isEmpty);
 
     gateway.addEvent(
       SmartCubeStateEvent(
@@ -211,6 +221,161 @@ void main() {
     );
     await tester.pump();
     expect(practice.cubeState.isSolved, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('connected mode guides scrambling and starts on the first move', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    var now = DateTime.utc(2026);
+    final practice = PracticeController(
+      scrambleGenerator: ScrambleGenerator(random: _DoubleTurnRandom()),
+      now: () => now,
+    );
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await connection.connect(_supportedGan);
+    gateway.addEvent(
+      SmartCubeStateEvent(
+        state: CubeState.solved(),
+        serial: 0,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+
+    expect(practice.phase, PracticePhase.scrambling);
+    expect(find.text('FOLLOW SCRAMBLE'), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('timer-toggle')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('manual-moves-button')))
+          .onPressed,
+      isNull,
+    );
+
+    final first = practice.scramble.moves.first;
+    expect(first.turns, 2);
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: CubeMove(first.face, turns: 3),
+        serial: 1,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+
+    expect(practice.completedScrambleMoveCount, 0);
+    expect(practice.partialScrambleMoveTurnCount, 1);
+    expect(practice.guidanceIsCorrection, isFalse);
+    expect(practice.nextScrambleMove, CubeMove(first.face, turns: 3));
+    expect(find.byKey(const Key('partial-scramble-progress')), findsOneWidget);
+    expect(find.text('1/2'), findsOneWidget);
+    expect(find.textContaining('Wrong turn detected'), findsNothing);
+
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: CubeMove(first.face, turns: 3),
+        serial: 2,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+
+    expect(practice.completedScrambleMoveCount, 1);
+    expect(practice.partialScrambleMoveTurnCount, 0);
+    expect(find.byKey(const Key('partial-scramble-progress')), findsNothing);
+    final completedStep = find.byKey(const Key('scramble-step-0'));
+    expect(completedStep, findsOneWidget);
+    final completedStepText = tester.widget<Text>(
+      find.descendant(of: completedStep, matching: find.byType(Text)),
+    );
+    expect(completedStepText.style?.decoration, TextDecoration.lineThrough);
+
+    final expectedNext = practice.scrambleGuidance.first;
+    final wrong = CubeMove(
+      CubeFace.values.firstWhere(
+        (face) => face != expectedNext.face && face != first.face,
+      ),
+    );
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: wrong,
+        serial: 3,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining('Wrong turn detected'), findsOneWidget);
+    expect(find.textContaining('CORRECT'), findsOneWidget);
+    expect(practice.completedScrambleMoveCount, 1);
+
+    var serial = 4;
+    for (final move in [...practice.scrambleGuidance]) {
+      gateway.addEvent(
+        SmartCubeMoveEvent(
+          move: move,
+          serial: serial++,
+          receivedAt: DateTime.utc(2026),
+        ),
+      );
+      await tester.pump();
+    }
+
+    expect(practice.phase, PracticePhase.inspectionDelay);
+    expect(practice.completedScrambleMoveCount, practice.scramble.moves.length);
+    expect(find.text('GET READY'), findsWidgets);
+    expect(
+      find.textContaining('inspection starts in 3 seconds'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('timer-toggle')))
+          .onPressed,
+      isNull,
+    );
+    now = now.add(PracticeController.defaultPreInspectionDelay);
+    await tester.pump(const Duration(milliseconds: 31));
+
+    expect(practice.phase, PracticePhase.inspection);
+    expect(find.text('INSPECTION'), findsOneWidget);
+    expect(find.text('ABORT'), findsOneWidget);
+    expect(practice.currentMoves, isEmpty);
+
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: CubeMove.parse('R'),
+        serial: serial,
+        receivedAt: now,
+      ),
+    );
+    await tester.pump();
+    expect(practice.phase, PracticePhase.solving);
+    expect(practice.currentMoves, [CubeMove.parse('R')]);
+
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+    expect(practice.solves, isEmpty);
+    expect(practice.phase, PracticePhase.needsSolvedCube);
+    expect(find.text('SOLVE CUBE FIRST'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -519,10 +684,31 @@ final class _FakeSolveClock implements SolveClock {
   void reset() => value = Duration.zero;
 
   @override
-  void start() {}
+  void start({Duration initialElapsed = Duration.zero}) {
+    value = initialElapsed;
+  }
 
   @override
   void stop() {}
+}
+
+final class _DoubleTurnRandom implements Random {
+  int _faceIndex = 0;
+
+  @override
+  bool nextBool() => false;
+
+  @override
+  double nextDouble() => 0.5;
+
+  @override
+  int nextInt(int max) {
+    if (max == CubeFace.values.length) {
+      return _faceIndex++ % CubeFace.values.length;
+    }
+    if (max == 3) return 1;
+    return 0;
+  }
 }
 
 const _supportedGan = CubeDeviceCandidate(

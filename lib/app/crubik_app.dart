@@ -56,16 +56,21 @@ class _CrubikAppState extends State<CrubikApp> {
 
   void _handleCubeEvent(SmartCubeEvent event) {
     switch (event) {
-      case SmartCubeMoveEvent(:final move):
-        _practiceController.applyMove(move, fromSmartCube: true);
-      case SmartCubeStateEvent(:final state):
-        _practiceController.syncCubeState(state);
+      case SmartCubeMoveEvent(:final move, :final receivedAt):
+        _practiceController.applyMove(
+          move,
+          fromSmartCube: true,
+          occurredAt: receivedAt,
+        );
+      case SmartCubeStateEvent(:final state, :final receivedAt):
+        _practiceController.syncCubeState(state, occurredAt: receivedAt);
     }
   }
 
   void _syncCubeConnectionMode() {
     _practiceController.setSmartCubeConnected(
       _connectionController.isConnected && !_connectionController.isDemo,
+      demoMode: _connectionController.isDemo,
     );
   }
 

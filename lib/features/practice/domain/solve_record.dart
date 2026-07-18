@@ -1,3 +1,21 @@
+enum SolveStartTrigger {
+  manual('manual'),
+  firstMove('first_move'),
+  inspectionTimeout('inspection_timeout');
+
+  const SolveStartTrigger(this.serializedValue);
+
+  final String serializedValue;
+
+  static SolveStartTrigger? fromSerializedValue(String? value) {
+    if (value == null) return null;
+    for (final trigger in values) {
+      if (trigger.serializedValue == value) return trigger;
+    }
+    return null;
+  }
+}
+
 final class SolveRecord {
   const SolveRecord({
     required this.id,
@@ -6,6 +24,8 @@ final class SolveRecord {
     required this.moveCount,
     required this.createdAt,
     this.inputSource = 'manual',
+    this.inspectionElapsed,
+    this.startTrigger,
   });
 
   final String id;
@@ -14,11 +34,12 @@ final class SolveRecord {
   final int moveCount;
   final DateTime createdAt;
   final String inputSource;
+  final Duration? inspectionElapsed;
+  final SolveStartTrigger? startTrigger;
 
-  double? get turnsPerSecond =>
-      elapsed.inMilliseconds == 0
-          ? null
-          : moveCount / (elapsed.inMilliseconds / 1000);
+  double? get turnsPerSecond => elapsed.inMilliseconds == 0
+      ? null
+      : moveCount / (elapsed.inMilliseconds / 1000);
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -27,6 +48,8 @@ final class SolveRecord {
     'move_count': moveCount,
     'created_at': createdAt.toIso8601String(),
     'input_source': inputSource,
+    'inspection_elapsed_ms': inspectionElapsed?.inMilliseconds,
+    'start_trigger': startTrigger?.serializedValue,
   };
 
   factory SolveRecord.fromJson(Map<String, Object?> json) => SolveRecord(
@@ -36,6 +59,13 @@ final class SolveRecord {
     moveCount: json['move_count']! as int,
     createdAt: DateTime.parse(json['created_at']! as String),
     inputSource: (json['input_source'] as String?) ?? 'manual',
+    inspectionElapsed: switch (json['inspection_elapsed_ms']) {
+      final int milliseconds => Duration(milliseconds: milliseconds),
+      _ => null,
+    },
+    startTrigger: SolveStartTrigger.fromSerializedValue(
+      json['start_trigger'] as String?,
+    ),
   );
 }
 
