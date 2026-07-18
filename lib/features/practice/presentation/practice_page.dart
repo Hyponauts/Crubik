@@ -1597,6 +1597,27 @@ class _ConnectionDialog extends StatelessWidget {
                         controller.errorMessage!,
                         style: const TextStyle(color: CrubikColors.danger),
                       ),
+                      if (controller.hasDiagnostics) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          key: const Key('copy-bluetooth-diagnostics-button'),
+                          onPressed: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: controller.diagnosticReport),
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Redacted Bluetooth diagnostics copied',
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy_all_outlined, size: 18),
+                          label: const Text('Copy diagnostics'),
+                        ),
+                      ],
                     ],
                     const SizedBox(height: 16),
                     Flexible(

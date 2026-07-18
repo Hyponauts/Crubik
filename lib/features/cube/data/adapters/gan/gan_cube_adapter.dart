@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../../domain/cube_connection_diagnostics.dart';
 import '../../../domain/smart_cube_device.dart';
 import '../../../domain/smart_cube_event.dart';
 import '../../ble/ble_central.dart';
@@ -42,13 +43,25 @@ final class GanCubeAdapter implements SmartCubeAdapter {
   @override
   Future<SmartCubeSession> connect(
     BleCentral central,
-    CubeDeviceCandidate device,
-  ) async {
-    await central.connect(device.id);
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  }) async {
+    onDiagnostic?.call('ble.connect.started', null);
+    try {
+      await central.connect(device.id);
+      onDiagnostic?.call('ble.connect.succeeded', null);
+    } catch (_) {
+      onDiagnostic?.call('ble.connect.failed', null);
+      rethrow;
+    }
     _GanCubeSession? session;
     try {
-      final protocol = ganProtocolForServices(
-        await central.discoverServiceUuids(device.id),
+      onDiagnostic?.call('gatt.discovery.started', null);
+      final services = await central.discoverServiceUuids(device.id);
+      final protocol = ganProtocolForServices(services);
+      onDiagnostic?.call(
+        'gatt.discovery.succeeded',
+        'serviceCount=${services.length} protocolMatched=${protocol != null}',
       );
       if (protocol == null) {
         throw CubeConnectionFailure(
@@ -58,11 +71,13 @@ final class GanCubeAdapter implements SmartCubeAdapter {
       }
       final macAddress = device.macAddress ?? normalizeCubeMac(device.id);
       if (macAddress == null) {
+        onDiagnostic?.call('protocol.identity.unavailable', null);
         throw const CubeConnectionFailure(
           CubeConnectionFailureCode.identityUnavailable,
           'Unable to determine cube MAC address for packet decryption.',
         );
       }
+      onDiagnostic?.call('protocol.identity.available', null);
       session = _GanCubeSession(
         central,
         deviceId: device.id,

@@ -10,6 +10,7 @@ import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/data/moyu32_cube_protocol.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,7 +43,7 @@ void main() {
 
     final mhc = registry.identify(_advertisement('MHC-AB12'));
     expect(mhc.protocolFamily, CubeProtocolFamily.moyuMhc);
-    expect(mhc.supportMessage, contains('WeiLong V10 AI'));
+    expect(mhc.supportMessage, contains('Legacy MoYu MHC'));
   });
 
   test('registry turns every BLE result into a visible device candidate', () {
@@ -294,6 +295,36 @@ void main() {
     await controller.close();
     controller.dispose();
   });
+
+  test(
+    'exports connection stages without cube identifiers or packet data',
+    () async {
+      final gateway = _FakeCubeConnectionGateway();
+      final controller = CubeConnectionController(gateway: gateway);
+      const device = CubeDeviceCandidate(
+        id: 'AA:BB:CC:DD:EE:FF',
+        name: 'WCU_MY32_CDEF',
+        vendor: CubeVendor.moyu,
+        protocolFamily: CubeProtocolFamily.moyu32,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'moyu32',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+      );
+
+      await controller.connect(device);
+
+      final report = controller.diagnosticReport;
+      expect(report, contains('protocol=moyu32'));
+      expect(report, contains('adapter.selected moyu32'));
+      expect(report, contains('connection.ready'));
+      expect(report, isNot(contains(device.id)));
+      expect(report, isNot(contains(device.name)));
+      expect(report, isNot(contains(device.macAddress!)));
+
+      await controller.close();
+      controller.dispose();
+    },
+  );
 }
 
 CubeAdapterRegistry _registry() => CubeAdapterRegistry.defaults();
@@ -331,8 +362,12 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
 
   @override
-  Future<SmartCubeSession> connect(CubeDeviceCandidate device) async {
+  Future<SmartCubeSession> connect(
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  }) async {
     connectCount++;
+    onDiagnostic?.call('adapter.selected', device.adapterId);
     return _sessions.putIfAbsent(device.id, _FakeSmartCubeSession.new);
   }
 

@@ -22,10 +22,13 @@ void main() {
         statePacket: _statePacket(CubeState.solved().facelets, serial: 10),
         batteryLevel: 78,
       );
+      final diagnostics = <String>[];
 
       final session = await const Moyu32CubeAdapter().connect(
         central,
         _candidate(),
+        onDiagnostic: (stage, detail) =>
+            diagnostics.add(detail == null ? stage : '$stage $detail'),
       );
       final eventsFuture = session.events.take(2).toList();
       final batteryFuture = session.batteryLevels.first;
@@ -40,9 +43,29 @@ void main() {
       expect(session.capabilities.moveHistory, isTrue);
       expect(session.capabilities.cubeTimestamps, isTrue);
       expect(session.capabilities.battery, isTrue);
-      expect(central.decryptedWrites.map((packet) => packet[0]), [0xa3, 0xa4]);
+      expect(central.decryptedWrites.map((packet) => packet[0]), [
+        0xa1,
+        0xa3,
+        0xa4,
+      ]);
       expect(central.subscribedService, moyu32Service);
       expect(central.subscribedCharacteristic, moyu32ReadCharacteristic);
+      expect(
+        diagnostics,
+        containsAllInOrder([
+          'ble.connect.succeeded',
+          'gatt.discovery.succeeded serviceCount=1 protocolMatched=true',
+          'protocol.identity.available',
+          'notifications.subscribe.succeeded',
+          'protocol.request.started message=info',
+          'protocol.request.completed message=info',
+          'protocol.request.started message=state',
+          'protocol.message.decoded message=state',
+          'protocol.request.completed message=state',
+          'protocol.handshake.succeeded initialState=true',
+        ]),
+      );
+      expect(diagnostics.join('\n'), isNot(contains(_macAddress)));
 
       await session.close();
       expect(central.unsubscribed, isTrue);
@@ -91,6 +114,7 @@ void main() {
       expect(events.whereType<SmartCubeMoveEvent>(), hasLength(5));
       expect(events.whereType<SmartCubeStateEvent>(), hasLength(2));
       expect(central.decryptedWrites.map((packet) => packet[0]), [
+        0xa1,
         0xa3,
         0xa4,
         0xa3,
@@ -120,7 +144,7 @@ void main() {
           isA<CubeConnectionFailure>().having(
             (error) => error.code,
             'code',
-            CubeConnectionFailureCode.connectionFailed,
+            CubeConnectionFailureCode.handshakeFailed,
           ),
         ),
       );
@@ -324,10 +348,9 @@ final class _FakeBleCentral implements BleCentral {
       final packet = statePacket;
       if (packet != null) _values.add(activeCipher.encrypt(packet));
     } else if (command[0] == 0xa4 && batteryLevel != null) {
-      final packet =
-          Uint8List(20)
-            ..[0] = 0xa4
-            ..[1] = batteryLevel!;
+      final packet = Uint8List(20)
+        ..[0] = 0xa4
+        ..[1] = batteryLevel!;
       _values.add(activeCipher.encrypt(packet));
     }
   }
@@ -371,10 +394,9 @@ Uint8List _movePacket({
   required List<int> offsets,
 }) {
   const protocolFaces = 'FBUDLR';
-  final packet =
-      Uint8List(20)
-        ..[0] = 0xa5
-        ..[11] = serial;
+  final packet = Uint8List(20)
+    ..[0] = 0xa5
+    ..[11] = serial;
   for (var index = 0; index < moves.length; index++) {
     final move = moves[index];
     final code =
@@ -391,7 +413,8 @@ void _setBits(Uint8List target, int startBit, int bitLength, int value) {
     final valueBit = (value >> (bitLength - 1 - index)) & 1;
     final mask = 1 << (7 - absoluteBit % 8);
     final byteIndex = absoluteBit ~/ 8;
-    target[byteIndex] =
-        valueBit == 1 ? target[byteIndex] | mask : target[byteIndex] & ~mask;
+    target[byteIndex] = valueBit == 1
+        ? target[byteIndex] | mask
+        : target[byteIndex] & ~mask;
   }
 }

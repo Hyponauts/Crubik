@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/adapters/smart_cube_adapter.dart';
 import '../data/cube_connection_gateway.dart';
+import '../domain/cube_connection_diagnostics.dart';
 import '../domain/smart_cube_device.dart';
 import '../domain/smart_cube_event.dart';
 
@@ -31,6 +32,7 @@ final class CubeConnectionController extends ChangeNotifier {
   StreamSubscription<bool>? _connectionSubscription;
   final StreamController<SmartCubeEvent> _eventController =
       StreamController.broadcast();
+  final CubeConnectionDiagnostics _diagnostics = CubeConnectionDiagnostics();
   Timer? _scanTimeout;
   SmartCubeSession? _session;
   bool _closed = false;
@@ -48,6 +50,8 @@ final class CubeConnectionController extends ChangeNotifier {
   bool get isConnected => _status == CubeConnectionStatus.connected;
   bool get isDemo => _connectedCube?.isDemo ?? false;
   Stream<SmartCubeEvent> get events => _eventController.stream;
+  bool get hasDiagnostics => _diagnostics.isNotEmpty;
+  String get diagnosticReport => _diagnostics.exportReport();
 
   List<CubeDeviceCandidate> get discoveredDevices {
     final devices = _discovered.values.toList()..sort(_compareDevices);
@@ -106,7 +110,9 @@ final class CubeConnectionController extends ChangeNotifier {
   Future<void> connect(CubeDeviceCandidate device) async {
     await stopScan();
     _errorMessage = null;
+    _diagnostics.begin(platform: _platformName, device: device);
     if (!device.canConnect) {
+      _diagnostics.add('connection.rejected', 'unsupported candidate');
       _status = CubeConnectionStatus.error;
       _errorMessage =
           device.supportMessage ??
@@ -123,8 +129,12 @@ final class CubeConnectionController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final session = await _gateway.connect(device);
+      final session = await _gateway.connect(
+        device,
+        onDiagnostic: _diagnostics.add,
+      );
       if (_closed) {
+        _diagnostics.add('connection.cancelled', 'controller closed');
         await session.close();
         return;
       }
@@ -148,8 +158,10 @@ final class CubeConnectionController extends ChangeNotifier {
         }
       });
       _status = CubeConnectionStatus.connected;
+      _diagnostics.add('connection.ready');
       notifyListeners();
     } catch (error) {
+      _diagnostics.add('connection.failed', _diagnosticError(error));
       await _releaseActiveSession();
       _connectedCube = null;
       _batteryLevel = null;
@@ -223,16 +235,16 @@ final class CubeConnectionController extends ChangeNotifier {
 
   void _onProtocolError(Object error, StackTrace stackTrace) {
     if (_closed) return;
-    _errorMessage =
-        error is CubeConnectionFailure
-            ? switch (error.code) {
-              CubeConnectionFailureCode.packetMalformed =>
-                'A cube packet could not be decoded. The live state may need resyncing.',
-              CubeConnectionFailureCode.dataLoss =>
-                'Some cube moves were missed. Crubik requested the current physical state to resync.',
-              _ => _friendlyError(error),
-            }
-            : _friendlyError(error);
+    _diagnostics.add('protocol.error', _diagnosticError(error));
+    _errorMessage = error is CubeConnectionFailure
+        ? switch (error.code) {
+            CubeConnectionFailureCode.packetMalformed =>
+              'A cube packet could not be decoded. The live state may need resyncing.',
+            CubeConnectionFailureCode.dataLoss =>
+              'Some cube moves were missed. Crubik requested the current physical state to resync.',
+            _ => _friendlyError(error),
+          }
+        : _friendlyError(error);
     notifyListeners();
   }
 
@@ -242,6 +254,13 @@ final class CubeConnectionController extends ChangeNotifier {
     }
     return (b.rssi ?? -100).compareTo(a.rssi ?? -100);
   }
+
+  static String get _platformName =>
+      kIsWeb ? 'web' : defaultTargetPlatform.name;
+
+  static String _diagnosticError(Object error) => error is CubeConnectionFailure
+      ? 'code=${error.code.name}'
+      : 'type=${error.runtimeType}';
 
   static String _friendlyError(Object error) {
     if (error is CubeConnectionFailure) {
@@ -253,6 +272,8 @@ final class CubeConnectionController extends ChangeNotifier {
         CubeConnectionFailureCode.unsupportedProtocol => error.message,
         CubeConnectionFailureCode.identityUnavailable =>
           'Crubik could not read this cube identity. Wake it, scan again, and keep it close.',
+        CubeConnectionFailureCode.handshakeFailed =>
+          'Bluetooth connected, but the cube did not return a valid initial state. Copy the diagnostics below and try again.',
         CubeConnectionFailureCode.packetMalformed =>
           'A cube packet could not be decoded. The live state may need resyncing.',
         CubeConnectionFailureCode.dataLoss =>

@@ -34,9 +34,11 @@ void main() {
     expect(cipher.decrypt(cipher.encrypt(plain)), plain);
   });
 
-  test('decoder exposes state and battery request commands', () {
+  test('decoder exposes info, state, and battery request commands', () {
     final decoder = Moyu32PacketDecoder();
 
+    expect(decoder.requestInfoCommand, hasLength(20));
+    expect(decoder.requestInfoCommand.first, 0xa1);
     expect(decoder.requestStateCommand, hasLength(20));
     expect(decoder.requestStateCommand.first, 0xa3);
     expect(decoder.requestBatteryCommand, hasLength(20));
@@ -54,8 +56,8 @@ void main() {
     expect(solved.states.single.state.isSolved, isTrue);
     expect(solved.states.single.serial, 7);
 
-    final expected =
-        CubeState.solved()..applyAll(Scramble.parse("R U F' L2 D B").moves);
+    final expected = CubeState.solved()
+      ..applyAll(Scramble.parse("R U F' L2 D B").moves);
     final scrambled = Moyu32PacketDecoder().decode(
       _statePacket(expected.facelets, serial: 31),
       receivedAt,
@@ -215,10 +217,9 @@ void main() {
       throwsFormatException,
     );
 
-    final invalidBattery =
-        Uint8List(20)
-          ..[0] = 0xa4
-          ..[1] = 101;
+    final invalidBattery = Uint8List(20)
+      ..[0] = 0xa4
+      ..[1] = 101;
     expect(
       () => decoder.decode(invalidBattery, receivedAt),
       throwsFormatException,
@@ -228,10 +229,9 @@ void main() {
   test('decoder publishes valid battery and ignores unknown messages', () {
     final decoder = Moyu32PacketDecoder();
     final receivedAt = DateTime.utc(2026);
-    final battery =
-        Uint8List(20)
-          ..[0] = 0xa4
-          ..[1] = 83;
+    final battery = Uint8List(20)
+      ..[0] = 0xa4
+      ..[1] = 83;
 
     expect(decoder.decode(battery, receivedAt).batteryLevel, 83);
     expect(decoder.decode(Uint8List(20), receivedAt).events, isEmpty);
@@ -266,10 +266,9 @@ Uint8List _movePacket({
 }) {
   assert(moves.length == offsets.length && moves.length <= 5);
   const protocolFaces = 'FBUDLR';
-  final packet =
-      Uint8List(20)
-        ..[0] = 0xa5
-        ..[11] = serial;
+  final packet = Uint8List(20)
+    ..[0] = 0xa5
+    ..[11] = serial;
   for (var index = 0; index < moves.length; index++) {
     final move = moves[index];
     final code =
@@ -286,7 +285,8 @@ void _setBits(Uint8List target, int startBit, int bitLength, int value) {
     final valueBit = (value >> (bitLength - 1 - index)) & 1;
     final mask = 1 << (7 - absoluteBit % 8);
     final byteIndex = absoluteBit ~/ 8;
-    target[byteIndex] =
-        valueBit == 1 ? target[byteIndex] | mask : target[byteIndex] & ~mask;
+    target[byteIndex] = valueBit == 1
+        ? target[byteIndex] | mask
+        : target[byteIndex] & ~mask;
   }
 }

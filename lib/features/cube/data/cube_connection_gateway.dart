@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../domain/cube_connection_diagnostics.dart';
 import '../domain/smart_cube_device.dart';
 import 'adapters/cube_adapter_registry.dart';
 import 'adapters/smart_cube_adapter.dart';
@@ -16,7 +17,10 @@ abstract interface class CubeConnectionGateway {
 
   Future<void> stopScan();
 
-  Future<SmartCubeSession> connect(CubeDeviceCandidate device);
+  Future<SmartCubeSession> connect(
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  });
 
   Future<void> close();
 }
@@ -54,8 +58,14 @@ final class BleCubeConnectionGateway implements CubeConnectionGateway {
   Future<void> stopScan() => _central.stopScan();
 
   @override
-  Future<SmartCubeSession> connect(CubeDeviceCandidate device) =>
-      _registry.adapterFor(device).connect(_central, device);
+  Future<SmartCubeSession> connect(
+    CubeDeviceCandidate device, {
+    CubeDiagnosticSink? onDiagnostic,
+  }) {
+    final adapter = _registry.adapterFor(device);
+    onDiagnostic?.call('adapter.selected', adapter.id);
+    return adapter.connect(_central, device, onDiagnostic: onDiagnostic);
+  }
 
   @override
   Future<void> close() async {
