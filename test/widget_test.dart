@@ -202,6 +202,11 @@ void main() {
     expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     expect(find.text('PRACTICE SCRAMBLE'), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.text('OFFLINE CUBE LAB'), findsNothing);
+    expect(find.text('OFFLINE READY'), findsNothing);
+    expect(find.text('OFFLINE · 20 MOVES'), findsNothing);
+    expect(find.text('No account or internet needed'), findsNothing);
+    expect(find.byIcon(Icons.cloud_off_outlined), findsNothing);
 
     gateway.addEvent(
       SmartCubeMoveEvent(
@@ -508,6 +513,13 @@ void main() {
     );
     expect(find.text('Scan nearby'), findsOneWidget);
     expect(find.text('Demo'), findsOneWidget);
+    expect(
+      find.text(
+        'Cube turns update the live model and timer. Use Demo to practice without a smart cube.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('timer locally'), findsNothing);
 
     await tester.tap(find.text('Demo'));
     await tester.pumpAndSettle();
