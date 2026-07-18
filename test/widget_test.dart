@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:crubik/app/crubik_app.dart';
+import 'package:crubik/core/theme/app_theme.dart';
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
 import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
@@ -227,6 +228,7 @@ void main() {
   testWidgets('connected mode guides scrambling and starts on the first move', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
@@ -323,11 +325,112 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.textContaining('Wrong turn detected'), findsOneWidget);
-    expect(find.textContaining('CORRECT'), findsOneWidget);
-    expect(practice.completedScrambleMoveCount, 1);
 
-    var serial = 4;
+    final secondWrong = CubeMove(
+      CubeFace.values.firstWhere(
+        (face) =>
+            face != expectedNext.face &&
+            face != first.face &&
+            face != wrong.face,
+      ),
+    );
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: secondWrong,
+        serial: 4,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+
+    expect(practice.scrambleRecoveryMoves, [
+      secondWrong.inverse,
+      wrong.inverse,
+    ]);
+    expect(
+      find.text('Wrong turn detected · 2 recovery moves needed'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('CORRECT'), findsNothing);
+    expect(practice.completedScrambleMoveCount, 1);
+    expect(find.byKey(const Key('scramble-recovery-step-0')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-recovery-step-1')), findsOneWidget);
+
+    final inlineMoveText = tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byKey(const Key('scramble-text')),
+            matching: find.byType(Text),
+          ),
+        )
+        .map((text) => text.data)
+        .whereType<String>()
+        .toList();
+    expect(inlineMoveText.take(4), [
+      first.notation,
+      secondWrong.inverse.notation,
+      wrong.inverse.notation,
+      expectedNext.notation,
+    ]);
+
+    final nextRecovery = tester.widget<Container>(
+      find.byKey(const Key('next-scramble-move')),
+    );
+    final nextRecoveryDecoration = nextRecovery.decoration! as BoxDecoration;
+    expect(
+      nextRecoveryDecoration.color,
+      CrubikColors.warning.withValues(alpha: 0.22),
+    );
+    expect(nextRecoveryDecoration.border!.top.width, 1.5);
+    expect(
+      find.bySemanticsLabel(
+        RegExp(
+          'Wrong turn detected.*Recovery sequence: '
+          '${secondWrong.inverse.notation} ${wrong.inverse.notation}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    semantics.dispose();
+
+    var serial = 5;
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: secondWrong.inverse,
+        serial: serial++,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+    expect(practice.scrambleRecoveryMoves, [wrong.inverse]);
+    expect(
+      find.text('Wrong turn detected · 1 recovery move needed'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('scramble-recovery-step-0')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-recovery-step-1')), findsNothing);
+
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pump();
+    expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-recovery-step-0')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    gateway.addEvent(
+      SmartCubeMoveEvent(
+        move: wrong.inverse,
+        serial: serial++,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    await tester.pump();
+    expect(practice.scrambleRecoveryMoves, isEmpty);
+    expect(practice.guidanceIsCorrection, isFalse);
+    expect(practice.nextScrambleMove, expectedNext);
+    expect(find.textContaining('Wrong turn detected'), findsNothing);
+    expect(find.byKey(const Key('scramble-recovery-step-0')), findsNothing);
+    expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
+
     for (final move in [...practice.scrambleGuidance]) {
       gateway.addEvent(
         SmartCubeMoveEvent(

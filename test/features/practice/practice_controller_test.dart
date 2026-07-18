@@ -173,6 +173,118 @@ void main() {
     controller.dispose();
   });
 
+  test('recovery moves stay ahead of the original suffix and replan live', () {
+    final controller = PracticeController(
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
+    final occurredAt = DateTime.utc(2026);
+    controller.setSmartCubeConnected(true);
+    controller.syncCubeState(CubeState.solved());
+
+    final first = controller.scramble.moves.first;
+    final expectedNext = controller.scramble.moves[1];
+    controller.applyMove(first, fromSmartCube: true, occurredAt: occurredAt);
+
+    final wrongFace = CubeFace.values.firstWhere(
+      (face) => face != first.face && face != expectedNext.face,
+    );
+    final secondWrongFace = CubeFace.values.firstWhere(
+      (face) =>
+          face != first.face && face != expectedNext.face && face != wrongFace,
+    );
+    final wrong = CubeMove(wrongFace);
+    final secondWrong = CubeMove(secondWrongFace);
+    controller.applyMove(wrong, fromSmartCube: true, occurredAt: occurredAt);
+    controller.applyMove(
+      secondWrong,
+      fromSmartCube: true,
+      occurredAt: occurredAt,
+    );
+
+    expect(controller.completedScrambleMoveCount, 1);
+    expect(controller.scrambleRecoveryMoves, [
+      secondWrong.inverse,
+      wrong.inverse,
+    ]);
+    expect(controller.scrambleGuidance, [
+      secondWrong.inverse,
+      wrong.inverse,
+      ...controller.scramble.moves.skip(1),
+    ]);
+    expect(
+      () => controller.scrambleRecoveryMoves.add(CubeMove.parse('R')),
+      throwsUnsupportedError,
+    );
+
+    controller.applyMove(
+      secondWrong.inverse,
+      fromSmartCube: true,
+      occurredAt: occurredAt,
+    );
+    expect(controller.scrambleRecoveryMoves, [wrong.inverse]);
+
+    final replanningFace = CubeFace.values.firstWhere(
+      (face) => face != first.face && face != wrongFace,
+    );
+    final replanningWrong = CubeMove(replanningFace);
+    controller.applyMove(
+      replanningWrong,
+      fromSmartCube: true,
+      occurredAt: occurredAt,
+    );
+    expect(controller.scrambleRecoveryMoves, [
+      replanningWrong.inverse,
+      wrong.inverse,
+    ]);
+
+    for (final move in [...controller.scrambleRecoveryMoves]) {
+      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+    }
+    expect(controller.scrambleRecoveryMoves, isEmpty);
+    expect(controller.guidanceIsCorrection, isFalse);
+    expect(controller.nextScrambleMove, expectedNext);
+
+    for (final move in [...controller.scrambleGuidance]) {
+      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+    }
+    expect(controller.phase, PracticePhase.inspectionDelay);
+    final target = CubeState.solved()..applyAll(controller.scramble.moves);
+    expect(controller.cubeState.facelets, target.facelets);
+    controller.dispose();
+  });
+
+  test('same-face recovery does not merge with the original next move', () {
+    final controller = PracticeController(
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
+    final occurredAt = DateTime.utc(2026);
+    controller.setSmartCubeConnected(true);
+    controller.syncCubeState(CubeState.solved());
+
+    final expectedIndex = controller.scramble.moves.indexWhere(
+      (move) => move.turns != 2,
+    );
+    expect(expectedIndex, isNonNegative);
+    for (final move in controller.scramble.moves.take(expectedIndex)) {
+      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+    }
+    final expected = controller.scramble.moves[expectedIndex];
+    controller.applyMove(
+      expected.inverse,
+      fromSmartCube: true,
+      occurredAt: occurredAt,
+    );
+
+    expect(controller.scrambleRecoveryMoves, [expected]);
+    expect(controller.scrambleGuidance.take(2), [expected, expected]);
+
+    controller.applyMove(expected, fromSmartCube: true, occurredAt: occurredAt);
+    expect(controller.scrambleRecoveryMoves, isEmpty);
+    expect(controller.guidanceIsCorrection, isFalse);
+    expect(controller.nextScrambleMove, expected);
+    controller.dispose();
+  });
+
   test('either turn direction satisfies a double-turn scramble move', () {
     for (final quarterTurns in [1, 3]) {
       final controller = PracticeController(

@@ -2006,14 +2006,25 @@ class _ScrambleProgressText extends StatelessWidget {
   Widget build(BuildContext context) {
     final completed = practice.completedScrambleMoveCount;
     final partialTurns = practice.partialScrambleMoveTurnCount;
-    final correction = practice.guidanceIsCorrection;
+    final recoveryMoves = practice.scrambleRecoveryMoves;
+    final correction =
+        practice.guidanceIsCorrection && recoveryMoves.isNotEmpty;
     final showNext = practice.phase == PracticePhase.scrambling && !correction;
     final moves = practice.scramble.moves;
+    final recoveryNotation = recoveryMoves
+        .map((move) => move.notation)
+        .join(' ');
+    final recoveryDescription = correction
+        ? '${recoveryMoves.length} recovery '
+              '${recoveryMoves.length == 1 ? 'move' : 'moves'} inserted: '
+              '$recoveryNotation. '
+        : '';
 
     return Semantics(
       label:
           'Scramble. $completed of ${moves.length} moves completed. '
           '${partialTurns > 0 ? 'The next move is partially completed. ' : ''}'
+          '$recoveryDescription'
           '${practice.scramble}',
       child: Wrap(
         key: const Key('scramble-text'),
@@ -2028,13 +2039,36 @@ class _ScrambleProgressText extends StatelessWidget {
             ? 3
             : 5,
         children: [
-          for (var index = 0; index < moves.length; index++)
+          for (var index = 0; index < completed; index++)
             _ScrambleMoveToken(
               move: moves[index],
               index: index,
-              completed: index < completed,
+              completed: true,
+              next: false,
+              partialTurns: 0,
+              recovery: false,
+              compact: compact,
+              dense: dense,
+            ),
+          for (var index = 0; index < recoveryMoves.length; index++)
+            _ScrambleMoveToken(
+              move: recoveryMoves[index],
+              index: index,
+              completed: false,
+              next: index == 0,
+              partialTurns: 0,
+              recovery: true,
+              compact: compact,
+              dense: dense,
+            ),
+          for (var index = completed; index < moves.length; index++)
+            _ScrambleMoveToken(
+              move: moves[index],
+              index: index,
+              completed: false,
               next: showNext && index == completed,
               partialTurns: index == completed ? partialTurns : 0,
+              recovery: false,
               compact: compact,
               dense: dense,
             ),
@@ -2051,6 +2085,7 @@ class _ScrambleMoveToken extends StatelessWidget {
     required this.completed,
     required this.next,
     required this.partialTurns,
+    required this.recovery,
     required this.compact,
     required this.dense,
   });
@@ -2060,6 +2095,7 @@ class _ScrambleMoveToken extends StatelessWidget {
   final bool completed;
   final bool next;
   final int partialTurns;
+  final bool recovery;
   final bool compact;
   final bool dense;
 
@@ -2069,7 +2105,9 @@ class _ScrambleMoveToken extends StatelessWidget {
     final partialFraction = partiallyCompleted
         ? partialTurns / move.turns
         : 0.0;
-    final color = completed
+    final color = recovery
+        ? CrubikColors.warning
+        : completed
         ? CrubikColors.lime
         : partiallyCompleted
         ? CrubikColors.lime
@@ -2079,95 +2117,121 @@ class _ScrambleMoveToken extends StatelessWidget {
     return Semantics(
       label:
           '${move.notation}, '
-          '${completed
+          '${recovery
+              ? next
+                    ? 'next recovery move'
+                    : 'recovery move'
+              : completed
               ? 'completed'
               : partiallyCompleted
               ? 'partially completed, $partialTurns of ${move.turns} turns'
               : next
               ? 'next move'
               : 'not completed'}',
-      child: Container(
-        key: next
-            ? const Key('next-scramble-move')
-            : Key('scramble-step-$index'),
-        padding: EdgeInsets.symmetric(
-          horizontal: dense
-              ? 2
-              : compact
-              ? 3
-              : 5,
-          vertical: dense
-              ? 1
-              : compact
-              ? 2
-              : 3,
-        ),
-        decoration: BoxDecoration(
-          color: completed ? CrubikColors.lime.withValues(alpha: 0.14) : null,
-          gradient: partiallyCompleted
-              ? LinearGradient(
-                  colors: [
-                    CrubikColors.lime.withValues(alpha: 0.24),
-                    CrubikColors.lime.withValues(alpha: 0.24),
-                    CrubikColors.cyan.withValues(alpha: 0.10),
-                    CrubikColors.cyan.withValues(alpha: 0.10),
-                  ],
-                  stops: [0, partialFraction, partialFraction, 1],
-                )
-              : next
-              ? LinearGradient(
-                  colors: [
-                    CrubikColors.cyan.withValues(alpha: 0.10),
-                    CrubikColors.cyan.withValues(alpha: 0.10),
-                  ],
-                )
-              : null,
-          borderRadius: BorderRadius.circular(5),
-          border: partiallyCompleted
-              ? Border.all(color: CrubikColors.lime.withValues(alpha: 0.8))
-              : next
-              ? Border.all(color: CrubikColors.cyan.withValues(alpha: 0.7))
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              move.notation,
-              style: TextStyle(
-                color: color,
-                fontFamily: 'monospace',
-                fontSize: dense
-                    ? 11
-                    : compact
-                    ? 13
-                    : 18,
-                fontWeight: completed || next
-                    ? FontWeight.w800
-                    : FontWeight.w600,
-                decoration: completed ? TextDecoration.lineThrough : null,
-                decorationColor: CrubikColors.lime,
-                decorationThickness: 1.5,
-              ),
-            ),
-            if (partiallyCompleted) ...[
-              SizedBox(width: dense ? 1 : 3),
+      child: KeyedSubtree(
+        key: recovery ? Key('scramble-recovery-step-$index') : null,
+        child: Container(
+          key: next
+              ? const Key('next-scramble-move')
+              : recovery
+              ? null
+              : Key('scramble-step-$index'),
+          padding: EdgeInsets.symmetric(
+            horizontal: dense
+                ? 2
+                : compact
+                ? 3
+                : 5,
+            vertical: dense
+                ? 1
+                : compact
+                ? 2
+                : 3,
+          ),
+          decoration: BoxDecoration(
+            color: recovery
+                ? CrubikColors.warning.withValues(alpha: next ? 0.22 : 0.12)
+                : completed
+                ? CrubikColors.lime.withValues(alpha: 0.14)
+                : null,
+            gradient: recovery
+                ? null
+                : partiallyCompleted
+                ? LinearGradient(
+                    colors: [
+                      CrubikColors.lime.withValues(alpha: 0.24),
+                      CrubikColors.lime.withValues(alpha: 0.24),
+                      CrubikColors.cyan.withValues(alpha: 0.10),
+                      CrubikColors.cyan.withValues(alpha: 0.10),
+                    ],
+                    stops: [0, partialFraction, partialFraction, 1],
+                  )
+                : next
+                ? LinearGradient(
+                    colors: [
+                      CrubikColors.cyan.withValues(alpha: 0.10),
+                      CrubikColors.cyan.withValues(alpha: 0.10),
+                    ],
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(5),
+            border: recovery
+                ? Border.all(
+                    color: CrubikColors.warning.withValues(
+                      alpha: next ? 0.95 : 0.55,
+                    ),
+                    width: next ? 1.5 : 1,
+                  )
+                : partiallyCompleted
+                ? Border.all(color: CrubikColors.lime.withValues(alpha: 0.8))
+                : next
+                ? Border.all(color: CrubikColors.cyan.withValues(alpha: 0.7))
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                '$partialTurns/${move.turns}',
-                key: const Key('partial-scramble-progress'),
+                move.notation,
                 style: TextStyle(
-                  color: CrubikColors.lime,
+                  color: color,
                   fontFamily: 'monospace',
                   fontSize: dense
-                      ? 7
+                      ? 11
                       : compact
-                      ? 9
-                      : 11,
-                  fontWeight: FontWeight.w900,
+                      ? 13
+                      : 18,
+                  fontWeight: recovery
+                      ? next
+                            ? FontWeight.w900
+                            : FontWeight.w800
+                      : completed || next
+                      ? FontWeight.w800
+                      : FontWeight.w600,
+                  decoration: completed ? TextDecoration.lineThrough : null,
+                  decorationColor: CrubikColors.lime,
+                  decorationThickness: 1.5,
                 ),
               ),
+              if (partiallyCompleted) ...[
+                SizedBox(width: dense ? 1 : 3),
+                Text(
+                  '$partialTurns/${move.turns}',
+                  key: const Key('partial-scramble-progress'),
+                  style: TextStyle(
+                    color: CrubikColors.lime,
+                    fontFamily: 'monospace',
+                    fontSize: dense
+                        ? 7
+                        : compact
+                        ? 9
+                        : 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -2189,13 +2253,19 @@ class _ScrambleGuidance extends StatelessWidget {
   Widget build(BuildContext context) {
     final nextMove = practice.nextScrambleMove;
     final partialTurns = practice.partialScrambleMoveTurnCount;
-    final correction = practice.guidanceIsCorrection && nextMove != null;
+    final recoveryMoves = practice.scrambleRecoveryMoves;
+    final correction =
+        practice.guidanceIsCorrection &&
+        nextMove != null &&
+        recoveryMoves.isNotEmpty;
     final color = correction ? CrubikColors.warning : _phaseColor(practice);
     final status = switch (practice.phase) {
       PracticePhase.awaitingCubeState => 'Waiting for the physical cube state',
       PracticePhase.needsSolvedCube =>
         'Solve the physical cube before scrambling',
-      PracticePhase.scrambling when correction => 'Wrong turn detected',
+      PracticePhase.scrambling when correction =>
+        'Wrong turn detected · ${recoveryMoves.length} recovery '
+            '${recoveryMoves.length == 1 ? 'move' : 'moves'} needed',
       PracticePhase.scrambling when partialTurns > 0 =>
         '${practice.completedScrambleMoveCount} complete · current step '
             '$partialTurns of ${practice.scramble.moves[practice.completedScrambleMoveCount].turns} turns',
@@ -2209,10 +2279,16 @@ class _ScrambleGuidance extends StatelessWidget {
       PracticePhase.stopped => 'Solve complete · choose a new scramble',
       PracticePhase.manualReady => 'Ready',
     };
+    final recoveryNotation = recoveryMoves
+        .map((move) => move.notation)
+        .join(' ');
 
     return Semantics(
       liveRegion: true,
-      label: correction ? '$status. Correct ${nextMove.notation}.' : status,
+      label: correction
+          ? '$status. Recovery sequence: $recoveryNotation. '
+                'Next recovery move: ${nextMove.notation}.'
+          : status,
       child: Container(
         key: const Key('scramble-guidance'),
         width: double.infinity,
@@ -2252,37 +2328,6 @@ class _ScrambleGuidance extends StatelessWidget {
                 ),
               ),
             ),
-            if (correction) ...[
-              const SizedBox(width: 6),
-              Container(
-                key: const Key('next-scramble-move'),
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 6 : 9,
-                  vertical: dense
-                      ? 1
-                      : compact
-                      ? 3
-                      : 5,
-                ),
-                decoration: BoxDecoration(
-                  color: CrubikColors.warning.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  'CORRECT ${nextMove.notation}',
-                  style: TextStyle(
-                    color: CrubikColors.text,
-                    fontFamily: 'monospace',
-                    fontSize: dense
-                        ? 10
-                        : compact
-                        ? 11
-                        : 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

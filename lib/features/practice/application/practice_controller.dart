@@ -144,6 +144,13 @@ final class PracticeController extends ChangeNotifier {
 
   int get partialScrambleMoveTurnCount => _scrambleProgress.partialTurns;
 
+  List<CubeMove> get scrambleRecoveryMoves {
+    if (_phase != PracticePhase.scrambling || !guidanceIsCorrection) {
+      return const [];
+    }
+    return List.unmodifiable(_buildScrambleRecoveryMoves());
+  }
+
   ({int completedMoves, int partialTurns, bool isCorrection})
   get _scrambleProgress {
     if (!_smartCubeWorkflowActive) {
@@ -702,10 +709,27 @@ final class PracticeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<CubeMove> _buildScrambleGuidance() => _reduceMoves([
-    ..._preparationMoves.reversed.map((move) => move.inverse),
-    ..._scramble.moves,
-  ]);
+  List<CubeMove> _buildScrambleGuidance() {
+    final progress = _scrambleProgress;
+    if (progress.isCorrection) {
+      return [
+        ..._buildScrambleRecoveryMoves(completedMoves: progress.completedMoves),
+        ..._scramble.moves.skip(progress.completedMoves),
+      ];
+    }
+    return _reduceMoves([
+      ..._preparationMoves.reversed.map((move) => move.inverse),
+      ..._scramble.moves,
+    ]);
+  }
+
+  List<CubeMove> _buildScrambleRecoveryMoves({int? completedMoves}) {
+    final completed = completedMoves ?? _scrambleProgress.completedMoves;
+    return _reduceMoves([
+      ..._preparationMoves.reversed.map((move) => move.inverse),
+      ..._scramble.moves.take(completed),
+    ]);
+  }
 
   static List<CubeMove> _reduceMoves(Iterable<CubeMove> moves) {
     final reduced = <CubeMove>[];
