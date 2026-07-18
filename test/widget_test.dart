@@ -40,10 +40,31 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('practice-mobile-layout')), findsOneWidget);
+    expect(find.byKey(const Key('input-mode-chooser')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(practice.phase, PracticePhase.manualReady);
+    expect(practice.solves, isEmpty);
+
+    await tester.tap(find.text('Session'));
+    await tester.pump();
+    expect(find.byKey(const Key('export-solves-button')), findsOneWidget);
+    await tester.tap(find.text('Practice'));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('use-demo-cube-choice')));
+    await tester.pump();
+
+    expect(practice.inputMode, PracticeInputMode.demo);
+    expect(connection.isConnected, isFalse);
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-reset-view')), findsOneWidget);
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
     expect(tester.takeException(), isNull);
@@ -74,9 +95,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final connection = CubeConnectionController(
-      gateway: _SilentCubeConnectionGateway(),
-    );
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
 
@@ -86,23 +106,23 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('practice-mobile-layout')), findsOneWidget);
+    expect(find.byKey(const Key('input-mode-chooser')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    await tester.tap(find.byKey(const Key('use-demo-cube-choice')));
+    await tester.pump();
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
-    practice.setSmartCubeConnected(true);
+    await connection.connect(_supportedGan);
     practice.syncCubeState(CubeState.solved());
     await tester.pump();
     expect(find.byKey(const Key('scramble-guidance')), findsOneWidget);
     expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    practice.setSmartCubeConnected(false, demoMode: true);
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('manual-moves-button')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -125,6 +145,13 @@ void main() {
     );
     await tester.pump();
 
+    expect(find.byKey(const Key('input-mode-chooser')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(tester.takeException(), isNull);
+    final demoChoice = find.byKey(const Key('use-demo-cube-choice'));
+    await tester.ensureVisible(demoChoice);
+    await tester.tap(demoChoice);
+    await tester.pump();
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
@@ -145,6 +172,7 @@ void main() {
       clock: clock,
       now: () => timestamp = timestamp.add(const Duration(seconds: 1)),
     );
+    practice.activateDemoInput();
     for (var index = 0; index < 8; index++) {
       practice.startSolve();
       clock.value = Duration(seconds: 10 + index);
@@ -196,12 +224,18 @@ void main() {
       CrubikApp(practiceController: practice, connectionController: connection),
     );
     await tester.pump();
+    expect(find.byKey(const Key('input-mode-chooser')), findsOneWidget);
+    expect(find.byKey(const Key('timer-toggle')), findsNothing);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
     await connection.connect(_supportedGan);
+    await tester.pump();
 
     expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
     expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     expect(find.text('PRACTICE SCRAMBLE'), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.text('MANUAL MOVE INPUT'), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
     expect(find.text('OFFLINE CUBE LAB'), findsNothing);
     expect(find.text('OFFLINE READY'), findsNothing);
     expect(find.text('OFFLINE · 20 MOVES'), findsNothing);
@@ -227,6 +261,105 @@ void main() {
     );
     await tester.pump();
     expect(practice.cubeState.isSolved, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('initial physical cube state is applied during connection', (
+    tester,
+  ) async {
+    final physicalState = CubeState.solved()..apply(CubeMove.parse('R'));
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway(
+      initialEvent: SmartCubeStateEvent(
+        state: physicalState,
+        serial: 0,
+        receivedAt: DateTime.utc(2026),
+      ),
+    );
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await connection.connect(_supportedGan);
+    await tester.pump();
+
+    expect(practice.inputMode, PracticeInputMode.smartCube);
+    expect(practice.cubeState.facelets, physicalState.facelets);
+    expect(practice.phase, PracticePhase.needsSolvedCube);
+  });
+
+  testWidgets('connected state is replayed when practice attaches later', (
+    tester,
+  ) async {
+    final physicalState = CubeState.solved()..apply(CubeMove.parse('U'));
+    final stateEvent = SmartCubeStateEvent(
+      state: physicalState,
+      serial: 4,
+      receivedAt: DateTime.utc(2026),
+    );
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway(initialEvent: stateEvent);
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await connection.connect(_supportedGan);
+    await tester.pump();
+    expect(connection.latestStateEvent, same(stateEvent));
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pump();
+
+    expect(practice.inputMode, PracticeInputMode.smartCube);
+    expect(practice.cubeState.facelets, physicalState.facelets);
+    expect(practice.phase, PracticePhase.needsSolvedCube);
+    expect(find.text('Waiting for the physical cube state'), findsNothing);
+  });
+
+  testWidgets('desktop demo shows manual controls and can return to chooser', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('use-demo-cube-choice')));
+    await tester.pump();
+
+    expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
+    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
+    expect(find.text('Demo cube'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Exit demo'), findsOneWidget);
+    expect(
+      find.text('Manual timer and virtual cube controls active'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Exit demo'));
+    await tester.pumpAndSettle();
+    expect(practice.inputMode, PracticeInputMode.unselected);
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('input-mode-chooser')), findsOneWidget);
+    expect(find.text('MANUAL MOVE INPUT'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -271,12 +404,8 @@ void main() {
           .onPressed,
       isNull,
     );
-    expect(
-      tester
-          .widget<OutlinedButton>(find.byKey(const Key('manual-moves-button')))
-          .onPressed,
-      isNull,
-    );
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
 
     final first = practice.scramble.moves.first;
     expect(first.turns, 2);
@@ -495,16 +624,15 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final connection = CubeConnectionController(
-      gateway: _SilentCubeConnectionGateway(),
-    );
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
 
     await tester.pumpWidget(
       CrubikApp(practiceController: practice, connectionController: connection),
     );
-    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.tap(find.byKey(const Key('connect-smart-cube-choice')));
     await tester.pumpAndSettle();
 
     expect(
@@ -512,19 +640,22 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Scan nearby'), findsOneWidget);
-    expect(find.text('Demo'), findsOneWidget);
+    expect(find.byKey(const Key('use-demo-cube-dialog')), findsOneWidget);
+    expect(gateway.startScanCount, 0);
     expect(
       find.text(
-        'Cube turns update the live model and timer. Use Demo to practice without a smart cube.',
+        'Cube turns update the live model and timer. Use the demo cube to practice without hardware.',
       ),
       findsOneWidget,
     );
     expect(find.textContaining('timer locally'), findsNothing);
 
-    await tester.tap(find.text('Demo'));
+    await tester.tap(find.byKey(const Key('use-demo-cube-dialog')));
     await tester.pumpAndSettle();
-    expect(connection.isConnected, isTrue);
-    expect(connection.isDemo, isTrue);
+    expect(practice.inputMode, PracticeInputMode.demo);
+    expect(connection.isConnected, isFalse);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
   });
 
   testWidgets('connection dialog groups cubes and other BLE devices', (
@@ -845,13 +976,18 @@ const _supportedMoyu32 = CubeDeviceCandidate(
 );
 
 final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
-  _SilentCubeConnectionGateway({this.connectError, this.connectGate});
+  _SilentCubeConnectionGateway({
+    this.connectError,
+    this.connectGate,
+    SmartCubeEvent? initialEvent,
+  }) : _session = _SilentSmartCubeSession(stateOnRequest: initialEvent);
 
   final Object? connectError;
   final Completer<void>? connectGate;
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
-  final _session = _SilentSmartCubeSession();
+  final _SilentSmartCubeSession _session;
   bool _closed = false;
+  int startScanCount = 0;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
@@ -875,7 +1011,9 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   Future<void> requestPermissions() async {}
 
   @override
-  Future<void> startScan() async {}
+  Future<void> startScan() async {
+    startScanCount++;
+  }
 
   @override
   Future<void> stopScan() async {}
@@ -897,7 +1035,10 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
 }
 
 final class _SilentSmartCubeSession implements SmartCubeSession {
-  final _eventController = StreamController<SmartCubeEvent>.broadcast();
+  _SilentSmartCubeSession({this.stateOnRequest});
+
+  final SmartCubeEvent? stateOnRequest;
+  final _eventController = StreamController<SmartCubeEvent>();
   final _batteryController = StreamController<int>.broadcast();
   bool _closed = false;
 
@@ -918,6 +1059,12 @@ final class _SilentSmartCubeSession implements SmartCubeSession {
 
   void addBatteryLevel(int batteryLevel) =>
       _batteryController.add(batteryLevel);
+
+  @override
+  Future<void> requestState() async {
+    final event = stateOnRequest;
+    if (event != null) _eventController.add(event);
+  }
 
   @override
   Future<void> close() async {

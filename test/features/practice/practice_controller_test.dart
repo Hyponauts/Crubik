@@ -8,6 +8,63 @@ import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('starts unselected and ignores manual practice actions', () {
+    final controller = PracticeController();
+    final scramble = controller.scramble.toString();
+    final facelets = controller.cubeState.facelets;
+
+    controller.startSolve();
+    controller.toggleTimer();
+    controller.applyMove(CubeMove.parse('R'));
+    controller.resetCubeToScramble();
+    controller.newScramble();
+
+    expect(controller.inputMode, PracticeInputMode.unselected);
+    expect(controller.primaryActionEnabled, isFalse);
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.scramble.toString(), scramble);
+    expect(controller.cubeState.facelets, facelets);
+    expect(controller.currentMoves, isEmpty);
+    expect(controller.solves, isEmpty);
+    controller.dispose();
+  });
+
+  test('demo mode enables manual timing and virtual moves', () {
+    final clock = _FakeSolveClock();
+    final controller = PracticeController(clock: clock);
+
+    controller.activateDemoInput();
+    controller.startSolve();
+    clock.value = const Duration(seconds: 12);
+    controller.applyMove(CubeMove.parse('R'));
+    controller.stopSolve();
+
+    expect(controller.inputMode, PracticeInputMode.demo);
+    expect(controller.solves.single.elapsed, const Duration(seconds: 12));
+    expect(controller.solves.single.moveCount, 1);
+    expect(controller.solves.single.inputSource, 'manual');
+    controller.dispose();
+  });
+
+  test('leaving demo cancels an unsaved attempt and returns unselected', () {
+    final clock = _FakeSolveClock();
+    final controller = PracticeController(clock: clock);
+    controller.activateDemoInput();
+    controller.startSolve();
+    clock.value = const Duration(seconds: 5);
+    controller.applyMove(CubeMove.parse('R'));
+
+    controller.clearDemoInput();
+
+    expect(controller.inputMode, PracticeInputMode.unselected);
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.elapsed, Duration.zero);
+    expect(controller.currentMoves, isEmpty);
+    expect(controller.solves, isEmpty);
+    expect(controller.primaryActionEnabled, isFalse);
+    controller.dispose();
+  });
+
   test('records a manual solve and calculates basic statistics', () {
     final clock = _FakeSolveClock();
     var timestamp = DateTime.utc(2026, 1, 1);
@@ -18,6 +75,7 @@ void main() {
         return timestamp;
       },
     );
+    controller.activateDemoInput();
 
     for (final seconds in [12, 10, 15, 11, 13]) {
       controller.startSolve();
@@ -40,6 +98,7 @@ void main() {
   test('new scramble resets timer and captured solve moves', () {
     final clock = _FakeSolveClock();
     final controller = PracticeController(clock: clock);
+    controller.activateDemoInput();
     final original = controller.scramble.toString();
     controller.startSolve();
     controller.applyMove(CubeMove.parse('R'));
@@ -57,6 +116,7 @@ void main() {
 
   test('publishes monotonic move metadata only for applied moves', () {
     final controller = PracticeController();
+    controller.activateDemoInput();
 
     expect(controller.lastAppliedMove, isNull);
     expect(controller.cubeMoveRevision, 0);
@@ -79,6 +139,7 @@ void main() {
     final clock = _FakeSolveClock();
     final exportedAt = DateTime.utc(2026, 1, 1, 12);
     final controller = PracticeController(clock: clock, now: () => exportedAt);
+    controller.activateDemoInput();
 
     controller.startSolve();
     clock.value = const Duration(milliseconds: 12345);
@@ -106,7 +167,7 @@ void main() {
     () {
       final controller = PracticeController();
       final physicalState = CubeState.solved()..apply(CubeMove.parse('R'));
-      controller.setSmartCubeConnected(true);
+      controller.activateSmartCubeInput();
       controller.syncCubeState(physicalState);
 
       controller.newScramble();
@@ -120,7 +181,7 @@ void main() {
   test('connected cube waits for state and requires a solved baseline', () {
     final controller = PracticeController();
 
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     expect(controller.phase, PracticePhase.awaitingCubeState);
     expect(controller.primaryActionEnabled, isFalse);
 
@@ -138,7 +199,7 @@ void main() {
     final controller = PracticeController(
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
 
     final first = controller.scramble.moves.first;
@@ -178,7 +239,7 @@ void main() {
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
     final occurredAt = DateTime.utc(2026);
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
 
     final first = controller.scramble.moves.first;
@@ -258,7 +319,7 @@ void main() {
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
     final occurredAt = DateTime.utc(2026);
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
 
     final expectedIndex = controller.scramble.moves.indexWhere(
@@ -290,7 +351,7 @@ void main() {
       final controller = PracticeController(
         scrambleGenerator: ScrambleGenerator(random: Random(7)),
       );
-      controller.setSmartCubeConnected(true);
+      controller.activateSmartCubeInput();
       controller.syncCubeState(CubeState.solved());
       var splitDoubleTurn = false;
 
@@ -345,7 +406,7 @@ void main() {
             random: _FaceFirstDoubleTurnRandom(face),
           ),
         );
-        controller.setSmartCubeConnected(true);
+        controller.activateSmartCubeInput();
         controller.syncCubeState(CubeState.solved());
 
         final doubleTurn = controller.scramble.moves.first;
@@ -433,7 +494,7 @@ void main() {
     final controller = PracticeController(
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
     controller.applyMove(
       controller.scramble.moves.first,
@@ -584,9 +645,10 @@ void main() {
     );
     clock.value = const Duration(seconds: 8);
 
-    controller.setSmartCubeConnected(false);
+    controller.markSmartCubeDisconnected();
+    expect(controller.inputMode, PracticeInputMode.smartCube);
     expect(controller.phase, PracticePhase.solving);
-    controller.setSmartCubeConnected(true);
+    controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved(), occurredAt: now);
 
     expect(controller.phase, PracticePhase.stopped);
@@ -604,7 +666,7 @@ void _matchConnectedScramble(
   PracticeController controller,
   DateTime occurredAt,
 ) {
-  controller.setSmartCubeConnected(true);
+  controller.activateSmartCubeInput();
   controller.syncCubeState(CubeState.solved(), occurredAt: occurredAt);
   for (final move in [...controller.scramble.moves]) {
     controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);

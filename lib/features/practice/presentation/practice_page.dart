@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../cube/application/cube_connection_controller.dart';
-import '../../cube/domain/smart_cube_device.dart';
 import '../../cube/domain/cube_model.dart';
 import '../application/practice_controller.dart';
+import '../application/practice_input_controller.dart';
 import '../domain/solve_record.dart';
 import 'widgets/cube_3d_view.dart';
+import 'widgets/practice_connection.dart';
 
 class PracticePage extends StatefulWidget {
   const PracticePage({
     required this.practiceController,
-    required this.connectionController,
+    required this.inputController,
     super.key,
   });
 
   final PracticeController practiceController;
-  final CubeConnectionController connectionController;
+  final PracticeInputController inputController;
 
   @override
   State<PracticePage> createState() => _PracticePageState();
@@ -29,10 +29,7 @@ class _PracticePageState extends State<PracticePage> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        widget.practiceController,
-        widget.connectionController,
-      ]),
+      animation: widget.inputController,
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -69,11 +66,18 @@ class _PracticePageState extends State<PracticePage> {
             const VerticalDivider(width: 1),
             Expanded(
               child: _selectedIndex == 0
-                  ? _DesktopPractice(
-                      practice: widget.practiceController,
-                      connection: widget.connectionController,
-                      onConnectPressed: _showConnectionDialog,
-                    )
+                  ? widget.inputController.isUnselected
+                        ? _InputModeChooser(
+                            desktop: true,
+                            input: widget.inputController,
+                            onConnectPressed: _showConnectionDialog,
+                            onDemoPressed: widget.inputController.useDemoCube,
+                          )
+                        : _DesktopPractice(
+                            practice: widget.practiceController,
+                            input: widget.inputController,
+                            onConnectPressed: _showConnectionDialog,
+                          )
                   : _SessionsView(practice: widget.practiceController),
             ),
           ],
@@ -95,8 +99,8 @@ class _PracticePageState extends State<PracticePage> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: _ConnectionButton(
-              connection: widget.connectionController,
+            child: PracticeConnectionButton(
+              input: widget.inputController,
               onPressed: _showConnectionDialog,
               compact: true,
             ),
@@ -104,10 +108,16 @@ class _PracticePageState extends State<PracticePage> {
         ],
       ),
       body: _selectedIndex == 0
-          ? _MobilePractice(
-              practice: widget.practiceController,
-              connection: widget.connectionController,
-            )
+          ? widget.inputController.isUnselected
+                ? _InputModeChooser(
+                    input: widget.inputController,
+                    onConnectPressed: _showConnectionDialog,
+                    onDemoPressed: widget.inputController.useDemoCube,
+                  )
+                : _MobilePractice(
+                    practice: widget.practiceController,
+                    input: widget.inputController,
+                  )
           : _SessionsView(practice: widget.practiceController, mobile: true),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -129,11 +139,7 @@ class _PracticePageState extends State<PracticePage> {
   }
 
   Future<void> _showConnectionDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) =>
-          _ConnectionDialog(controller: widget.connectionController),
-    );
+    await showPracticeConnectionDialog(context, input: widget.inputController);
   }
 }
 
@@ -182,15 +188,156 @@ class _DesktopNavigation extends StatelessWidget {
   }
 }
 
+class _InputModeChooser extends StatelessWidget {
+  const _InputModeChooser({
+    required this.input,
+    required this.onConnectPressed,
+    required this.onDemoPressed,
+    this.desktop = false,
+  });
+
+  final PracticeInputController input;
+  final VoidCallback onConnectPressed;
+  final VoidCallback onDemoPressed;
+  final bool desktop;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final compactLandscape = !desktop && size.width > size.height;
+    final icon = Container(
+      width: compactLandscape ? 52 : 64,
+      height: compactLandscape ? 52 : 64,
+      decoration: BoxDecoration(
+        color: const Color(0x16B7F34A),
+        borderRadius: BorderRadius.circular(compactLandscape ? 16 : 20),
+      ),
+      child: Icon(
+        Icons.view_in_ar_rounded,
+        color: CrubikColors.lime,
+        size: compactLandscape ? 28 : 34,
+      ),
+    );
+    final buttons = compactLandscape
+        ? Row(
+            children: [
+              Expanded(child: _connectChoiceButton()),
+              const SizedBox(width: 10),
+              Expanded(child: _demoChoiceButton()),
+            ],
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: double.infinity, child: _connectChoiceButton()),
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: _demoChoiceButton()),
+            ],
+          );
+    final details = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: compactLandscape
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Text(
+          'How do you want to practice?',
+          textAlign: compactLandscape ? TextAlign.left : TextAlign.center,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        SizedBox(height: compactLandscape ? 4 : 8),
+        Text(
+          'Connect a supported smart cube to track turns automatically, or use the demo cube with the timer and virtual move controls.',
+          textAlign: compactLandscape ? TextAlign.left : TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: CrubikColors.muted),
+        ),
+        SizedBox(height: compactLandscape ? 12 : 22),
+        buttons,
+      ],
+    );
+    final chooser = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: compactLandscape ? 760 : 560),
+      child: _Panel(
+        key: const Key('input-mode-chooser'),
+        padding: EdgeInsets.all(compactLandscape ? 18 : 24),
+        child: compactLandscape
+            ? Row(
+                children: [
+                  icon,
+                  const SizedBox(width: 18),
+                  Expanded(child: details),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [icon, const SizedBox(height: 18), details],
+              ),
+      ),
+    );
+
+    if (!desktop) {
+      return SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: chooser,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 22, 28, 22),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Expanded(child: _Brand()),
+              PracticeConnectionButton(
+                input: input,
+                onPressed: onConnectPressed,
+              ),
+            ],
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: chooser,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _connectChoiceButton() => FilledButton.icon(
+    key: const Key('connect-smart-cube-choice'),
+    onPressed: onConnectPressed,
+    icon: const Icon(Icons.bluetooth_searching),
+    label: const Text('Connect smart cube'),
+  );
+
+  Widget _demoChoiceButton() => OutlinedButton.icon(
+    key: const Key('use-demo-cube-choice'),
+    onPressed: onDemoPressed,
+    icon: const Icon(Icons.science_outlined),
+    label: const Text('Use demo cube'),
+  );
+}
+
 class _DesktopPractice extends StatelessWidget {
   const _DesktopPractice({
     required this.practice,
-    required this.connection,
+    required this.input,
     required this.onConnectPressed,
   });
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
   final VoidCallback onConnectPressed;
 
   @override
@@ -203,8 +350,8 @@ class _DesktopPractice extends StatelessWidget {
           Row(
             children: [
               const Expanded(child: _Brand()),
-              _ConnectionButton(
-                connection: connection,
+              PracticeConnectionButton(
+                input: input,
                 onPressed: onConnectPressed,
               ),
             ],
@@ -223,13 +370,18 @@ class _DesktopPractice extends StatelessWidget {
                           children: [
                             _CubeAndTimerHero(
                               practice: practice,
-                              connection: connection,
+                              input: input,
                               compact: false,
                             ),
                             const SizedBox(height: 16),
-                            _ScramblePanel(practice: practice),
-                            const SizedBox(height: 16),
-                            _MoveInputPanel(practice: practice),
+                            _ScramblePanel(
+                              practice: practice,
+                              demoMode: input.isDemo,
+                            ),
+                            if (input.isDemo) ...[
+                              const SizedBox(height: 16),
+                              _MoveInputPanel(practice: practice),
+                            ],
                           ],
                         ),
                       ),
@@ -251,10 +403,10 @@ class _DesktopPractice extends StatelessWidget {
 }
 
 class _MobilePractice extends StatelessWidget {
-  const _MobilePractice({required this.practice, required this.connection});
+  const _MobilePractice({required this.practice, required this.input});
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
 
   void _showManualMoves(BuildContext context) {
     showDialog<void>(
@@ -274,7 +426,7 @@ class _MobilePractice extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: _MobilePracticePortrait(
               practice: practice,
-              connection: connection,
+              input: input,
               onManualMoves: () => _showManualMoves(context),
               scrollFallback: true,
             ),
@@ -287,12 +439,12 @@ class _MobilePractice extends StatelessWidget {
           child: landscape
               ? _MobilePracticeLandscape(
                   practice: practice,
-                  connection: connection,
+                  input: input,
                   onManualMoves: () => _showManualMoves(context),
                 )
               : _MobilePracticePortrait(
                   practice: practice,
-                  connection: connection,
+                  input: input,
                   onManualMoves: () => _showManualMoves(context),
                 ),
         );
@@ -304,23 +456,27 @@ class _MobilePractice extends StatelessWidget {
 class _MobilePracticePortrait extends StatelessWidget {
   const _MobilePracticePortrait({
     required this.practice,
-    required this.connection,
+    required this.input,
     required this.onManualMoves,
     this.scrollFallback = false,
   });
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
   final VoidCallback onManualMoves;
   final bool scrollFallback;
 
   @override
   Widget build(BuildContext context) {
-    final cube = _CompactCubePanel(practice: practice, connection: connection);
+    final cube = _CompactCubePanel(practice: practice, input: input);
     return Column(
       mainAxisSize: scrollFallback ? MainAxisSize.min : MainAxisSize.max,
       children: [
-        _CompactScramblePanel(practice: practice, onManualMoves: onManualMoves),
+        _CompactScramblePanel(
+          practice: practice,
+          demoMode: input.isDemo,
+          onManualMoves: onManualMoves,
+        ),
         const SizedBox(height: 8),
         if (scrollFallback)
           SizedBox(height: 240, child: cube)
@@ -336,12 +492,12 @@ class _MobilePracticePortrait extends StatelessWidget {
 class _MobilePracticeLandscape extends StatelessWidget {
   const _MobilePracticeLandscape({
     required this.practice,
-    required this.connection,
+    required this.input,
     required this.onManualMoves,
   });
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
   final VoidCallback onManualMoves;
 
   @override
@@ -350,7 +506,7 @@ class _MobilePracticeLandscape extends StatelessWidget {
       children: [
         Expanded(
           flex: 5,
-          child: _CompactCubePanel(practice: practice, connection: connection),
+          child: _CompactCubePanel(practice: practice, input: input),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -360,6 +516,7 @@ class _MobilePracticeLandscape extends StatelessWidget {
               Expanded(
                 child: _CompactScramblePanel(
                   practice: practice,
+                  demoMode: input.isDemo,
                   onManualMoves: onManualMoves,
                   landscape: true,
                 ),
@@ -375,10 +532,10 @@ class _MobilePracticeLandscape extends StatelessWidget {
 }
 
 class _CompactCubePanel extends StatelessWidget {
-  const _CompactCubePanel({required this.practice, required this.connection});
+  const _CompactCubePanel({required this.practice, required this.input});
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
 
   @override
   Widget build(BuildContext context) {
@@ -402,7 +559,7 @@ class _CompactCubePanel extends StatelessWidget {
                     height: 7,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: connection.isConnected
+                      color: input.isPhysicalCubeConnected
                           ? CrubikColors.lime
                           : practice.smartCubeWorkflowActive
                           ? CrubikColors.warning
@@ -411,13 +568,15 @@ class _CompactCubePanel extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    connection.isConnected
+                    input.isDemo
+                        ? 'DEMO'
+                        : input.isPhysicalCubeConnected
                         ? 'LINKED'
                         : practice.smartCubeWorkflowActive
                         ? 'RECONNECT'
-                        : 'MANUAL',
+                        : 'NOT CONNECTED',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: connection.isConnected
+                      color: input.isPhysicalCubeConnected
                           ? CrubikColors.lime
                           : practice.smartCubeWorkflowActive
                           ? CrubikColors.warning
@@ -455,11 +614,13 @@ class _CompactCubePanel extends StatelessWidget {
 class _CompactScramblePanel extends StatelessWidget {
   const _CompactScramblePanel({
     required this.practice,
+    required this.demoMode,
     required this.onManualMoves,
     this.landscape = false,
   });
 
   final PracticeController practice;
+  final bool demoMode;
   final VoidCallback onManualMoves;
   final bool landscape;
 
@@ -503,33 +664,32 @@ class _CompactScramblePanel extends StatelessWidget {
                   label: const Text('New'),
                 ),
               ),
-              const SizedBox(width: 6),
-              IconButton.outlined(
-                key: const Key('reset-scramble'),
-                onPressed:
-                    canChangeScramble && !practice.smartCubeWorkflowActive
-                    ? practice.resetCubeToScramble
-                    : null,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.replay_rounded, size: 18),
-                tooltip: 'Reset visual cube to scramble',
-              ),
-              const SizedBox(width: 6),
-              OutlinedButton.icon(
-                key: const Key('manual-moves-button'),
-                onPressed: practice.smartCubeWorkflowActive
-                    ? null
-                    : onManualMoves,
-                style: OutlinedButton.styleFrom(
+              if (demoMode) ...[
+                const SizedBox(width: 6),
+                IconButton.outlined(
+                  key: const Key('reset-scramble'),
+                  onPressed: canChangeScramble
+                      ? practice.resetCubeToScramble
+                      : null,
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 8,
-                  ),
+                  icon: const Icon(Icons.replay_rounded, size: 18),
+                  tooltip: 'Reset virtual cube to scramble',
                 ),
-                icon: const Icon(Icons.touch_app_outlined, size: 17),
-                label: const Text('Moves'),
-              ),
+                const SizedBox(width: 6),
+                OutlinedButton.icon(
+                  key: const Key('manual-moves-button'),
+                  onPressed: onManualMoves,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 8,
+                    ),
+                  ),
+                  icon: const Icon(Icons.touch_app_outlined, size: 17),
+                  label: const Text('Moves'),
+                ),
+              ],
             ],
           ),
         ],
@@ -684,66 +844,20 @@ class _BrandMark extends StatelessWidget {
   }
 }
 
-class _ConnectionButton extends StatelessWidget {
-  const _ConnectionButton({
-    required this.connection,
-    required this.onPressed,
-    this.compact = false,
-  });
-
-  final CubeConnectionController connection;
-  final VoidCallback onPressed;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final isConnected = connection.isConnected;
-    final label = isConnected
-        ? (compact ? 'LIVE' : connection.connectedCube!.name)
-        : (compact ? 'CONNECT' : 'Connect cube');
-    return OutlinedButton.icon(
-      key: const Key('connect-cube-button'),
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: isConnected ? CrubikColors.lime : CrubikColors.text,
-        side: BorderSide(
-          color: isConnected ? CrubikColors.lime : CrubikColors.border,
-        ),
-        backgroundColor: isConnected
-            ? const Color(0x12B7F34A)
-            : CrubikColors.surface,
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 10 : 14,
-          vertical: 11,
-        ),
-      ),
-      icon: Icon(
-        isConnected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
-        size: 18,
-      ),
-      label: Text(label),
-    );
-  }
-}
-
 class _CubeAndTimerHero extends StatelessWidget {
   const _CubeAndTimerHero({
     required this.practice,
-    required this.connection,
+    required this.input,
     required this.compact,
   });
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final cube = _CubeStage(
-      practice: practice,
-      connection: connection,
-      compact: compact,
-    );
+    final cube = _CubeStage(practice: practice, input: input, compact: compact);
     final timer = _TimerPanel(practice: practice, compact: compact);
 
     if (compact) {
@@ -769,12 +883,12 @@ class _CubeAndTimerHero extends StatelessWidget {
 class _CubeStage extends StatelessWidget {
   const _CubeStage({
     required this.practice,
-    required this.connection,
+    required this.input,
     required this.compact,
   });
 
   final PracticeController practice;
-  final CubeConnectionController connection;
+  final PracticeInputController input;
   final bool compact;
 
   @override
@@ -790,7 +904,7 @@ class _CubeStage extends StatelessWidget {
               height: 7,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: connection.isConnected
+                color: input.isPhysicalCubeConnected
                     ? CrubikColors.lime
                     : practice.smartCubeWorkflowActive
                     ? CrubikColors.warning
@@ -799,13 +913,15 @@ class _CubeStage extends StatelessWidget {
             ),
             const SizedBox(width: 7),
             Text(
-              connection.isConnected
+              input.isDemo
+                  ? 'DEMO'
+                  : input.isPhysicalCubeConnected
                   ? 'LINKED'
                   : practice.smartCubeWorkflowActive
                   ? 'RECONNECT'
-                  : 'MANUAL',
+                  : 'NOT CONNECTED',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: connection.isConnected
+                color: input.isPhysicalCubeConnected
                     ? CrubikColors.lime
                     : practice.smartCubeWorkflowActive
                     ? CrubikColors.warning
@@ -915,9 +1031,10 @@ class _TimerPanel extends StatelessWidget {
 }
 
 class _ScramblePanel extends StatelessWidget {
-  const _ScramblePanel({required this.practice});
+  const _ScramblePanel({required this.practice, required this.demoMode});
 
   final PracticeController practice;
+  final bool demoMode;
 
   @override
   Widget build(BuildContext context) {
@@ -948,18 +1065,20 @@ class _ScramblePanel extends StatelessWidget {
                   label: const Text('New scramble'),
                 ),
               ),
-              const SizedBox(width: 10),
-              IconButton.outlined(
-                onPressed:
-                    practice.phase == PracticePhase.inspectionDelay ||
-                        practice.phase == PracticePhase.inspection ||
-                        practice.phase == PracticePhase.solving ||
-                        practice.smartCubeWorkflowActive
-                    ? null
-                    : practice.resetCubeToScramble,
-                icon: const Icon(Icons.replay_rounded),
-                tooltip: 'Reset visual cube to scramble',
-              ),
+              if (demoMode) ...[
+                const SizedBox(width: 10),
+                IconButton.outlined(
+                  key: const Key('reset-scramble'),
+                  onPressed:
+                      practice.phase == PracticePhase.inspectionDelay ||
+                          practice.phase == PracticePhase.inspection ||
+                          practice.phase == PracticePhase.solving
+                      ? null
+                      : practice.resetCubeToScramble,
+                  icon: const Icon(Icons.replay_rounded),
+                  tooltip: 'Reset virtual cube to scramble',
+                ),
+              ],
             ],
           ),
         ],
@@ -997,9 +1116,7 @@ class _MoveInputPanel extends StatelessWidget {
           const _SectionLabel('MANUAL MOVE INPUT'),
           const SizedBox(height: 7),
           Text(
-            practice.smartCubeWorkflowActive
-                ? 'Manual moves are disabled while the physical cube is authoritative.'
-                : 'Use these controls to preview live cube movement without hardware.',
+            'Use these controls to preview live cube movement without hardware.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
@@ -1024,10 +1141,8 @@ class _MoveInputPanel extends StatelessWidget {
                       width: buttonWidth,
                       child: OutlinedButton(
                         key: Key('cube-move-$notation'),
-                        onPressed: practice.smartCubeWorkflowActive
-                            ? null
-                            : () =>
-                                  practice.applyMove(CubeMove.parse(notation)),
+                        onPressed: () =>
+                            practice.applyMove(CubeMove.parse(notation)),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           foregroundColor: CrubikColors.text,
@@ -1434,436 +1549,12 @@ class _SessionsView extends StatelessWidget {
   }
 }
 
-class _ConnectionDialog extends StatelessWidget {
-  const _ConnectionDialog({required this.controller});
-
-  final CubeConnectionController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final scanning = controller.status == CubeConnectionStatus.scanning;
-        return Dialog(
-          insetPadding: const EdgeInsets.all(18),
-          backgroundColor: CrubikColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: CrubikColors.border),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 650),
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0x16B7F34A),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: const Icon(
-                          Icons.bluetooth_searching,
-                          color: CrubikColors.lime,
-                        ),
-                      ),
-                      const SizedBox(width: 13),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Connect a smart cube',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'MVP protocols: GAN Gen2–4, MoYu AI 2023, and MoYu32',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  if (controller.isConnected) ...[
-                    _ConnectedCubeCard(controller: controller),
-                  ] else ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: scanning
-                                ? controller.stopScan
-                                : controller.startScan,
-                            icon: Icon(
-                              scanning ? Icons.stop : Icons.bluetooth_searching,
-                            ),
-                            label: Text(scanning ? 'Stop scan' : 'Scan nearby'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            await controller.connectDemo();
-                            if (context.mounted) Navigator.of(context).pop();
-                          },
-                          icon: const Icon(Icons.science_outlined),
-                          label: const Text('Demo'),
-                        ),
-                      ],
-                    ),
-                    if (scanning) ...[
-                      const SizedBox(height: 14),
-                      const LinearProgressIndicator(minHeight: 2),
-                    ],
-                    if (controller.errorMessage != null) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        controller.errorMessage!,
-                        style: const TextStyle(color: CrubikColors.danger),
-                      ),
-                      if (controller.hasDiagnostics) ...[
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          key: const Key('copy-bluetooth-diagnostics-button'),
-                          onPressed: () async {
-                            await Clipboard.setData(
-                              ClipboardData(text: controller.diagnosticReport),
-                            );
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Redacted Bluetooth diagnostics copied',
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.copy_all_outlined, size: 18),
-                          label: const Text('Copy diagnostics'),
-                        ),
-                      ],
-                    ],
-                    const SizedBox(height: 16),
-                    Flexible(
-                      child: controller.discoveredDevices.isEmpty
-                          ? _EmptyDeviceSearch(scanning: scanning)
-                          : _DiscoveredDeviceList(controller: controller),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Cube turns update the live model and timer. Use Demo to practice without a smart cube.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: CrubikColors.muted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ConnectedCubeCard extends StatelessWidget {
-  const _ConnectedCubeCard({required this.controller});
-
-  final CubeConnectionController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final device = controller.connectedCube!;
-    final batteryLevel = controller.batteryLevel;
-    final connectionStatus = device.isDemo
-        ? 'Demo movement source'
-        : batteryLevel == null
-        ? 'BLE link active'
-        : 'BLE link active · $batteryLevel% battery';
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0x12B7F34A),
-        border: Border.all(color: const Color(0x66B7F34A)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.bluetooth_connected, color: CrubikColors.lime),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device.name,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                Text(
-                  connectionStatus,
-                  semanticsLabel: batteryLevel == null
-                      ? connectionStatus
-                      : 'BLE link active, battery $batteryLevel percent',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: controller.disconnect,
-            child: const Text('Disconnect'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyDeviceSearch extends StatelessWidget {
-  const _EmptyDeviceSearch({required this.scanning});
-
-  final bool scanning;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-      decoration: BoxDecoration(
-        color: CrubikColors.elevated,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(scanning ? Icons.radar : Icons.bluetooth_disabled, size: 30),
-          const SizedBox(height: 10),
-          Text(
-            scanning
-                ? 'Looking for nearby Bluetooth devices…'
-                : 'No Bluetooth devices found yet',
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(color: CrubikColors.text),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Wake your cube with a turn and keep nearby devices in range.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DiscoveredDeviceList extends StatelessWidget {
-  const _DiscoveredDeviceList({required this.controller});
-
-  final CubeConnectionController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final cubes = controller.discoveredCubes;
-    final otherDevices = controller.otherDiscoveredDevices;
-    final connectionBusy = controller.status == CubeConnectionStatus.connecting;
-
-    return ListView(
-      key: const Key('discovered-device-list'),
-      shrinkWrap: true,
-      children: [
-        _DeviceGroupHeader(title: 'Cubes', count: cubes.length),
-        const SizedBox(height: 8),
-        if (cubes.isEmpty)
-          const _NoIdentifiedCubes()
-        else
-          for (var index = 0; index < cubes.length; index++) ...[
-            if (index > 0) const SizedBox(height: 8),
-            _DeviceResult(
-              device: cubes[index],
-              connecting: controller.connectingDeviceId == cubes[index].id,
-              connectionBusy: connectionBusy,
-              onConnect: cubes[index].canConnect
-                  ? () async {
-                      await controller.connect(cubes[index]);
-                      if (context.mounted && controller.isConnected) {
-                        Navigator.of(context).pop();
-                      }
-                    }
-                  : null,
-            ),
-          ],
-        if (otherDevices.isNotEmpty) ...[
-          const SizedBox(height: 18),
-          _DeviceGroupHeader(
-            title: 'Other available devices',
-            count: otherDevices.length,
-          ),
-          const SizedBox(height: 8),
-          for (var index = 0; index < otherDevices.length; index++) ...[
-            if (index > 0) const SizedBox(height: 8),
-            _DeviceResult(
-              device: otherDevices[index],
-              connecting: false,
-              connectionBusy: connectionBusy,
-              onConnect: null,
-            ),
-          ],
-        ],
-      ],
-    );
-  }
-}
-
-class _DeviceGroupHeader extends StatelessWidget {
-  const _DeviceGroupHeader({required this.title, required this.count});
-
-  final String title;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
-        ),
-        Text(
-          '$count',
-          semanticsLabel: '$count devices',
-          style: Theme.of(
-            context,
-          ).textTheme.labelMedium?.copyWith(color: CrubikColors.muted),
-        ),
-      ],
-    );
-  }
-}
-
-class _NoIdentifiedCubes extends StatelessWidget {
-  const _NoIdentifiedCubes();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: CrubikColors.elevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: CrubikColors.border),
-      ),
-      child: Text(
-        'No identified cubes found yet.',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
-  }
-}
-
-class _DeviceResult extends StatelessWidget {
-  const _DeviceResult({
-    required this.device,
-    required this.connecting,
-    required this.connectionBusy,
-    required this.onConnect,
-  });
-
-  final CubeDeviceCandidate device;
-  final bool connecting;
-  final bool connectionBusy;
-  final VoidCallback? onConnect;
-
-  @override
-  Widget build(BuildContext context) {
-    final isOtherDevice = !device.isIdentifiedCube;
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: CrubikColors.elevated,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: CrubikColors.border),
-      ),
-      child: Row(
-        children: [
-          Icon(isOtherDevice ? Icons.bluetooth : Icons.view_in_ar_outlined),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device.name,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: CrubikColors.text,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (isOtherDevice)
-                  Text(
-                    '${device.rssi ?? '—'} dBm · Not identified as a smart cube',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )
-                else if (device.isSupported)
-                  Text(
-                    '${device.vendor.name.toUpperCase()} · ${device.rssi ?? '—'} dBm',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )
-                else ...[
-                  Text(
-                    '${device.vendor.name.toUpperCase()} · Detected, not supported yet',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: CrubikColors.warning,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    device.supportMessage ??
-                        'This smart-cube protocol is not supported yet.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (device.canConnect)
-            FilledButton(
-              key: Key('connect-device-${device.id}'),
-              onPressed: connectionBusy ? null : onConnect,
-              child: Text(connecting ? 'Connecting…' : 'Connect'),
-            )
-          else if (device.isIdentifiedCube)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Icon(
-                Icons.info_outline,
-                semanticLabel: 'Protocol not supported',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Panel extends StatelessWidget {
-  const _Panel({required this.child, this.padding = const EdgeInsets.all(18)});
+  const _Panel({
+    required this.child,
+    this.padding = const EdgeInsets.all(18),
+    super.key,
+  });
 
   final Widget child;
   final EdgeInsets padding;
