@@ -39,11 +39,13 @@ final class CubeConnectionController extends ChangeNotifier {
 
   final Map<String, CubeDeviceCandidate> _discovered = {};
   CubeConnectionStatus _status = CubeConnectionStatus.disconnected;
+  String? _connectingDeviceId;
   ConnectedCube? _connectedCube;
   int? _batteryLevel;
   String? _errorMessage;
 
   CubeConnectionStatus get status => _status;
+  String? get connectingDeviceId => _connectingDeviceId;
   ConnectedCube? get connectedCube => _connectedCube;
   int? get batteryLevel => _batteryLevel;
   String? get errorMessage => _errorMessage;
@@ -68,6 +70,7 @@ final class CubeConnectionController extends ChangeNotifier {
 
   Future<void> startScan() async {
     if (_status == CubeConnectionStatus.connecting || _closed) return;
+    _connectingDeviceId = null;
     _errorMessage = null;
     _discovered.clear();
     _status = CubeConnectionStatus.scanning;
@@ -125,6 +128,7 @@ final class CubeConnectionController extends ChangeNotifier {
     await _releaseActiveSession();
     _connectedCube = null;
     _batteryLevel = null;
+    _connectingDeviceId = device.id;
     _status = CubeConnectionStatus.connecting;
     notifyListeners();
 
@@ -157,6 +161,7 @@ final class CubeConnectionController extends ChangeNotifier {
           unawaited(_handleLinkLoss(session));
         }
       });
+      _connectingDeviceId = null;
       _status = CubeConnectionStatus.connected;
       _diagnostics.add('connection.ready');
       notifyListeners();
@@ -165,6 +170,7 @@ final class CubeConnectionController extends ChangeNotifier {
       await _releaseActiveSession();
       _connectedCube = null;
       _batteryLevel = null;
+      _connectingDeviceId = null;
       _status = CubeConnectionStatus.error;
       _errorMessage = _friendlyError(error);
       notifyListeners();
@@ -176,6 +182,7 @@ final class CubeConnectionController extends ChangeNotifier {
     await stopScan();
     await _releaseActiveSession();
     if (_closed) return;
+    _connectingDeviceId = null;
     _connectedCube = const ConnectedCube.demo();
     _batteryLevel = null;
     _errorMessage = null;
@@ -184,6 +191,7 @@ final class CubeConnectionController extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _connectingDeviceId = null;
     _connectedCube = null;
     _batteryLevel = null;
     _errorMessage = null;
@@ -195,6 +203,7 @@ final class CubeConnectionController extends ChangeNotifier {
   Future<void> _handleLinkLoss(SmartCubeSession session) async {
     if (!identical(_session, session)) return;
     _session = null;
+    _connectingDeviceId = null;
     _connectedCube = null;
     _batteryLevel = null;
     _status = CubeConnectionStatus.disconnected;
