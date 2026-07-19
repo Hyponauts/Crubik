@@ -55,6 +55,30 @@ void main() {
     controller.dispose();
   });
 
+  test('timer ticks do not emit structural practice changes', () async {
+    final controller = PracticeController();
+    controller.activateDemoInput();
+    var structuralChanges = 0;
+    var clockTicks = 0;
+    void countStructuralChange() => structuralChanges++;
+    void countClockTick() => clockTicks++;
+    controller.addListener(countStructuralChange);
+    controller.clockTicks.addListener(countClockTick);
+
+    controller.startSolve();
+    structuralChanges = 0;
+    clockTicks = 0;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(clockTicks, greaterThan(0));
+    expect(structuralChanges, 0);
+
+    controller.abortAttempt();
+    controller.removeListener(countStructuralChange);
+    controller.clockTicks.removeListener(countClockTick);
+    controller.dispose();
+  });
+
   test('leaving demo cancels an unsaved attempt and returns unselected', () {
     final clock = _FakeSolveClock();
     final controller = PracticeController(clock: clock);

@@ -86,6 +86,7 @@ final class PracticeController extends ChangeNotifier {
   late final SolveHistory _history;
   final Duration preInspectionDelay;
   final Duration inspectionDuration;
+  final ChangeNotifier _clockTicks = ChangeNotifier();
 
   late Scramble _scramble;
   late CubeState _scrambleTarget;
@@ -117,6 +118,7 @@ final class PracticeController extends ChangeNotifier {
   CubeMove? get lastAppliedMove => _lastAppliedMove;
   int get cubeMoveRevision => _cubeMoveRevision;
   SolveRecord? get pendingSolveReview => _pendingSolveReview;
+  Listenable get clockTicks => _clockTicks;
   Object? get persistenceError => _history.persistenceError;
 
   Duration get preInspectionRemaining {
@@ -627,15 +629,18 @@ final class PracticeController extends ChangeNotifier {
         final deadline = _preInspectionDeadline!;
         if (!now.isBefore(deadline)) {
           _beginInspection(startedAt: deadline);
+          return;
         }
       } else if (_phase == PracticePhase.inspection) {
         final now = _now();
         final deadline = _inspectionDeadline!;
         if (!now.isBefore(deadline)) {
           _startSolvingFromInspection(now);
+          notifyListeners();
+          return;
         }
       }
-      notifyListeners();
+      _clockTicks.notifyListeners();
     });
   }
 
@@ -730,6 +735,7 @@ final class PracticeController extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
+    _clockTicks.dispose();
     super.dispose();
   }
 }
