@@ -15,7 +15,6 @@ enum PracticePhase {
   inspectionDelay,
   inspection,
   solving,
-  stopped,
 }
 
 enum PracticeInputMode { unselected, demo, smartCube }
@@ -105,6 +104,7 @@ final class PracticeController extends ChangeNotifier {
   SolveStartTrigger? _startTrigger;
   CubeMove? _lastAppliedMove;
   int _cubeMoveRevision = 0;
+  SolveRecord? _pendingSolveReview;
 
   Scramble get scramble => _scramble;
   CubeState get cubeState => _cubeState;
@@ -116,6 +116,7 @@ final class PracticeController extends ChangeNotifier {
   bool get smartCubeWorkflowActive => _inputMode == PracticeInputMode.smartCube;
   CubeMove? get lastAppliedMove => _lastAppliedMove;
   int get cubeMoveRevision => _cubeMoveRevision;
+  SolveRecord? get pendingSolveReview => _pendingSolveReview;
   Object? get persistenceError => _history.persistenceError;
 
   Duration get preInspectionRemaining {
@@ -159,8 +160,7 @@ final class PracticeController extends ChangeNotifier {
     }
     if (_phase == PracticePhase.inspectionDelay ||
         _phase == PracticePhase.inspection ||
-        _phase == PracticePhase.solving ||
-        _phase == PracticePhase.stopped) {
+        _phase == PracticePhase.solving) {
       return (
         completedMoves: _scramble.moves.length,
         partialTurns: 0,
@@ -218,8 +218,7 @@ final class PracticeController extends ChangeNotifier {
     }
     if (_inputMode != PracticeInputMode.demo) return false;
     return _phase == PracticePhase.manualReady ||
-        _phase == PracticePhase.solving ||
-        _phase == PracticePhase.stopped;
+        _phase == PracticePhase.solving;
   }
 
   bool get hasSolves => _history.hasRecords;
@@ -246,22 +245,7 @@ final class PracticeController extends ChangeNotifier {
         _phase == PracticePhase.solving) {
       return;
     }
-    _scramble = _scrambleGenerator.generate();
-    _scrambleTarget = _stateForScramble(_scramble);
-    _preparationMoves.clear();
-    _currentMoves.clear();
-    _clock.reset();
-    _clearAttemptTiming();
-    if (smartCubeWorkflowActive) {
-      _phase = !_hasAuthoritativeCubeState
-          ? PracticePhase.awaitingCubeState
-          : _cubeState.isSolved
-          ? PracticePhase.scrambling
-          : PracticePhase.needsSolvedCube;
-    } else {
-      _cubeState = _scrambleTarget.copy();
-      _phase = PracticePhase.manualReady;
-    }
+    _generateNextScramble();
     notifyListeners();
   }
 
@@ -309,8 +293,7 @@ final class PracticeController extends ChangeNotifier {
     _hasAuthoritativeCubeState = false;
     if (_phase != PracticePhase.inspectionDelay &&
         _phase != PracticePhase.inspection &&
-        _phase != PracticePhase.solving &&
-        _phase != PracticePhase.stopped) {
+        _phase != PracticePhase.solving) {
       _phase = PracticePhase.awaitingCubeState;
     }
     notifyListeners();
@@ -400,8 +383,7 @@ final class PracticeController extends ChangeNotifier {
       case PracticePhase.manualReady ||
           PracticePhase.inspectionDelay ||
           PracticePhase.inspection ||
-          PracticePhase.solving ||
-          PracticePhase.stopped:
+          PracticePhase.solving:
         break;
     }
     notifyListeners();
@@ -425,6 +407,7 @@ final class PracticeController extends ChangeNotifier {
         _phase == PracticePhase.solving) {
       return;
     }
+    _pendingSolveReview = null;
     _currentMoves.clear();
     _clock
       ..reset()
@@ -470,7 +453,6 @@ final class PracticeController extends ChangeNotifier {
     _clock.stop();
     _ticker?.cancel();
     _ticker = null;
-    _phase = PracticePhase.stopped;
 
     final createdAt = _now();
     final solve = SolveRecord(
@@ -484,7 +466,9 @@ final class PracticeController extends ChangeNotifier {
       startTrigger: _startTrigger,
     );
     _history.add(solve);
+    _pendingSolveReview = solve;
     _activeAttemptUsesSmartCube = false;
+    _generateNextScramble();
     notifyListeners();
   }
 
@@ -580,6 +564,7 @@ final class PracticeController extends ChangeNotifier {
   }
 
   void _beginPreInspectionDelay() {
+    _pendingSolveReview = null;
     _currentMoves.clear();
     _clock.reset();
     _clearAttemptTiming();
@@ -662,6 +647,26 @@ final class PracticeController extends ChangeNotifier {
     _currentMoves.clear();
     _clearAttemptTiming();
     _activeAttemptUsesSmartCube = false;
+    _pendingSolveReview = null;
+  }
+
+  void _generateNextScramble() {
+    _scramble = _scrambleGenerator.generate();
+    _scrambleTarget = _stateForScramble(_scramble);
+    _preparationMoves.clear();
+    _currentMoves.clear();
+    _clock.reset();
+    _clearAttemptTiming();
+    if (smartCubeWorkflowActive) {
+      _phase = !_hasAuthoritativeCubeState
+          ? PracticePhase.awaitingCubeState
+          : _cubeState.isSolved
+          ? PracticePhase.scrambling
+          : PracticePhase.needsSolvedCube;
+    } else {
+      _cubeState = _scrambleTarget.copy();
+      _phase = PracticePhase.manualReady;
+    }
   }
 
   List<CubeMove> _buildScrambleGuidance() {
@@ -718,6 +723,7 @@ final class PracticeController extends ChangeNotifier {
 
   void deleteSolve(String id) {
     _history.delete(id);
+    if (_pendingSolveReview?.id == id) _pendingSolveReview = null;
     notifyListeners();
   }
 

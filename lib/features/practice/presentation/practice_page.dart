@@ -420,8 +420,11 @@ class _MobilePractice extends StatelessWidget {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final useAccessibilityFallback = textScale > 1.3;
-        if (useAccessibilityFallback) {
+        final landscape = constraints.maxWidth > constraints.maxHeight;
+        final useScrollablePortrait =
+            textScale >= 1.3 ||
+            (!landscape && practice.pendingSolveReview != null);
+        if (useScrollablePortrait) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(12),
             child: _MobilePracticePortrait(
@@ -433,7 +436,6 @@ class _MobilePractice extends StatelessWidget {
           );
         }
 
-        final landscape = constraints.maxWidth > constraints.maxHeight;
         return Padding(
           padding: EdgeInsets.all(landscape ? 8 : 12),
           child: landscape
@@ -469,6 +471,7 @@ class _MobilePracticePortrait extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cube = _CompactCubePanel(practice: practice, input: input);
+    final showFooter = _showsPracticeAccessory(practice);
     return Column(
       mainAxisSize: scrollFallback ? MainAxisSize.min : MainAxisSize.max,
       children: [
@@ -482,8 +485,10 @@ class _MobilePracticePortrait extends StatelessWidget {
           SizedBox(height: 240, child: cube)
         else
           Expanded(child: cube),
-        const SizedBox(height: 8),
-        _CompactTimerPanel(practice: practice),
+        if (showFooter) ...[
+          const SizedBox(height: 8),
+          _CompactPracticeFooter(practice: practice),
+        ],
       ],
     );
   }
@@ -502,6 +507,32 @@ class _MobilePracticeLandscape extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showFooter = _showsPracticeAccessory(practice);
+    final reviewVisible = practice.pendingSolveReview != null;
+    final rightColumn = Column(
+      mainAxisSize: reviewVisible ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        if (reviewVisible)
+          _CompactScramblePanel(
+            practice: practice,
+            demoMode: input.isDemo,
+            onManualMoves: onManualMoves,
+          )
+        else
+          Expanded(
+            child: _CompactScramblePanel(
+              practice: practice,
+              demoMode: input.isDemo,
+              onManualMoves: onManualMoves,
+              landscape: true,
+            ),
+          ),
+        if (showFooter) ...[
+          const SizedBox(height: 8),
+          _CompactPracticeFooter(practice: practice, landscape: true),
+        ],
+      ],
+    );
     return Row(
       children: [
         Expanded(
@@ -511,20 +542,9 @@ class _MobilePracticeLandscape extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           flex: 6,
-          child: Column(
-            children: [
-              Expanded(
-                child: _CompactScramblePanel(
-                  practice: practice,
-                  demoMode: input.isDemo,
-                  onManualMoves: onManualMoves,
-                  landscape: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              _CompactTimerPanel(practice: practice, landscape: true),
-            ],
-          ),
+          child: reviewVisible
+              ? SingleChildScrollView(child: rightColumn)
+              : rightColumn,
         ),
       ],
     );
@@ -638,7 +658,11 @@ class _CompactScramblePanel extends StatelessWidget {
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionLabel('PRACTICE SCRAMBLE'),
+          _SectionLabel(
+            practice.pendingSolveReview == null
+                ? 'PRACTICE SCRAMBLE'
+                : 'NEXT PRACTICE SCRAMBLE',
+          ),
           SizedBox(height: landscape ? 3 : 7),
           if (landscape)
             Expanded(
@@ -716,6 +740,43 @@ class _CompactScramblePanel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _CompactPracticeFooter extends StatelessWidget {
+  const _CompactPracticeFooter({
+    required this.practice,
+    this.landscape = false,
+  });
+
+  final PracticeController practice;
+  final bool landscape;
+
+  @override
+  Widget build(BuildContext context) {
+    final review = practice.pendingSolveReview;
+    if (review != null) {
+      return _Panel(
+        padding: EdgeInsets.all(landscape ? 9 : 12),
+        child: _FinishCardContent(
+          practice: practice,
+          solve: review,
+          compact: true,
+          dense: landscape,
+        ),
+      );
+    }
+    if (_showsActiveTimer(practice)) {
+      return _CompactTimerPanel(practice: practice, landscape: landscape);
+    }
+    return _Panel(
+      padding: EdgeInsets.all(landscape ? 9 : 12),
+      child: _ReadyActionContent(
+        practice: practice,
+        compact: true,
+        dense: landscape,
+      ),
     );
   }
 }
@@ -858,24 +919,48 @@ class _CubeAndTimerHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cube = _CubeStage(practice: practice, input: input, compact: compact);
-    final timer = _TimerPanel(practice: practice, compact: compact);
+    final review = practice.pendingSolveReview;
+    final Widget? accessory = review != null
+        ? _FinishCardContent(
+            practice: practice,
+            solve: review,
+            compact: compact,
+          )
+        : _showsActiveTimer(practice)
+        ? _TimerPanel(practice: practice, compact: compact)
+        : practice.inputMode == PracticeInputMode.demo &&
+              practice.phase == PracticePhase.manualReady
+        ? _ReadyActionContent(practice: practice, compact: compact)
+        : null;
 
     if (compact) {
       return _Panel(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-        child: Column(children: [cube, const Divider(height: 18), timer]),
+        child: Column(
+          children: [
+            cube,
+            if (accessory != null) ...[const Divider(height: 18), accessory],
+          ],
+        ),
       );
     }
 
     return _Panel(
       padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Expanded(child: cube),
-          Container(width: 1, height: 250, color: CrubikColors.border),
-          Expanded(child: timer),
-        ],
-      ),
+      child: accessory == null
+          ? Center(child: cube)
+          : Row(
+              children: [
+                Expanded(child: cube),
+                Container(width: 1, height: 280, color: CrubikColors.border),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: accessory,
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -968,7 +1053,7 @@ class _TimerPanel extends StatelessWidget {
     final phaseColor = _phaseColor(practice);
     final aborting = _connectedAttemptActive(practice);
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 24),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1030,6 +1115,317 @@ class _TimerPanel extends StatelessWidget {
   }
 }
 
+class _ReadyActionContent extends StatelessWidget {
+  const _ReadyActionContent({
+    required this.practice,
+    required this.compact,
+    this.dense = false,
+  });
+
+  final PracticeController practice;
+  final bool compact;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = FilledButton.icon(
+      key: const Key('timer-toggle'),
+      onPressed: practice.toggleTimer,
+      style: FilledButton.styleFrom(
+        backgroundColor: CrubikColors.lime,
+        foregroundColor: CrubikColors.background,
+        padding: EdgeInsets.symmetric(vertical: dense ? 10 : 14),
+      ),
+      icon: const Icon(Icons.play_arrow_rounded),
+      label: const Text('START SOLVE'),
+    );
+    final status = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: dense
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Text(
+          'READY',
+          key: const Key('ready-action-label'),
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: CrubikColors.lime,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.8,
+          ),
+        ),
+        if (!dense) ...[
+          const SizedBox(height: 5),
+          Text(
+            'Start whenever you are ready.',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+          ),
+        ],
+      ],
+    );
+
+    return Semantics(
+      label: 'Ready. Start solve. Spacebar also starts timing.',
+      child: dense
+          ? Row(
+              children: [
+                Expanded(child: status),
+                const SizedBox(width: 8),
+                Flexible(child: button),
+              ],
+            )
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                status,
+                SizedBox(height: compact ? 9 : 16),
+                SizedBox(width: double.infinity, child: button),
+                const SizedBox(height: 8),
+                Text(
+                  'Spacebar also starts timing',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _FinishCardContent extends StatelessWidget {
+  const _FinishCardContent({
+    required this.practice,
+    required this.solve,
+    required this.compact,
+    this.dense = false,
+  });
+
+  final PracticeController practice;
+  final SolveRecord solve;
+  final bool compact;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final elapsed = _formatDuration(solve.elapsed);
+    final inspection = solve.inspectionElapsed == null
+        ? '—'
+        : _formatDuration(solve.inspectionElapsed!);
+    final tps = solve.moveCount == 0 ? null : solve.turnsPerSecond;
+    final tpsText = tps == null ? '—' : tps.toStringAsFixed(1);
+    final metrics = Row(
+      children: [
+        _FinishMetric(
+          label: 'MOVES',
+          value: solve.moveCount.toString(),
+          valueKey: const Key('finish-moves'),
+          dense: dense,
+        ),
+        _FinishMetric(
+          label: 'TPS',
+          value: tpsText,
+          valueKey: const Key('finish-tps'),
+          dense: dense,
+        ),
+        _FinishMetric(
+          label: 'INSPECTION',
+          value: inspection,
+          valueKey: const Key('finish-inspection'),
+          dense: dense,
+        ),
+      ],
+    );
+    final header = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.check_circle_rounded,
+          color: CrubikColors.lime,
+          size: dense ? 17 : 21,
+        ),
+        SizedBox(width: dense ? 5 : 7),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'SOLVE COMPLETE',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: CrubikColors.lime,
+                fontWeight: FontWeight.w800,
+                letterSpacing: dense ? 1.1 : 1.6,
+                fontSize: dense ? 10 : null,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    final time = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        elapsed,
+        key: const Key('finish-time'),
+        style: Theme.of(context).textTheme.displayLarge?.copyWith(
+          color: CrubikColors.text,
+          fontSize: dense
+              ? 29
+              : compact
+              ? 48
+              : 62,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+    final completedScramble = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'COMPLETED SCRAMBLE',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: CrubikColors.muted,
+            fontWeight: FontWeight.w700,
+            letterSpacing: dense ? 0.8 : 1.1,
+            fontSize: dense ? 8 : null,
+          ),
+        ),
+        SizedBox(height: dense ? 1 : 4),
+        Text(
+          solve.scramble,
+          key: const Key('completed-scramble'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: CrubikColors.text,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w600,
+            fontSize: dense ? 9 : null,
+            height: dense ? 1.05 : 1.3,
+          ),
+        ),
+      ],
+    );
+    final startNextButton = practice.inputMode == PracticeInputMode.demo
+        ? FilledButton.icon(
+            key: const Key('timer-toggle'),
+            onPressed: practice.toggleTimer,
+            style: FilledButton.styleFrom(
+              backgroundColor: CrubikColors.lime,
+              foregroundColor: CrubikColors.background,
+              visualDensity: dense
+                  ? VisualDensity.compact
+                  : VisualDensity.standard,
+              padding: EdgeInsets.symmetric(vertical: dense ? 8 : 12),
+            ),
+            icon: Icon(Icons.play_arrow_rounded, size: dense ? 17 : 20),
+            label: Text(dense ? 'START NEXT' : 'START NEXT SOLVE'),
+          )
+        : null;
+
+    return Semantics(
+      key: const Key('finish-card'),
+      container: true,
+      liveRegion: true,
+      label:
+          'Solve complete. Time $elapsed. ${solve.moveCount} moves. '
+          'TPS $tpsText. Inspection $inspection. '
+          'Completed scramble ${solve.scramble}.',
+      child: dense
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: header),
+                    Flexible(child: time),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                metrics,
+                const SizedBox(height: 4),
+                completedScramble,
+                if (startNextButton != null) ...[
+                  const SizedBox(height: 5),
+                  SizedBox(width: double.infinity, child: startNextButton),
+                ],
+              ],
+            )
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                header,
+                SizedBox(height: compact ? 5 : 8),
+                Align(alignment: Alignment.centerLeft, child: time),
+                SizedBox(height: compact ? 8 : 12),
+                metrics,
+                SizedBox(height: compact ? 8 : 12),
+                const Divider(height: 1),
+                SizedBox(height: compact ? 8 : 12),
+                completedScramble,
+                if (startNextButton != null) ...[
+                  SizedBox(height: compact ? 9 : 14),
+                  SizedBox(width: double.infinity, child: startNextButton),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+class _FinishMetric extends StatelessWidget {
+  const _FinishMetric({
+    required this.label,
+    required this.value,
+    required this.valueKey,
+    required this.dense,
+  });
+
+  final String label;
+  final String value;
+  final Key valueKey;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: CrubikColors.muted,
+              fontSize: dense ? 8 : null,
+              letterSpacing: dense ? 0.6 : 1,
+            ),
+          ),
+          SizedBox(height: dense ? 0 : 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              key: valueKey,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: CrubikColors.text,
+                fontSize: dense ? 13 : null,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ScramblePanel extends StatelessWidget {
   const _ScramblePanel({required this.practice, required this.demoMode});
 
@@ -1042,7 +1438,11 @@ class _ScramblePanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionLabel('PRACTICE SCRAMBLE'),
+          _SectionLabel(
+            practice.pendingSolveReview == null
+                ? 'PRACTICE SCRAMBLE'
+                : 'NEXT PRACTICE SCRAMBLE',
+          ),
           const SizedBox(height: 14),
           _ScrambleProgressText(practice: practice),
           if (practice.smartCubeWorkflowActive) ...[
@@ -1884,7 +2284,6 @@ class _ScrambleGuidance extends StatelessWidget {
         'Scramble verified · inspection starts in 3 seconds',
       PracticePhase.inspection => 'Scramble verified · inspection started',
       PracticePhase.solving => 'Scramble verified · solve in progress',
-      PracticePhase.stopped => 'Solve complete · choose a new scramble',
       PracticePhase.manualReady => 'Ready',
     };
     final recoveryNotation = recoveryMoves
@@ -1943,6 +2342,17 @@ class _ScrambleGuidance extends StatelessWidget {
   }
 }
 
+bool _showsActiveTimer(PracticeController practice) =>
+    practice.phase == PracticePhase.inspectionDelay ||
+    practice.phase == PracticePhase.inspection ||
+    practice.phase == PracticePhase.solving;
+
+bool _showsPracticeAccessory(PracticeController practice) =>
+    practice.pendingSolveReview != null ||
+    _showsActiveTimer(practice) ||
+    (practice.inputMode == PracticeInputMode.demo &&
+        practice.phase == PracticePhase.manualReady);
+
 String _phaseLabel(PracticeController practice) => switch (practice.phase) {
   PracticePhase.manualReady => 'READY',
   PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
@@ -1951,8 +2361,6 @@ String _phaseLabel(PracticeController practice) => switch (practice.phase) {
   PracticePhase.inspectionDelay => 'GET READY',
   PracticePhase.inspection => 'INSPECTION',
   PracticePhase.solving => 'SOLVING',
-  PracticePhase.stopped =>
-    practice.smartCubeWorkflowActive ? 'SOLVE COMPLETE' : 'LAST SOLVE',
 };
 
 Color _phaseColor(PracticeController practice) => switch (practice.phase) {
@@ -1962,8 +2370,7 @@ Color _phaseColor(PracticeController practice) => switch (practice.phase) {
   PracticePhase.inspection => CrubikColors.cyan,
   PracticePhase.solving => CrubikColors.lime,
   PracticePhase.manualReady ||
-  PracticePhase.awaitingCubeState ||
-  PracticePhase.stopped => CrubikColors.muted,
+  PracticePhase.awaitingCubeState => CrubikColors.muted,
 };
 
 Duration _displayedTime(PracticeController practice) =>
@@ -1986,7 +2393,6 @@ String _primaryActionLabel(PracticeController practice) {
       PracticePhase.scrambling => 'FOLLOW SCRAMBLE',
       PracticePhase.inspectionDelay => 'GET READY',
       PracticePhase.inspection || PracticePhase.solving => 'ABORT',
-      PracticePhase.stopped => 'SOLVE COMPLETE',
       PracticePhase.manualReady => 'START SOLVE',
     };
   }
