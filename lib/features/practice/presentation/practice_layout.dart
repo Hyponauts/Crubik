@@ -27,6 +27,8 @@ class DesktopPracticeLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeAttempt = isPracticeAttemptActive(practice);
+    final reviewing = practice.pendingSolveReview != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 22, 28, 22),
       child: Column(
@@ -57,12 +59,14 @@ class DesktopPracticeLayout extends StatelessWidget {
                               practice: practice,
                               input: input,
                             ),
-                            const SizedBox(height: 16),
-                            PracticeScramblePanel(
-                              practice: practice,
-                              demoMode: input.isDemo,
-                            ),
-                            if (input.isDemo) ...[
+                            if (!activeAttempt && !reviewing) ...[
+                              const SizedBox(height: 16),
+                              PracticeScramblePanel(
+                                practice: practice,
+                                demoMode: input.isDemo,
+                              ),
+                            ],
+                            if (input.isDemo && !reviewing) ...[
                               const SizedBox(height: 16),
                               ManualMoveInputPanel(practice: practice),
                             ],
@@ -96,123 +100,93 @@ class MobilePracticeLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textScale = MediaQuery.textScalerOf(context).scale(1);
     return LayoutBuilder(
       builder: (context, constraints) {
         final landscape = constraints.maxWidth > constraints.maxHeight;
-        final useScrollablePortrait =
-            textScale >= 1.3 ||
-            (!landscape && practice.pendingSolveReview != null);
-        if (useScrollablePortrait) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(12),
-            child: _MobilePracticePortrait(
-              practice: practice,
-              input: input,
-              scrollFallback: true,
-            ),
-          );
-        }
-
         return Padding(
           padding: EdgeInsets.all(landscape ? 8 : 12),
-          child: landscape
-              ? _MobilePracticeLandscape(practice: practice, input: input)
-              : _MobilePracticePortrait(practice: practice, input: input),
+          child: practice.pendingSolveReview != null
+              ? PracticeMobileReviewPanel(practice: practice)
+              : isPracticeAttemptActive(practice)
+              ? landscape
+                    ? _MobileAttemptLandscape(practice: practice, input: input)
+                    : _MobileAttemptPortrait(practice: practice, input: input)
+              : landscape
+              ? _MobilePreparationLandscape(practice: practice, input: input)
+              : _MobilePreparationPortrait(practice: practice, input: input),
         );
       },
     );
   }
 }
 
-class _MobilePracticePortrait extends StatelessWidget {
-  const _MobilePracticePortrait({
+class _MobilePreparationPortrait extends StatelessWidget {
+  const _MobilePreparationPortrait({
     required this.practice,
     required this.input,
-    this.scrollFallback = false,
   });
 
   final PracticeController practice;
   final PracticeInputController input;
-  final bool scrollFallback;
 
   @override
   Widget build(BuildContext context) {
-    final cube = _CompactCubePanel(practice: practice, input: input);
-    final showFooter = showsPracticeAccessory(practice);
-    return Column(
-      mainAxisSize: scrollFallback ? MainAxisSize.min : MainAxisSize.max,
-      children: [
-        PracticeScramblePanel(
-          practice: practice,
-          demoMode: input.isDemo,
-          onManualMoves: () =>
-              showManualMovesDialog(context, practice: practice),
-          compact: true,
-        ),
-        const SizedBox(height: 8),
-        if (scrollFallback)
-          SizedBox(height: 240, child: cube)
-        else
-          Expanded(child: cube),
-        if (showFooter) ...[
-          const SizedBox(height: 8),
-          PracticeAccessoryPanel(
-            practice: practice,
-            contained: true,
-            compact: true,
-          ),
-        ],
-      ],
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compactHeight = constraints.maxHeight < 520 || textScale >= 1.3;
+        final showReadyAction =
+            input.isDemo && practice.phase == PracticePhase.manualReady;
+        return Column(
+          key: const Key('mobile-preparation-layout'),
+          children: [
+            Flexible(
+              flex: compactHeight ? 3 : 4,
+              child: PracticeScramblePanel(
+                practice: practice,
+                demoMode: input.isDemo,
+                onManualMoves: () =>
+                    showManualMovesDialog(context, practice: practice),
+                compact: true,
+                bounded: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              flex: compactHeight ? 7 : 6,
+              child: _CompactCubePanel(practice: practice, input: input),
+            ),
+            if (showReadyAction) ...[
+              const SizedBox(height: 8),
+              PracticeAccessoryPanel(
+                practice: practice,
+                contained: true,
+                compact: true,
+                dense: compactHeight,
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
 
-class _MobilePracticeLandscape extends StatelessWidget {
-  const _MobilePracticeLandscape({required this.practice, required this.input});
+class _MobilePreparationLandscape extends StatelessWidget {
+  const _MobilePreparationLandscape({
+    required this.practice,
+    required this.input,
+  });
 
   final PracticeController practice;
   final PracticeInputController input;
 
   @override
   Widget build(BuildContext context) {
-    final showFooter = showsPracticeAccessory(practice);
-    final reviewVisible = practice.pendingSolveReview != null;
-    final rightColumn = Column(
-      mainAxisSize: reviewVisible ? MainAxisSize.min : MainAxisSize.max,
-      children: [
-        if (reviewVisible)
-          PracticeScramblePanel(
-            practice: practice,
-            demoMode: input.isDemo,
-            onManualMoves: () =>
-                showManualMovesDialog(context, practice: practice),
-            compact: true,
-          )
-        else
-          Expanded(
-            child: PracticeScramblePanel(
-              practice: practice,
-              demoMode: input.isDemo,
-              onManualMoves: () =>
-                  showManualMovesDialog(context, practice: practice),
-              compact: true,
-              dense: true,
-              fillHeight: true,
-            ),
-          ),
-        if (showFooter) ...[
-          const SizedBox(height: 8),
-          PracticeAccessoryPanel(
-            practice: practice,
-            contained: true,
-            compact: true,
-            dense: true,
-          ),
-        ],
-      ],
-    );
+    final showReadyAction =
+        input.isDemo && practice.phase == PracticePhase.manualReady;
     return Row(
+      key: const Key('mobile-preparation-landscape-layout'),
       children: [
         Expanded(
           flex: 5,
@@ -221,9 +195,100 @@ class _MobilePracticeLandscape extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           flex: 6,
-          child: reviewVisible
-              ? SingleChildScrollView(child: rightColumn)
-              : rightColumn,
+          child: Column(
+            children: [
+              Expanded(
+                child: PracticeScramblePanel(
+                  practice: practice,
+                  demoMode: input.isDemo,
+                  onManualMoves: () =>
+                      showManualMovesDialog(context, practice: practice),
+                  compact: true,
+                  dense: true,
+                  fillHeight: true,
+                  bounded: true,
+                ),
+              ),
+              if (showReadyAction) ...[
+                const SizedBox(height: 8),
+                PracticeAccessoryPanel(
+                  practice: practice,
+                  contained: true,
+                  compact: true,
+                  dense: true,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileAttemptPortrait extends StatelessWidget {
+  const _MobileAttemptPortrait({required this.practice, required this.input});
+
+  final PracticeController practice;
+  final PracticeInputController input;
+
+  @override
+  Widget build(BuildContext context) {
+    final showManualMoves =
+        input.isDemo && practice.phase == PracticePhase.solving;
+    return Column(
+      key: const Key('mobile-focus-layout'),
+      children: [
+        PracticeTimerPanel(practice: practice),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _CompactCubePanel(practice: practice, input: input),
+        ),
+        const SizedBox(height: 8),
+        PracticeAttemptActionBar(
+          practice: practice,
+          onManualMoves: showManualMoves
+              ? () => showManualMovesDialog(context, practice: practice)
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileAttemptLandscape extends StatelessWidget {
+  const _MobileAttemptLandscape({required this.practice, required this.input});
+
+  final PracticeController practice;
+  final PracticeInputController input;
+
+  @override
+  Widget build(BuildContext context) {
+    final showManualMoves =
+        input.isDemo && practice.phase == PracticePhase.solving;
+    return Row(
+      key: const Key('mobile-focus-landscape-layout'),
+      children: [
+        Expanded(
+          flex: 5,
+          child: _CompactCubePanel(practice: practice, input: input),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 6,
+          child: Column(
+            children: [
+              PracticeTimerPanel(practice: practice, dense: true),
+              const Spacer(),
+              PracticeAttemptActionBar(
+                practice: practice,
+                dense: true,
+                onManualMoves: showManualMoves
+                    ? () => showManualMovesDialog(context, practice: practice)
+                    : null,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -251,9 +316,24 @@ class _CompactCubePanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const PracticeSectionLabel('LIVE CUBE'),
-                  const Spacer(),
-                  _CubeConnectionStatus(practice: practice, input: input),
+                  const Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: PracticeSectionLabel('LIVE CUBE'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: _CubeConnectionStatus(
+                        practice: practice,
+                        input: input,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               Expanded(
@@ -266,11 +346,14 @@ class _CompactCubePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                '${practice.currentMoves.length} moves captured',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '${practice.currentMoves.length} moves captured',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+                ),
               ),
             ],
           );

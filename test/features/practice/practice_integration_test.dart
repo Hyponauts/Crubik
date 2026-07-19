@@ -66,9 +66,15 @@ void main() {
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
     expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
-    expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('review-details-scroll')), findsNothing);
     expect(find.byKey(const Key('ready-action-label')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    final compactScrambleToken = find.descendant(
+      of: find.byKey(const Key('scramble-step-0')),
+      matching: find.byType(Text),
+    );
+    expect(tester.widget<Text>(compactScrambleToken).style?.fontSize, 18);
     expect(tester.takeException(), isNull);
 
     final completedScramble = practice.scramble.toString();
@@ -76,6 +82,13 @@ void main() {
     await tester.pump();
     expect(find.text('STOP & SAVE'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.text('Session'), findsNothing);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('timer-display'))).dy,
+      lessThan(tester.getTopLeft(find.byKey(const Key('cube-3d-canvas'))).dy),
+    );
 
     clock.value = const Duration(milliseconds: 12340);
     practice.applyMove(CubeMove.parse('R'));
@@ -84,8 +97,12 @@ void main() {
     expect(practice.solves, hasLength(1));
     expect(find.byKey(const Key('timer-display')), findsNothing);
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
-    expect(find.text('NEXT PRACTICE SCRAMBLE'), findsOneWidget);
-    expect(find.text('START NEXT SOLVE'), findsOneWidget);
+    expect(find.byKey(const Key('mobile-review-layout')), findsOneWidget);
+    expect(find.byKey(const Key('review-details-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
+    expect(find.text('CONTINUE TO NEXT SCRAMBLE'), findsOneWidget);
+    expect(find.text('Session'), findsOneWidget);
     expect(find.text('12.34'), findsOneWidget);
     expect(find.byKey(const Key('finish-moves')), findsOneWidget);
     expect(find.byKey(const Key('finish-tps')), findsOneWidget);
@@ -107,6 +124,14 @@ void main() {
       completedScramble,
     );
     expect(practice.scramble.toString(), isNot(completedScramble));
+
+    await tester.tap(find.byKey(const Key('continue-after-solve')));
+    await tester.pump();
+    expect(practice.pendingSolveReview, isNull);
+    expect(practice.phase, PracticePhase.manualReady);
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('timer-display')), findsNothing);
 
     await tester.tap(find.byKey(const Key('manual-moves-button')));
     await tester.pumpAndSettle();
@@ -155,13 +180,22 @@ void main() {
     expect(find.byKey(const Key('timer-display')), findsNothing);
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
     expect(find.byType(ListView), findsNothing);
-    expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
+    expect(
+      find.byKey(const Key('mobile-focus-landscape-layout')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
-    expect(find.text('START NEXT'), findsOneWidget);
+    expect(find.byKey(const Key('mobile-review-layout')), findsOneWidget);
+    expect(find.text('CONTINUE TO NEXT SCRAMBLE'), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
     expect(tester.takeException(), isNull);
     await connection.connect(_supportedGan);
     practice.syncCubeState(CubeState.solved());
@@ -176,7 +210,7 @@ void main() {
   });
 
   testWidgets(
-    'smart cube completion shows solve details with the next scramble',
+    'smart cube completion reviews before revealing the next scramble',
     (tester) async {
       final semantics = tester.ensureSemantics();
       tester.view.devicePixelRatio = 1;
@@ -220,6 +254,11 @@ void main() {
         await tester.pump();
       }
       expect(practice.phase, PracticePhase.inspection);
+      expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+      expect(find.byKey(const Key('scramble-text')), findsNothing);
+      expect(find.byKey(const Key('timer-display')), findsOneWidget);
+      expect(find.text('ABORT'), findsOneWidget);
+      expect(find.text('Session'), findsNothing);
       final completedScramble = practice.scramble.toString();
       final solution = [...practice.scramble.inverse.moves];
 
@@ -242,9 +281,12 @@ void main() {
       expect(practice.phase, PracticePhase.scrambling);
       expect(practice.scramble.toString(), isNot(completedScramble));
       expect(find.byKey(const Key('finish-card')), findsOneWidget);
-      expect(find.text('NEXT PRACTICE SCRAMBLE'), findsOneWidget);
+      expect(find.byKey(const Key('mobile-review-layout')), findsOneWidget);
+      expect(find.byKey(const Key('scramble-text')), findsNothing);
+      expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
       expect(find.byKey(const Key('timer-display')), findsNothing);
       expect(find.byKey(const Key('timer-toggle')), findsNothing);
+      expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
       expect(find.text('8.00'), findsOneWidget);
       expect(
         tester.widget<Text>(find.byKey(const Key('completed-scramble'))).data,
@@ -256,6 +298,14 @@ void main() {
         ),
         findsOneWidget,
       );
+
+      await tester.tap(find.byKey(const Key('continue-after-solve')));
+      await tester.pump();
+      expect(practice.pendingSolveReview, isNull);
+      expect(practice.phase, PracticePhase.scrambling);
+      expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+      expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+      expect(find.byKey(const Key('scramble-guidance')), findsOneWidget);
 
       for (final move in [...practice.scrambleGuidance]) {
         gateway.addEvent(
@@ -305,16 +355,120 @@ void main() {
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
     expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('timer-toggle')));
+    expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('review-details-scroll')), findsNothing);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
-    await tester.ensureVisible(find.byKey(const Key('timer-toggle')));
+    expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-content-scroll')), findsNothing);
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
-    expect(find.text('NEXT PRACTICE SCRAMBLE'), findsOneWidget);
+    expect(find.byKey(const Key('mobile-review-layout')), findsOneWidget);
+    expect(find.byKey(const Key('review-details-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile focus and review fit 320px at 2.0 text scaling', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    final practice = PracticeController()..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('mobile-preparation-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.text('Session'), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('timer-toggle'))).height,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('manual-moves-button'))).height,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getBottomRight(find.byKey(const Key('focus-action-bar'))).dy,
+      lessThanOrEqualTo(tester.view.physicalSize.height),
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('mobile-review-layout')), findsOneWidget);
+    expect(find.byKey(const Key('review-details-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
+    expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
+    expect(
+      tester.getBottomRight(find.byKey(const Key('continue-after-solve'))).dy,
+      lessThanOrEqualTo(tester.view.physicalSize.height),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('spacebar timing is scoped to the Practice destination', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController()..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.text('Session'));
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(practice.phase, PracticePhase.manualReady);
+
+    await tester.tap(find.text('Practice'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+
+    expect(practice.phase, PracticePhase.solving);
+    expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+    practice.abortAttempt();
   });
 
   testWidgets('mobile session fixes its summary above a bounded history list', (
@@ -506,15 +660,30 @@ void main() {
     expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
     expect(find.text('Demo cube'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    final desktopScrambleToken = find.descendant(
+      of: find.byKey(const Key('scramble-step-0')),
+      matching: find.byType(Text),
+    );
+    expect(tester.widget<Text>(desktopScrambleToken).style?.fontSize, 20);
 
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
-    expect(find.text('NEXT PRACTICE SCRAMBLE'), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.text('MANUAL MOVE INPUT'), findsNothing);
+    expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('continue-after-solve')));
+    await tester.pump();
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('connect-cube-button')));
     await tester.pumpAndSettle();
@@ -744,11 +913,11 @@ void main() {
 
     expect(practice.phase, PracticePhase.inspectionDelay);
     expect(practice.completedScrambleMoveCount, practice.scramble.moves.length);
+    expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('scramble-guidance')), findsNothing);
     expect(find.text('GET READY'), findsWidgets);
-    expect(
-      find.textContaining('inspection starts in 3 seconds'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('timer-toggle')))

@@ -9,6 +9,7 @@ import 'sessions_view.dart';
 import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
 import 'widgets/practice_panel.dart';
+import 'widgets/solve_controls.dart';
 
 /// Coordinates practice/session navigation, input selection, and page chrome.
 class PracticePage extends StatefulWidget {
@@ -36,11 +37,17 @@ class _PracticePageState extends State<PracticePage> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final isDesktop = constraints.maxWidth >= 900;
+            final timerShortcutEnabled =
+                _selectedIndex == 0 &&
+                !widget.inputController.isUnselected &&
+                widget.practiceController.pendingSolveReview == null;
             return CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.space):
-                    widget.practiceController.toggleTimer,
-              },
+              bindings: timerShortcutEnabled
+                  ? {
+                      const SingleActivator(LogicalKeyboardKey.space):
+                          widget.practiceController.toggleTimer,
+                    }
+                  : const {},
               child: Focus(
                 autofocus: true,
                 child: isDesktop
@@ -89,26 +96,33 @@ class _PracticePageState extends State<PracticePage> {
   }
 
   Widget _buildMobile(BuildContext context) {
+    final focusMode =
+        _selectedIndex == 0 &&
+        !widget.inputController.isUnselected &&
+        widget.practiceController.pendingSolveReview == null &&
+        isPracticeAttemptActive(widget.practiceController);
     return Scaffold(
       key: const Key('practice-mobile-layout'),
-      appBar: AppBar(
-        titleSpacing: 16,
-        title: const FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: PracticeBrand(compact: true),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: PracticeConnectionButton(
-              input: widget.inputController,
-              onPressed: _showConnectionDialog,
-              compact: true,
+      appBar: focusMode
+          ? null
+          : AppBar(
+              titleSpacing: 16,
+              title: const FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: PracticeBrand(compact: true),
+              ),
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: PracticeConnectionButton(
+                    input: widget.inputController,
+                    onPressed: _showConnectionDialog,
+                    compact: true,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: _selectedIndex == 0
           ? widget.inputController.isUnselected
                 ? _InputModeChooser(
@@ -116,27 +130,36 @@ class _PracticePageState extends State<PracticePage> {
                     onConnectPressed: _showConnectionDialog,
                     onDemoPressed: widget.inputController.useDemoCube,
                   )
+                : focusMode
+                ? SafeArea(
+                    child: MobilePracticeLayout(
+                      practice: widget.practiceController,
+                      input: widget.inputController,
+                    ),
+                  )
                 : MobilePracticeLayout(
                     practice: widget.practiceController,
                     input: widget.inputController,
                   )
           : SessionsView(practice: widget.practiceController, mobile: true),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timer_outlined),
-            activeIcon: Icon(Icons.timer),
-            label: 'Practice',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.insights_outlined),
-            activeIcon: Icon(Icons.insights),
-            label: 'Session',
-          ),
-        ],
-      ),
+      bottomNavigationBar: focusMode
+          ? null
+          : BottomNavigationBar(
+              currentIndex: _selectedIndex,
+              onTap: (index) => setState(() => _selectedIndex = index),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.timer_outlined),
+                  activeIcon: Icon(Icons.timer),
+                  label: 'Practice',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.insights_outlined),
+                  activeIcon: Icon(Icons.insights),
+                  label: 'Session',
+                ),
+              ],
+            ),
     );
   }
 

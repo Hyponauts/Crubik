@@ -13,6 +13,7 @@ class PracticeScramblePanel extends StatelessWidget {
     this.compact = false,
     this.dense = false,
     this.fillHeight = false,
+    this.bounded = false,
     super.key,
   });
 
@@ -22,6 +23,7 @@ class PracticeScramblePanel extends StatelessWidget {
   final bool compact;
   final bool dense;
   final bool fillHeight;
+  final bool bounded;
 
   @override
   Widget build(BuildContext context) {
@@ -92,44 +94,46 @@ class PracticeScramblePanel extends StatelessWidget {
       ],
     );
 
+    final content = Column(
+      mainAxisAlignment: fillHeight
+          ? MainAxisAlignment.spaceBetween
+          : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PracticeSectionLabel(
+          practice.pendingSolveReview == null
+              ? 'PRACTICE SCRAMBLE'
+              : 'NEXT PRACTICE SCRAMBLE',
+        ),
+        SizedBox(
+          height: dense
+              ? 3
+              : compact
+              ? 7
+              : 14,
+        ),
+        scramble,
+        SizedBox(
+          height: dense
+              ? 3
+              : compact
+              ? 7
+              : 16,
+        ),
+        actions,
+      ],
+    );
+
     return PracticePanel(
       padding: compact
           ? EdgeInsets.all(dense ? 9 : 12)
           : const EdgeInsets.all(18),
-      child: Column(
-        mainAxisAlignment: fillHeight
-            ? MainAxisAlignment.spaceBetween
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PracticeSectionLabel(
-            practice.pendingSolveReview == null
-                ? 'PRACTICE SCRAMBLE'
-                : 'NEXT PRACTICE SCRAMBLE',
-          ),
-          SizedBox(
-            height: dense
-                ? 3
-                : compact
-                ? 7
-                : 14,
-          ),
-          if (fillHeight)
-            Expanded(
-              child: Align(alignment: Alignment.centerLeft, child: scramble),
+      child: bounded
+          ? SingleChildScrollView(
+              key: const Key('scramble-content-scroll'),
+              child: content,
             )
-          else
-            scramble,
-          SizedBox(
-            height: dense
-                ? 3
-                : compact
-                ? 7
-                : 16,
-          ),
-          actions,
-        ],
-      ),
+          : content,
     );
   }
 }
@@ -338,10 +342,10 @@ class _ScrambleMoveToken extends StatelessWidget {
                   color: color,
                   fontFamily: 'monospace',
                   fontSize: dense
-                      ? 11
+                      ? 15
                       : compact
-                      ? 13
-                      : 18,
+                      ? 18
+                      : 20,
                   fontWeight: recovery
                       ? next
                             ? FontWeight.w900
@@ -363,10 +367,10 @@ class _ScrambleMoveToken extends StatelessWidget {
                     color: CrubikColors.lime,
                     fontFamily: 'monospace',
                     fontSize: dense
-                        ? 7
+                        ? 10
                         : compact
-                        ? 9
-                        : 11,
+                        ? 11
+                        : 12,
                     fontWeight: FontWeight.w900,
                   ),
                 ),

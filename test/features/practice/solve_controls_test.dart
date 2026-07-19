@@ -26,7 +26,13 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
-    expect(find.text('START NEXT SOLVE'), findsOneWidget);
+    expect(find.text('CONTINUE TO NEXT SCRAMBLE'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('continue-after-solve')));
+    await tester.pump();
+    expect(practice.pendingSolveReview, isNull);
+    expect(practice.phase, PracticePhase.manualReady);
+    expect(find.byKey(const Key('ready-action-label')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -427,6 +427,12 @@ final class PracticeController extends ChangeNotifier {
     _completeSolve(inputSource: inputSource);
   }
 
+  void continueAfterSolve() {
+    if (_pendingSolveReview == null) return;
+    _pendingSolveReview = null;
+    notifyListeners();
+  }
+
   void abortAttempt() {
     if (_phase != PracticePhase.inspection && _phase != PracticePhase.solving) {
       return;

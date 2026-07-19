@@ -45,6 +45,11 @@ void main() {
     expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
     expect(find.byKey(const Key('scramble-guidance')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    final nextMoveText = find.descendant(
+      of: find.byKey(const Key('next-scramble-move')),
+      matching: find.byType(Text),
+    );
+    expect(tester.widget<Text>(nextMoveText).style?.fontSize, 15);
 
     final firstMove = practice.scramble.moves.first;
     practice.applyMove(
