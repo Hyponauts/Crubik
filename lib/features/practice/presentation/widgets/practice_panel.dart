@@ -51,3 +51,41 @@ class PracticeSectionLabel extends StatelessWidget {
     );
   }
 }
+
+class PracticeSectionHeader extends StatelessWidget {
+  const PracticeSectionHeader(
+    this.label, {
+    this.trailing,
+    this.labelKey,
+    super.key,
+  });
+
+  final String label;
+  final Widget? trailing;
+  final Key? labelKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: PracticeSectionLabel(label, key: labelKey),
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: trailing!,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}

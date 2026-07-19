@@ -100,7 +100,7 @@ class PracticeScramblePanel extends StatelessWidget {
           : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PracticeSectionLabel(
+        PracticeSectionHeader(
           practice.pendingSolveReview == null
               ? 'PRACTICE SCRAMBLE'
               : 'NEXT PRACTICE SCRAMBLE',
@@ -125,6 +125,7 @@ class PracticeScramblePanel extends StatelessWidget {
     );
 
     return PracticePanel(
+      key: const Key('scramble-panel'),
       padding: compact
           ? EdgeInsets.all(dense ? 9 : 12)
           : const EdgeInsets.all(18),
@@ -333,49 +334,27 @@ class _ScrambleMoveToken extends StatelessWidget {
                 ? Border.all(color: CrubikColors.cyan.withValues(alpha: 0.7))
                 : null,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                move.notation,
-                style: TextStyle(
-                  color: color,
-                  fontFamily: 'monospace',
-                  fontSize: dense
-                      ? 15
-                      : compact
-                      ? 18
-                      : 20,
-                  fontWeight: recovery
-                      ? next
-                            ? FontWeight.w900
-                            : FontWeight.w800
-                      : completed || next
-                      ? FontWeight.w800
-                      : FontWeight.w600,
-                  decoration: completed ? TextDecoration.lineThrough : null,
-                  decorationColor: CrubikColors.lime,
-                  decorationThickness: 1.5,
-                ),
-              ),
-              if (partiallyCompleted) ...[
-                SizedBox(width: dense ? 1 : 3),
-                Text(
-                  '$partialTurns/${move.turns}',
-                  key: const Key('partial-scramble-progress'),
-                  style: TextStyle(
-                    color: CrubikColors.lime,
-                    fontFamily: 'monospace',
-                    fontSize: dense
-                        ? 10
-                        : compact
-                        ? 11
-                        : 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ],
+          child: Text(
+            move.notation,
+            style: TextStyle(
+              color: color,
+              fontFamily: 'monospace',
+              fontSize: dense
+                  ? 15
+                  : compact
+                  ? 18
+                  : 20,
+              fontWeight: recovery
+                  ? next
+                        ? FontWeight.w900
+                        : FontWeight.w800
+                  : completed || next
+                  ? FontWeight.w800
+                  : FontWeight.w600,
+              decoration: completed ? TextDecoration.lineThrough : null,
+              decorationColor: CrubikColors.lime,
+              decorationThickness: 1.5,
+            ),
           ),
         ),
       ),

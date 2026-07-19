@@ -70,6 +70,7 @@ void main() {
     expect(find.byKey(const Key('review-details-scroll')), findsNothing);
     expect(find.byKey(const Key('ready-action-label')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    _expectCubePanelCaptionAnchors(tester);
     final compactScrambleToken = find.descendant(
       of: find.byKey(const Key('scramble-step-0')),
       matching: find.byType(Text),
@@ -553,6 +554,7 @@ void main() {
     expect(find.text('OFFLINE · 20 MOVES'), findsNothing);
     expect(find.text('No account or internet needed'), findsNothing);
     expect(find.byIcon(Icons.cloud_off_outlined), findsNothing);
+    _expectCubePanelCaptionAnchors(tester);
 
     gateway.addEvent(
       SmartCubeMoveEvent(
@@ -744,6 +746,16 @@ void main() {
 
     final first = practice.scramble.moves.first;
     expect(first.turns, 2);
+    final initialScrambleRect = tester.getRect(
+      find.byKey(const Key('scramble-text')),
+    );
+    final initialFirstTokenRect = tester.getRect(
+      find.byKey(const Key('next-scramble-move')),
+    );
+    final initialSecondTokenRect = tester.getRect(
+      find.byKey(const Key('scramble-step-1')),
+    );
+    final initialCaptions = _scrambleCaptions(tester);
     gateway.addEvent(
       SmartCubeMoveEvent(
         move: CubeMove(first.face, turns: 3),
@@ -757,8 +769,37 @@ void main() {
     expect(practice.partialScrambleMoveTurnCount, 1);
     expect(practice.guidanceIsCorrection, isFalse);
     expect(practice.nextScrambleMove, CubeMove(first.face, turns: 3));
-    expect(find.byKey(const Key('partial-scramble-progress')), findsOneWidget);
-    expect(find.text('1/2'), findsOneWidget);
+    expect(find.byKey(const Key('partial-scramble-progress')), findsNothing);
+    expect(find.text('1/2'), findsNothing);
+    expect(_scrambleCaptions(tester), initialCaptions);
+    expect(
+      tester.getRect(find.byKey(const Key('scramble-text'))),
+      initialScrambleRect,
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('next-scramble-move'))),
+      initialFirstTokenRect,
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('scramble-step-1'))),
+      initialSecondTokenRect,
+    );
+    final partialStep = tester.widget<Container>(
+      find.byKey(const Key('next-scramble-move')),
+    );
+    final partialDecoration = partialStep.decoration! as BoxDecoration;
+    final partialGradient = partialDecoration.gradient! as LinearGradient;
+    expect(partialGradient.stops, [0, 0.5, 0.5, 1]);
+    expect(find.textContaining('current step 1 of 2 turns'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(
+        RegExp(
+          '${RegExp.escape(first.notation)}, partially completed, '
+          '1 of 2 turns',
+        ),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('Wrong turn detected'), findsNothing);
 
     gateway.addEvent(
@@ -1257,6 +1298,36 @@ void main() {
     expect(find.text('Redacted Bluetooth diagnostics copied'), findsOneWidget);
   });
 }
+
+void _expectCubePanelCaptionAnchors(WidgetTester tester) {
+  final cubePanelRect = tester.getRect(find.byKey(const Key('cube-panel')));
+  final scramblePanelRect = tester.getRect(
+    find.byKey(const Key('scramble-panel')),
+  );
+  final headerRect = tester.getRect(find.byKey(const Key('cube-stage-header')));
+  final labelRect = tester.getRect(find.byKey(const Key('cube-stage-label')));
+  final statusRect = tester.getRect(
+    find.byKey(const Key('cube-connection-status')),
+  );
+  final scrambleLabelRect = tester.getRect(find.text('PRACTICE SCRAMBLE'));
+  final referenceInset = scrambleLabelRect.left - scramblePanelRect.left;
+
+  expect(headerRect.left - cubePanelRect.left, closeTo(referenceInset, 0.01));
+  expect(labelRect.left - cubePanelRect.left, closeTo(referenceInset, 0.01));
+  expect(cubePanelRect.right - statusRect.right, closeTo(referenceInset, 0.01));
+  expect(labelRect.center.dy, closeTo(statusRect.center.dy, 0.01));
+}
+
+List<String> _scrambleCaptions(WidgetTester tester) => tester
+    .widgetList<Text>(
+      find.descendant(
+        of: find.byKey(const Key('scramble-text')),
+        matching: find.byType(Text),
+      ),
+    )
+    .map((text) => text.data)
+    .whereType<String>()
+    .toList();
 
 final class _FakeSolveClock implements SolveClock {
   Duration value = Duration.zero;
