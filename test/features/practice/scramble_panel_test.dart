@@ -1,0 +1,60 @@
+import 'dart:math';
+
+import 'package:crubik/core/theme/app_theme.dart';
+import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/scramble_generator.dart';
+import 'package:crubik/features/practice/application/practice_controller.dart';
+import 'package:crubik/features/practice/presentation/widgets/scramble_panel.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  testWidgets('renders compact smart-cube scramble progress in isolation', (
+    tester,
+  ) async {
+    final practice = PracticeController(
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
+    practice.activateSmartCubeInput();
+    practice.syncCubeState(CubeState.solved());
+    addTearDown(practice.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: CrubikTheme.dark,
+        home: Scaffold(
+          body: SizedBox(
+            width: 340,
+            height: 180,
+            child: AnimatedBuilder(
+              animation: practice,
+              builder: (context, _) => PracticeScramblePanel(
+                practice: practice,
+                demoMode: false,
+                compact: true,
+                dense: true,
+                fillHeight: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('scramble-text')), findsOneWidget);
+    expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
+    expect(find.byKey(const Key('scramble-guidance')), findsOneWidget);
+    expect(find.byKey(const Key('timer-display')), findsNothing);
+
+    final firstMove = practice.scramble.moves.first;
+    practice.applyMove(
+      firstMove,
+      fromSmartCube: true,
+      occurredAt: DateTime.utc(2026),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('scramble-step-0')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
