@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../cube/domain/cube_model.dart';
 import '../../application/practice_controller.dart';
-import 'practice_chrome.dart';
+import 'practice_panel.dart';
 
 class PracticeScramblePanel extends StatelessWidget {
   const PracticeScramblePanel({

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../application/practice_controller.dart';
 import '../../domain/solve_record.dart';
-import 'practice_chrome.dart';
+import 'practice_panel.dart';
 import 'practice_formatters.dart';
 
 bool showsPracticeAccessory(PracticeController practice) =>

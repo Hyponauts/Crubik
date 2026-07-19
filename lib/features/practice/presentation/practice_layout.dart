@@ -6,13 +6,15 @@ import '../application/practice_input_controller.dart';
 import 'sessions_view.dart';
 import 'widgets/cube_3d_view.dart';
 import 'widgets/manual_move_input.dart';
-import 'widgets/practice_chrome.dart';
+import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
+import 'widgets/practice_panel.dart';
 import 'widgets/scramble_panel.dart';
 import 'widgets/solve_controls.dart';
 
-class DesktopPractice extends StatelessWidget {
-  const DesktopPractice({
+/// Arranges practice content and session history for desktop viewports.
+class DesktopPracticeLayout extends StatelessWidget {
+  const DesktopPracticeLayout({
     required this.practice,
     required this.input,
     required this.onConnectPressed,
@@ -81,8 +83,9 @@ class DesktopPractice extends StatelessWidget {
   }
 }
 
-class MobilePractice extends StatelessWidget {
-  const MobilePractice({
+/// Selects the portrait or landscape practice layout for mobile viewports.
+class MobilePracticeLayout extends StatelessWidget {
+  const MobilePracticeLayout({
     required this.practice,
     required this.input,
     super.key,

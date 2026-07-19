@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/practice_controller.dart';
 import '../domain/solve_record.dart';
-import 'widgets/practice_chrome.dart';
+import 'widgets/practice_panel.dart';
 import 'widgets/practice_formatters.dart';
 
 class SessionSidebar extends StatelessWidget {

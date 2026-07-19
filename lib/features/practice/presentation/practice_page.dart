@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import '../../../core/theme/app_theme.dart';
 import '../application/practice_controller.dart';
 import '../application/practice_input_controller.dart';
-import 'practice_workspace.dart';
+import 'practice_layout.dart';
 import 'sessions_view.dart';
-import 'widgets/practice_chrome.dart';
+import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
+import 'widgets/practice_panel.dart';
 
+/// Coordinates practice/session navigation, input selection, and page chrome.
 class PracticePage extends StatefulWidget {
   const PracticePage({
     required this.practiceController,
@@ -73,7 +75,7 @@ class _PracticePageState extends State<PracticePage> {
                             onConnectPressed: _showConnectionDialog,
                             onDemoPressed: widget.inputController.useDemoCube,
                           )
-                        : DesktopPractice(
+                        : DesktopPracticeLayout(
                             practice: widget.practiceController,
                             input: widget.inputController,
                             onConnectPressed: _showConnectionDialog,
@@ -114,7 +116,7 @@ class _PracticePageState extends State<PracticePage> {
                     onConnectPressed: _showConnectionDialog,
                     onDemoPressed: widget.inputController.useDemoCube,
                   )
-                : MobilePractice(
+                : MobilePracticeLayout(
                     practice: widget.practiceController,
                     input: widget.inputController,
                   )
