@@ -52,6 +52,21 @@ void main() {
     expect(controller.scramble.toString(), isNot(completedScramble));
     expect(controller.phase, PracticePhase.manualReady);
     expect(controller.elapsed, Duration.zero);
+
+    final nextScramble = controller.scramble.toString();
+    final nextCubeState = controller.cubeState.facelets;
+    var continuationNotifications = 0;
+    controller.addListener(() => continuationNotifications++);
+    controller.continueAfterSolve();
+
+    expect(controller.pendingSolveReview, isNull);
+    expect(controller.scramble.toString(), nextScramble);
+    expect(controller.cubeState.facelets, nextCubeState);
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(continuationNotifications, 1);
+
+    controller.continueAfterSolve();
+    expect(continuationNotifications, 1);
     controller.dispose();
   });
 
@@ -713,6 +728,15 @@ void main() {
     expect(controller.solves.single.moveCount, solution.length);
     expect(controller.solves.single.inputSource, 'smart_cube');
     expect(controller.pendingSolveReview, same(controller.solves.single));
+
+    final nextScramble = controller.scramble.toString();
+    final nextGuidance = [...controller.scrambleGuidance];
+    controller.continueAfterSolve();
+
+    expect(controller.pendingSolveReview, isNull);
+    expect(controller.phase, PracticePhase.scrambling);
+    expect(controller.scramble.toString(), nextScramble);
+    expect(controller.scrambleGuidance, nextGuidance);
     controller.dispose();
   });
 
