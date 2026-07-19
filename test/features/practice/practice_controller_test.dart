@@ -31,9 +31,13 @@ void main() {
 
   test('demo mode enables manual timing and virtual moves', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(clock: clock);
+    final controller = PracticeController(
+      clock: clock,
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
 
     controller.activateDemoInput();
+    final completedScramble = controller.scramble.toString();
     controller.startSolve();
     clock.value = const Duration(seconds: 12);
     controller.applyMove(CubeMove.parse('R'));
@@ -43,6 +47,11 @@ void main() {
     expect(controller.solves.single.elapsed, const Duration(seconds: 12));
     expect(controller.solves.single.moveCount, 1);
     expect(controller.solves.single.inputSource, 'manual');
+    expect(controller.solves.single.scramble, completedScramble);
+    expect(controller.pendingSolveReview, same(controller.solves.single));
+    expect(controller.scramble.toString(), isNot(completedScramble));
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.elapsed, Duration.zero);
     controller.dispose();
   });
 
@@ -95,22 +104,44 @@ void main() {
     controller.dispose();
   });
 
-  test('new scramble resets timer and captured solve moves', () {
+  test('new scramble preserves a pending solve review', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(clock: clock);
+    final controller = PracticeController(
+      clock: clock,
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
     controller.activateDemoInput();
-    final original = controller.scramble.toString();
     controller.startSolve();
     controller.applyMove(CubeMove.parse('R'));
     controller.stopSolve();
+    final review = controller.pendingSolveReview;
+    final preparedScramble = controller.scramble.toString();
 
     controller.newScramble();
 
     expect(controller.phase, PracticePhase.manualReady);
     expect(controller.currentMoves, isEmpty);
-    expect(controller.scramble.toString(), isNot(original));
+    expect(controller.scramble.toString(), isNot(preparedScramble));
     expect(controller.elapsed, Duration.zero);
+    expect(controller.pendingSolveReview, same(review));
 
+    controller.startSolve();
+    expect(controller.pendingSolveReview, isNull);
+
+    controller.dispose();
+  });
+
+  test('deleting the reviewed solve clears the finish review', () {
+    final controller = PracticeController();
+    controller.activateDemoInput();
+    controller.startSolve();
+    controller.stopSolve();
+    final reviewedSolve = controller.pendingSolveReview!;
+
+    controller.deleteSolve(reviewedSolve.id);
+
+    expect(controller.solves, isEmpty);
+    expect(controller.pendingSolveReview, isNull);
     controller.dispose();
   });
 
@@ -481,6 +512,7 @@ void main() {
     final controller = PracticeController(
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
       preInspectionDelay: const Duration(milliseconds: 20),
+      inspectionDuration: const Duration(days: 1),
     );
     _matchConnectedScramble(controller, DateTime.now());
 
@@ -518,8 +550,10 @@ void main() {
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
     _prepareConnectedCube(controller, now);
+    final completedScramble = controller.scramble.toString();
 
     now = now.add(const Duration(seconds: 4));
     controller.applyMove(
@@ -533,13 +567,23 @@ void main() {
     clock.value = const Duration(seconds: 8);
     controller.syncCubeState(CubeState.solved(), occurredAt: now);
 
-    expect(controller.phase, PracticePhase.stopped);
+    expect(controller.phase, PracticePhase.scrambling);
+    expect(controller.cubeState.isSolved, isTrue);
+    expect(controller.scramble.toString(), isNot(completedScramble));
+    expect(controller.pendingSolveReview, same(controller.solves.single));
+    expect(controller.pendingSolveReview!.scramble, completedScramble);
     expect(
       controller.solves.single.inspectionElapsed,
       const Duration(seconds: 4),
     );
     expect(controller.solves.single.startTrigger, SolveStartTrigger.firstMove);
     expect(controller.solves.single.moveCount, 1);
+
+    for (final move in [...controller.scrambleGuidance]) {
+      controller.applyMove(move, fromSmartCube: true, occurredAt: now);
+    }
+    expect(controller.phase, PracticePhase.inspection);
+    expect(controller.pendingSolveReview, isNull);
     controller.dispose();
   });
 
@@ -610,11 +654,41 @@ void main() {
     expect(controller.phase, PracticePhase.solving);
     expect(controller.currentMoves, isEmpty);
     controller.syncCubeState(CubeState.solved(), occurredAt: now);
+    expect(controller.phase, PracticePhase.scrambling);
+    expect(controller.pendingSolveReview, same(controller.solves.single));
     expect(
       controller.solves.single.inspectionElapsed,
       const Duration(seconds: 3),
     );
     expect(controller.solves.single.startTrigger, SolveStartTrigger.firstMove);
+    controller.dispose();
+  });
+
+  test('smart cube move completion immediately prepares the next scramble', () {
+    final clock = _FakeSolveClock();
+    final now = DateTime.utc(2026);
+    final controller = PracticeController(
+      clock: clock,
+      now: () => now,
+      preInspectionDelay: Duration.zero,
+      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    );
+    _prepareConnectedCube(controller, now);
+    final completedScramble = controller.scramble.toString();
+    final solution = [...controller.scramble.inverse.moves];
+
+    for (final move in solution) {
+      controller.applyMove(move, fromSmartCube: true, occurredAt: now);
+    }
+
+    expect(controller.phase, PracticePhase.scrambling);
+    expect(controller.cubeState.isSolved, isTrue);
+    expect(controller.currentMoves, isEmpty);
+    expect(controller.scramble.toString(), isNot(completedScramble));
+    expect(controller.solves.single.scramble, completedScramble);
+    expect(controller.solves.single.moveCount, solution.length);
+    expect(controller.solves.single.inputSource, 'smart_cube');
+    expect(controller.pendingSolveReview, same(controller.solves.single));
     controller.dispose();
   });
 
@@ -651,8 +725,9 @@ void main() {
     controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved(), occurredAt: now);
 
-    expect(controller.phase, PracticePhase.stopped);
+    expect(controller.phase, PracticePhase.scrambling);
     expect(controller.solves.single.inputSource, 'smart_cube_state');
+    expect(controller.pendingSolveReview, same(controller.solves.single));
     controller.dispose();
   });
 }
