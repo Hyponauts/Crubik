@@ -304,7 +304,8 @@ class _CompactCubePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PracticePanel(
-      padding: const EdgeInsets.all(10),
+      key: const Key('cube-panel'),
+      padding: const EdgeInsets.all(12),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final maximumDimension = constraints.maxWidth;
@@ -314,27 +315,15 @@ class _CompactCubePanel extends StatelessWidget {
               .toDouble();
           return Column(
             children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: PracticeSectionLabel('LIVE CUBE'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: _CubeConnectionStatus(
-                        practice: practice,
-                        input: input,
-                      ),
-                    ),
-                  ),
-                ],
+              PracticeSectionHeader(
+                'LIVE CUBE',
+                key: const Key('cube-stage-header'),
+                labelKey: const Key('cube-stage-label'),
+                trailing: _CubeConnectionStatus(
+                  key: const Key('cube-connection-status'),
+                  practice: practice,
+                  input: input,
+                ),
               ),
               Expanded(
                 child: Center(
@@ -374,10 +363,24 @@ class _DesktopPracticeHero extends StatelessWidget {
     final cube = _DesktopCubeStage(practice: practice, input: input);
     final showAccessory = showsPracticeAccessory(practice);
     return PracticePanel(
-      padding: const EdgeInsets.all(20),
-      child: !showAccessory
-          ? Center(child: cube)
-          : Row(
+      key: const Key('cube-panel'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PracticeSectionHeader(
+            'LIVE CUBE',
+            key: const Key('cube-stage-header'),
+            labelKey: const Key('cube-stage-label'),
+            trailing: _CubeConnectionStatus(
+              key: const Key('cube-connection-status'),
+              practice: practice,
+              input: input,
+            ),
+          ),
+          if (!showAccessory)
+            Center(child: cube)
+          else
+            Row(
               children: [
                 Expanded(child: cube),
                 Container(width: 1, height: 280, color: CrubikColors.border),
@@ -389,6 +392,8 @@ class _DesktopPracticeHero extends StatelessWidget {
                 ),
               ],
             ),
+        ],
+      ),
     );
   }
 }
@@ -403,13 +408,6 @@ class _DesktopCubeStage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          children: [
-            const PracticeSectionLabel('LIVE CUBE'),
-            const Spacer(),
-            _CubeConnectionStatus(practice: practice, input: input),
-          ],
-        ),
         Cube3DView(
           state: practice.cubeState,
           lastMove: practice.lastAppliedMove,
@@ -435,7 +433,11 @@ class _DesktopCubeStage extends StatelessWidget {
 }
 
 class _CubeConnectionStatus extends StatelessWidget {
-  const _CubeConnectionStatus({required this.practice, required this.input});
+  const _CubeConnectionStatus({
+    required this.practice,
+    required this.input,
+    super.key,
+  });
 
   final PracticeController practice;
   final PracticeInputController input;
