@@ -229,6 +229,7 @@ class _InputModeChooser extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final compactLandscape = !desktop && size.width > size.height;
+    final maximumContentWidth = compactLandscape ? 760.0 : 560.0;
     final icon = Container(
       width: compactLandscape ? 52 : 64,
       height: compactLandscape ? 52 : 64,
@@ -281,23 +282,32 @@ class _InputModeChooser extends StatelessWidget {
         buttons,
       ],
     );
-    final chooser = ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: compactLandscape ? 760 : 560),
-      child: PracticePanel(
-        key: const Key('input-mode-chooser'),
-        padding: EdgeInsets.all(compactLandscape ? 18 : 24),
-        child: compactLandscape
-            ? Row(
-                children: [
-                  icon,
-                  const SizedBox(width: 18),
-                  Expanded(child: details),
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [icon, const SizedBox(height: 18), details],
-              ),
+    final startContent = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maximumContentWidth),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (input.isAutomaticReconnectActive) ...[
+            _AutomaticReconnectCard(input: input),
+            const SizedBox(height: 12),
+          ],
+          PracticePanel(
+            key: const Key('input-mode-chooser'),
+            padding: EdgeInsets.all(compactLandscape ? 18 : 24),
+            child: compactLandscape
+                ? Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 18),
+                      Expanded(child: details),
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [icon, const SizedBox(height: 18), details],
+                  ),
+          ),
+        ],
       ),
     );
 
@@ -306,7 +316,7 @@ class _InputModeChooser extends StatelessWidget {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: chooser,
+            child: startContent,
           ),
         ),
       );
@@ -329,7 +339,7 @@ class _InputModeChooser extends StatelessWidget {
             child: Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(vertical: 24),
-                child: chooser,
+                child: startContent,
               ),
             ),
           ),
@@ -351,4 +361,86 @@ class _InputModeChooser extends StatelessWidget {
     icon: const Icon(Icons.science_outlined),
     label: const Text('Use demo cube'),
   );
+}
+
+class _AutomaticReconnectCard extends StatelessWidget {
+  const _AutomaticReconnectCard({required this.input});
+
+  final PracticeInputController input;
+
+  @override
+  Widget build(BuildContext context) {
+    final searching = input.isAutomaticReconnectSearching;
+    final cubeName = input.automaticReconnectDeviceName;
+    final action = searching ? 'Looking for' : 'Connecting to';
+    final title = '$action ${cubeName ?? 'your recent cube'}';
+    final description = searching
+        ? 'Automatic reconnect is running in the background.'
+        : 'Restoring its live state…';
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Container(
+        key: const Key('automatic-reconnect-status'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+        decoration: BoxDecoration(
+          color: const Color(0x12B7F34A),
+          border: Border.all(color: const Color(0x55B7F34A)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 38,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const SizedBox.square(
+                    dimension: 36,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: CrubikColors.lime,
+                    ),
+                  ),
+                  Icon(
+                    searching
+                        ? Icons.bluetooth_searching
+                        : Icons.bluetooth_connected,
+                    color: CrubikColors.lime,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
+                  ),
+                ],
+              ),
+            ),
+            if (searching) ...[
+              const SizedBox(width: 6),
+              TextButton(
+                key: const Key('stop-automatic-reconnect'),
+                onPressed: input.stopAutomaticReconnect,
+                child: const Text('Stop'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

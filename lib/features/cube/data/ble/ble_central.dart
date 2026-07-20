@@ -60,6 +60,8 @@ final class BleAdvertisement {
 abstract interface class BleCentral {
   Stream<BleAdvertisement> get advertisements;
 
+  Future<bool> isBluetoothAvailable();
+
   Future<bool> hasPermissions();
 
   Future<void> requestPermissions();
@@ -119,6 +121,11 @@ final class UniversalBleCentral implements BleCentral {
   @override
   Stream<BleAdvertisement> get advertisements =>
       _advertisementController.stream;
+
+  @override
+  Future<bool> isBluetoothAvailable() async =>
+      await UniversalBle.getBluetoothAvailabilityState() ==
+      AvailabilityState.poweredOn;
 
   @override
   Future<bool> hasPermissions() => UniversalBle.hasPermissions();

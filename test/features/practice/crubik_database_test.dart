@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:crubik/features/practice/data/crubik_database.dart';
+import 'package:crubik/features/cube/data/remembered_cube_store.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,6 +57,28 @@ void main() {
     expect(await repository.load(), isEmpty);
   });
 
+  test('persists the recently connected cube locally', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final store = DriftRememberedCubeStore(database);
+
+    expect(await store.load(), isNull);
+
+    await store.save(
+      const RememberedCube(deviceId: 'platform-cube-id', name: 'GAN12ui'),
+    );
+    var rememberedCube = await store.load();
+    expect(rememberedCube?.deviceId, 'platform-cube-id');
+    expect(rememberedCube?.name, 'GAN12ui');
+
+    await store.save(
+      const RememberedCube(deviceId: 'new-platform-cube-id', name: 'WCU_MY32'),
+    );
+    rememberedCube = await store.load();
+    expect(rememberedCube?.deviceId, 'new-platform-cube-id');
+    expect(rememberedCube?.name, 'WCU_MY32');
+  });
+
   test(
     'migrates version 1 history without inventing inspection data',
     () async {
@@ -102,6 +125,13 @@ void main() {
       expect(
         columns.map((row) => row.read<String>('name')),
         containsAll(['inspection_elapsed_ms', 'start_trigger']),
+      );
+      final tables = await database
+          .customSelect("SELECT name FROM sqlite_master WHERE type = 'table'")
+          .get();
+      expect(
+        tables.map((row) => row.read<String>('name')),
+        contains('app_settings'),
       );
     },
   );

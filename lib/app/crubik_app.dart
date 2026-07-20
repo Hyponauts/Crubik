@@ -45,12 +45,18 @@ class _CrubikAppState extends State<CrubikApp> {
       _practiceController = widget.practiceController!;
     }
     _connectionController =
-        widget.connectionController ?? CubeConnectionController();
+        widget.connectionController ??
+        CubeConnectionController(
+          rememberedCubeStore: _database == null
+              ? null
+              : DriftRememberedCubeStore(_database!),
+        );
     _inputController = PracticeInputController(
       practiceController: _practiceController,
       connectionController: _connectionController,
     );
     _practiceController.initialize();
+    unawaited(_connectionController.reconnectRememberedCube());
   }
 
   @override

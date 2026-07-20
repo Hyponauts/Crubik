@@ -344,6 +344,9 @@ final class _FakeBleCentral implements BleCentral {
   Stream<BleAdvertisement> get advertisements => _advertisements.stream;
 
   @override
+  Future<bool> isBluetoothAvailable() async => true;
+
+  @override
   Future<bool> hasPermissions() async => true;
 
   @override

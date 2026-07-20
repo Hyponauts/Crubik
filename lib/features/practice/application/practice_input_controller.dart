@@ -38,6 +38,12 @@ final class PracticeInputController extends ChangeNotifier {
   bool get needsReconnect => isSmartCubeSelected && !isPhysicalCubeConnected;
 
   CubeConnectionStatus get connectionStatus => _connection.status;
+  bool get isAutomaticReconnectSearching =>
+      _connection.automaticReconnectPhase == AutomaticReconnectPhase.searching;
+  bool get isAutomaticReconnectActive =>
+      _connection.automaticReconnectPhase != AutomaticReconnectPhase.inactive;
+  String? get automaticReconnectDeviceName =>
+      _connection.automaticReconnectDeviceName;
   String? get connectingDeviceId => _connection.connectingDeviceId;
   ConnectedCube? get connectedCube => _connection.connectedCube;
   int? get batteryLevel => _connection.batteryLevel;
@@ -64,6 +70,8 @@ final class PracticeInputController extends ChangeNotifier {
   Future<void> startScan() => _connection.startScan();
 
   Future<void> stopScan() => _connection.stopScan();
+
+  Future<void> stopAutomaticReconnect() => _connection.stopAutomaticReconnect();
 
   Future<void> connect(CubeDeviceCandidate device) async {
     if (isDemo) _practice.clearDemoInput();

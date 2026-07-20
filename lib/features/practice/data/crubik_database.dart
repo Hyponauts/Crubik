@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import '../../cube/data/remembered_cube_store.dart';
 import '../domain/solve_record.dart';
 
 part 'crubik_database.g.dart';
@@ -26,7 +27,16 @@ class SolveEntries extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SolveEntries])
+class AppSettings extends Table {
+  TextColumn get key => text()();
+
+  TextColumn get value => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [SolveEntries, AppSettings])
 final class CrubikDatabase extends _$CrubikDatabase {
   CrubikDatabase([QueryExecutor? executor])
     : super(
@@ -41,7 +51,7 @@ final class CrubikDatabase extends _$CrubikDatabase {
       );
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -53,8 +63,47 @@ final class CrubikDatabase extends _$CrubikDatabase {
         );
         await migrator.addColumn(solveEntries, solveEntries.startTrigger);
       }
+      if (from < 3) {
+        await migrator.createTable(appSettings);
+      }
     },
   );
+}
+
+final class DriftRememberedCubeStore implements RememberedCubeStore {
+  const DriftRememberedCubeStore(this._database);
+
+  static const _deviceIdKey = 'recent_cube_device_id';
+  static const _deviceNameKey = 'recent_cube_device_name';
+
+  final CrubikDatabase _database;
+
+  @override
+  Future<RememberedCube?> load() async {
+    final deviceId = await _loadSetting(_deviceIdKey);
+    if (deviceId == null) return null;
+    return RememberedCube(
+      deviceId: deviceId,
+      name: await _loadSetting(_deviceNameKey),
+    );
+  }
+
+  Future<String?> _loadSetting(String key) async {
+    final query = _database.select(_database.appSettings)
+      ..where((setting) => setting.key.equals(key));
+    return (await query.getSingleOrNull())?.value;
+  }
+
+  @override
+  Future<void> save(RememberedCube cube) => _database.transaction(() async {
+    await _database.batch((batch) {
+      batch.insertAllOnConflictUpdate(_database.appSettings, [
+        AppSettingsCompanion.insert(key: _deviceIdKey, value: cube.deviceId),
+        if (cube.name case final name?)
+          AppSettingsCompanion.insert(key: _deviceNameKey, value: name),
+      ]);
+    });
+  });
 }
 
 final class DriftSolveHistoryRepository implements SolveHistoryRepository {
