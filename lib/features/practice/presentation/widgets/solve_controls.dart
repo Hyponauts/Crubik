@@ -185,10 +185,10 @@ class PracticeMobileReviewPanel extends StatelessWidget {
                   foregroundColor: CrubikColors.background,
                   minimumSize: const Size(0, 48),
                 ),
-                icon: const Icon(Icons.arrow_forward_rounded),
+                icon: const Icon(Icons.close_rounded),
                 label: const FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text('CONTINUE TO NEXT SCRAMBLE'),
+                  child: Text('DISMISS'),
                 ),
               ),
             ),
@@ -641,7 +641,7 @@ class _FinishCardContent extends StatelessWidget {
         ),
       ],
     );
-    final continueButton = FilledButton.icon(
+    final dismissButton = FilledButton.icon(
       key: const Key('continue-after-solve'),
       onPressed: onContinue,
       style: FilledButton.styleFrom(
@@ -651,11 +651,8 @@ class _FinishCardContent extends StatelessWidget {
         visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,
         padding: EdgeInsets.symmetric(vertical: dense ? 8 : 12),
       ),
-      icon: Icon(Icons.arrow_forward_rounded, size: dense ? 17 : 20),
-      label: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(dense ? 'CONTINUE' : 'CONTINUE TO NEXT SCRAMBLE'),
-      ),
+      icon: Icon(Icons.close_rounded, size: dense ? 17 : 20),
+      label: const FittedBox(fit: BoxFit.scaleDown, child: Text('DISMISS')),
     );
 
     return Semantics(
@@ -681,7 +678,7 @@ class _FinishCardContent extends StatelessWidget {
                 const SizedBox(height: 4),
                 completedScramble,
                 const SizedBox(height: 5),
-                SizedBox(width: double.infinity, child: continueButton),
+                SizedBox(width: double.infinity, child: dismissButton),
               ],
             )
           : Column(
@@ -699,7 +696,7 @@ class _FinishCardContent extends StatelessWidget {
                 SizedBox(height: compact ? 8 : 12),
                 completedScramble,
                 SizedBox(height: compact ? 9 : 14),
-                SizedBox(width: double.infinity, child: continueButton),
+                SizedBox(width: double.infinity, child: dismissButton),
               ],
             ),
     );

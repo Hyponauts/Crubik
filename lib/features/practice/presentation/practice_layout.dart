@@ -55,11 +55,17 @@ class DesktopPracticeLayout extends StatelessWidget {
                         constraints: const BoxConstraints(maxWidth: 800),
                         child: Column(
                           children: [
-                            _DesktopPracticeHero(
-                              practice: practice,
-                              input: input,
-                            ),
-                            if (!activeAttempt && !reviewing) ...[
+                            if (reviewing)
+                              PracticeAccessoryPanel(
+                                practice: practice,
+                                contained: true,
+                              )
+                            else
+                              _DesktopPracticeHero(
+                                practice: practice,
+                                input: input,
+                              ),
+                            if (!activeAttempt) ...[
                               const SizedBox(height: 16),
                               PracticeScramblePanel(
                                 practice: practice,
@@ -105,9 +111,7 @@ class MobilePracticeLayout extends StatelessWidget {
         final landscape = constraints.maxWidth > constraints.maxHeight;
         return Padding(
           padding: EdgeInsets.all(landscape ? 8 : 12),
-          child: practice.pendingSolveReview != null
-              ? PracticeMobileReviewPanel(practice: practice)
-              : isPracticeAttemptActive(practice)
+          child: isPracticeAttemptActive(practice)
               ? landscape
                     ? _MobileAttemptLandscape(practice: practice, input: input)
                     : _MobileAttemptPortrait(practice: practice, input: input)
@@ -132,11 +136,14 @@ class _MobilePreparationPortrait extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final reviewing = practice.pendingSolveReview != null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compactHeight = constraints.maxHeight < 520 || textScale >= 1.3;
         final showReadyAction =
-            input.isDemo && practice.phase == PracticePhase.manualReady;
+            !reviewing &&
+            input.isDemo &&
+            practice.phase == PracticePhase.manualReady;
         return Column(
           key: const Key('mobile-preparation-layout'),
           children: [
@@ -145,8 +152,9 @@ class _MobilePreparationPortrait extends StatelessWidget {
               child: PracticeScramblePanel(
                 practice: practice,
                 demoMode: input.isDemo,
-                onManualMoves: () =>
-                    showManualMovesDialog(context, practice: practice),
+                onManualMoves: reviewing
+                    ? null
+                    : () => showManualMovesDialog(context, practice: practice),
                 compact: true,
                 bounded: true,
               ),
@@ -154,7 +162,9 @@ class _MobilePreparationPortrait extends StatelessWidget {
             const SizedBox(height: 8),
             Expanded(
               flex: compactHeight ? 7 : 6,
-              child: _CompactCubePanel(practice: practice, input: input),
+              child: reviewing
+                  ? PracticeMobileReviewPanel(practice: practice)
+                  : _CompactCubePanel(practice: practice, input: input),
             ),
             if (showReadyAction) ...[
               const SizedBox(height: 8),
@@ -183,14 +193,19 @@ class _MobilePreparationLandscape extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reviewing = practice.pendingSolveReview != null;
     final showReadyAction =
-        input.isDemo && practice.phase == PracticePhase.manualReady;
+        !reviewing &&
+        input.isDemo &&
+        practice.phase == PracticePhase.manualReady;
     return Row(
       key: const Key('mobile-preparation-landscape-layout'),
       children: [
         Expanded(
           flex: 5,
-          child: _CompactCubePanel(practice: practice, input: input),
+          child: reviewing
+              ? PracticeMobileReviewPanel(practice: practice)
+              : _CompactCubePanel(practice: practice, input: input),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -201,8 +216,10 @@ class _MobilePreparationLandscape extends StatelessWidget {
                 child: PracticeScramblePanel(
                   practice: practice,
                   demoMode: input.isDemo,
-                  onManualMoves: () =>
-                      showManualMovesDialog(context, practice: practice),
+                  onManualMoves: reviewing
+                      ? null
+                      : () =>
+                            showManualMovesDialog(context, practice: practice),
                   compact: true,
                   dense: true,
                   fillHeight: true,
