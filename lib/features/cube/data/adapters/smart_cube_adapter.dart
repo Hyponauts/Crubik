@@ -30,7 +30,7 @@ final class CubeDeviceMatch {
     required this.protocolFamily,
     required this.supportStatus,
     this.adapterId,
-    this.macAddress,
+    this.protocolIdentity,
     this.supportMessage,
   });
 
@@ -38,7 +38,7 @@ final class CubeDeviceMatch {
   final CubeProtocolFamily protocolFamily;
   final CubeSupportStatus supportStatus;
   final String? adapterId;
-  final String? macAddress;
+  final CubeProtocolIdentity? protocolIdentity;
   final String? supportMessage;
 }
 
@@ -65,7 +65,14 @@ abstract interface class SmartCubeSession {
 
   Stream<bool> get connectionStates;
 
-  /// Requests a fresh authoritative state after consumers are listening.
+  /// Starts notifications and waits for the initial authoritative state.
+  ///
+  /// Consumers must subscribe to [events], [batteryLevels], and
+  /// [connectionStates] before calling this method. Repeated calls return the
+  /// same startup operation.
+  Future<void> start();
+
+  /// Requests a fresh authoritative state after startup has completed.
   Future<void> requestState();
 
   Future<void> close();

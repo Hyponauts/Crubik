@@ -113,7 +113,8 @@ void main() {
     expect(controller.discoveredDevices, [device]);
 
     await controller.connect(device);
-    expect(gateway.sessionFor(device.id).stateRequestCount, 1);
+    expect(gateway.sessionFor(device.id).startCount, 1);
+    expect(gateway.sessionFor(device.id).stateRequestCount, 0);
     expect(controller.isConnected, isTrue);
     expect(controller.connectedCube?.name, device.name);
     expect(controller.connectedCube?.capabilities.initialState, isTrue);
@@ -176,10 +177,11 @@ void main() {
     },
   );
 
-  test('GAN adapter extracts MAC from native id or manufacturer data', () {
+  test('GAN adapter prefers manufacturer MAC over the platform BLE id', () {
     final native = _advertisement('GAN12ui', deviceId: 'AA:BB:CC:DD:EE:FF');
     final advertised = _advertisement(
       'AiCube',
+      deviceId: 'AA:BB:CC:DD:EE:FF',
       manufacturerData: [
         BleManufacturerData(
           companyId: 0x1201,
@@ -198,8 +200,16 @@ void main() {
       ],
     );
 
-    expect(extractGanMacAddress(native), 'AA:BB:CC:DD:EE:FF');
-    expect(extractGanMacAddress(advertised), '11:22:33:44:55:66');
+    expect(resolveGanProtocolIdentity(native)?.value, 'AA:BB:CC:DD:EE:FF');
+    expect(
+      resolveGanProtocolIdentity(native)?.source,
+      CubeProtocolIdentitySource.platformDeviceId,
+    );
+    expect(resolveGanProtocolIdentity(advertised)?.value, '11:22:33:44:55:66');
+    expect(
+      resolveGanProtocolIdentity(advertised)?.source,
+      CubeProtocolIdentitySource.manufacturerData,
+    );
     expect(cubeMacSalt('11:22:33:44:55:66'), [
       0x66,
       0x55,
@@ -306,6 +316,32 @@ void main() {
     controller.dispose();
   });
 
+  test('late session startup cannot restore a disconnected cube', () async {
+    final startGate = Completer<void>();
+    final gateway = _FakeCubeConnectionGateway(sessionStartGate: startGate);
+    final controller = CubeConnectionController(gateway: gateway);
+    const device = CubeDeviceCandidate(
+      id: 'gan-pending',
+      name: 'GAN12ui',
+      vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
+    );
+
+    final connection = controller.connect(device);
+    await Future<void>.delayed(Duration.zero);
+    await controller.disconnect();
+    startGate.complete();
+    await connection;
+
+    expect(controller.status, CubeConnectionStatus.disconnected);
+    expect(controller.connectedCube, isNull);
+    expect(gateway.sessionFor(device.id).isClosed, isTrue);
+    await controller.close();
+    controller.dispose();
+  });
+
   test(
     'exports connection stages without cube identifiers or packet data',
     () async {
@@ -318,7 +354,10 @@ void main() {
         protocolFamily: CubeProtocolFamily.moyu32,
         supportStatus: CubeSupportStatus.supported,
         adapterId: 'moyu32',
-        macAddress: 'AA:BB:CC:DD:EE:FF',
+        protocolIdentity: CubeProtocolIdentity(
+          value: 'AA:BB:CC:DD:EE:FF',
+          source: CubeProtocolIdentitySource.platformDeviceId,
+        ),
       );
 
       await controller.connect(device);
@@ -329,7 +368,7 @@ void main() {
       expect(report, contains('connection.ready'));
       expect(report, isNot(contains(device.id)));
       expect(report, isNot(contains(device.name)));
-      expect(report, isNot(contains(device.macAddress!)));
+      expect(report, isNot(contains(device.protocolIdentity!.value)));
 
       await controller.close();
       controller.dispose();
@@ -357,12 +396,14 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   _FakeCubeConnectionGateway({
     this.permissionsGranted = true,
     this.grantPermissionOnRequest = true,
+    this.sessionStartGate,
   });
 
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _sessions = <String, _FakeSmartCubeSession>{};
   bool permissionsGranted;
   final bool grantPermissionOnRequest;
+  final Completer<void>? sessionStartGate;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
   int connectCount = 0;
@@ -378,7 +419,10 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   }) async {
     connectCount++;
     onDiagnostic?.call('adapter.selected', device.adapterId);
-    return _sessions.putIfAbsent(device.id, _FakeSmartCubeSession.new);
+    return _sessions.putIfAbsent(
+      device.id,
+      () => _FakeSmartCubeSession(startGate: sessionStartGate),
+    );
   }
 
   @override
@@ -414,10 +458,14 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
 }
 
 final class _FakeSmartCubeSession implements SmartCubeSession {
+  _FakeSmartCubeSession({this.startGate});
+
+  final Completer<void>? startGate;
   final _eventController = StreamController<SmartCubeEvent>.broadcast();
   final _batteryController = StreamController<int>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
   bool _closed = false;
+  int startCount = 0;
   int stateRequestCount = 0;
 
   bool get isClosed => _closed;
@@ -447,6 +495,12 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
       _batteryController.add(batteryLevel);
 
   void setConnected(bool connected) => _connectionController.add(connected);
+
+  @override
+  Future<void> start() async {
+    startCount++;
+    await startGate?.future;
+  }
 
   @override
   Future<void> requestState() async {

@@ -36,6 +36,7 @@ final class CubeConnectionController extends ChangeNotifier {
   Timer? _scanTimeout;
   SmartCubeSession? _session;
   bool _closed = false;
+  var _connectionAttempt = 0;
 
   final Map<String, CubeDeviceCandidate> _discovered = {};
   CubeConnectionStatus _status = CubeConnectionStatus.disconnected;
@@ -126,6 +127,7 @@ final class CubeConnectionController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final connectionAttempt = ++_connectionAttempt;
     await _releaseActiveSession();
     _connectedCube = null;
     _latestStateEvent = null;
@@ -134,18 +136,19 @@ final class CubeConnectionController extends ChangeNotifier {
     _status = CubeConnectionStatus.connecting;
     notifyListeners();
 
+    SmartCubeSession? openingSession;
     try {
       final session = await _gateway.connect(
         device,
         onDiagnostic: _diagnostics.add,
       );
-      if (_closed) {
-        _diagnostics.add('connection.cancelled', 'controller closed');
+      openingSession = session;
+      if (_closed || connectionAttempt != _connectionAttempt) {
+        _diagnostics.add('connection.cancelled', 'request superseded');
         await session.close();
         return;
       }
       _session = session;
-      _connectedCube = ConnectedCube.bluetooth(device, session.capabilities);
       await _sessionEventSubscription?.cancel();
       _sessionEventSubscription = session.events.listen((event) {
         if (_closed || !identical(_session, session)) return;
@@ -166,13 +169,21 @@ final class CubeConnectionController extends ChangeNotifier {
           unawaited(_handleLinkLoss(session));
         }
       });
-      await session.requestState();
-      _diagnostics.add('state.requested');
+      await session.start();
+      if (_closed ||
+          connectionAttempt != _connectionAttempt ||
+          !identical(_session, session)) {
+        return;
+      }
+      _connectedCube = ConnectedCube.bluetooth(device, session.capabilities);
       _connectingDeviceId = null;
       _status = CubeConnectionStatus.connected;
       _diagnostics.add('connection.ready');
       notifyListeners();
     } catch (error) {
+      if (openingSession != null && !identical(_session, openingSession)) {
+        return;
+      }
       _diagnostics.add('connection.failed', _diagnosticError(error));
       await _releaseActiveSession();
       _connectedCube = null;
@@ -186,6 +197,7 @@ final class CubeConnectionController extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _connectionAttempt++;
     _connectingDeviceId = null;
     _connectedCube = null;
     _latestStateEvent = null;
@@ -301,6 +313,7 @@ final class CubeConnectionController extends ChangeNotifier {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _connectionAttempt++;
     _scanTimeout?.cancel();
     await _scanSubscription.cancel();
     await _releaseActiveSession();

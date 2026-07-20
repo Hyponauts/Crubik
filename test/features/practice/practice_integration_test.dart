@@ -1483,10 +1483,13 @@ final class _SilentSmartCubeSession implements SmartCubeSession {
       _batteryController.add(batteryLevel);
 
   @override
-  Future<void> requestState() async {
+  Future<void> start() async {
     final event = stateOnRequest;
     if (event != null) _eventController.add(event);
   }
+
+  @override
+  Future<void> requestState() async {}
 
   @override
   Future<void> close() async {
