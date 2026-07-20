@@ -4,6 +4,25 @@ enum CubeProtocolFamily { gan, moyuAi2023, moyu32, moyuMhc, unknown }
 
 enum CubeSupportStatus { supported, detectedUnsupported, unidentified }
 
+enum CubeProtocolIdentitySource {
+  manufacturerData,
+  platformDeviceId,
+  advertisedName,
+}
+
+/// Opaque device identity material used only to derive protocol encryption.
+///
+/// Its value must never be included in logs or diagnostics.
+final class CubeProtocolIdentity {
+  const CubeProtocolIdentity({required this.value, required this.source});
+
+  final String value;
+  final CubeProtocolIdentitySource source;
+
+  @override
+  String toString() => 'CubeProtocolIdentity(source: ${source.name})';
+}
+
 final class CubeCapabilities {
   const CubeCapabilities({
     this.initialState = false,
@@ -29,7 +48,7 @@ final class CubeDeviceCandidate {
     this.supportStatus = CubeSupportStatus.unidentified,
     this.adapterId,
     this.rssi,
-    this.macAddress,
+    this.protocolIdentity,
     this.supportMessage,
   }) : assert(
          supportStatus != CubeSupportStatus.supported || adapterId != null,
@@ -43,7 +62,7 @@ final class CubeDeviceCandidate {
   final CubeSupportStatus supportStatus;
   final String? adapterId;
   final int? rssi;
-  final String? macAddress;
+  final CubeProtocolIdentity? protocolIdentity;
   final String? supportMessage;
 
   bool get isIdentifiedCube => supportStatus != CubeSupportStatus.unidentified;

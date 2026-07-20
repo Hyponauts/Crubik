@@ -39,7 +39,7 @@ final class CubeAdapterRegistry {
       supportStatus: match?.supportStatus ?? CubeSupportStatus.unidentified,
       adapterId: match?.adapterId,
       rssi: advertisement.rssi,
-      macAddress: match?.macAddress,
+      protocolIdentity: match?.protocolIdentity,
       supportMessage: match?.supportMessage,
     );
   }

@@ -32,6 +32,7 @@ void main() {
       );
       final eventsFuture = session.events.take(2).toList();
       final batteryFuture = session.batteryLevels.first;
+      await session.start();
       await Future<void>.delayed(Duration.zero);
       central.addPacket(_movePacket(serial: 11, moves: ['R'], offsets: [23]));
       final events = await eventsFuture;
@@ -55,14 +56,14 @@ void main() {
         containsAllInOrder([
           'ble.connect.succeeded',
           'gatt.discovery.succeeded serviceCount=1 protocolMatched=true',
-          'protocol.identity.available',
+          'protocol.identity.available source=platformDeviceId',
           'notifications.subscribe.succeeded',
           'protocol.request.started message=info',
           'protocol.request.completed message=info',
           'protocol.request.started message=state',
           'protocol.message.decoded message=state',
           'protocol.request.completed message=state',
-          'protocol.handshake.succeeded initialState=true',
+          'handshake.succeeded notifications=2 recognized=2 rejected=0 states=1',
         ]),
       );
       expect(diagnostics.join('\n'), isNot(contains(_macAddress)));
@@ -94,6 +95,7 @@ void main() {
         events.add,
         onError: errors.add,
       );
+      await session.start();
       await Future<void>.delayed(Duration.zero);
 
       central.addPacket(
@@ -136,10 +138,12 @@ void main() {
         respondToState: false,
       );
 
+      final session = await const Moyu32CubeAdapter(
+        initialStateTimeout: Duration(milliseconds: 10),
+      ).connect(central, _candidate());
+
       await expectLater(
-        const Moyu32CubeAdapter(
-          handshakeTimeout: Duration(milliseconds: 10),
-        ).connect(central, _candidate()),
+        session.start(),
         throwsA(
           isA<CubeConnectionFailure>().having(
             (error) => error.code,
@@ -149,6 +153,7 @@ void main() {
         ),
       );
 
+      await session.close();
       expect(central.unsubscribed, isTrue);
       expect(central.disconnected, isTrue);
       await central.close();
@@ -224,9 +229,24 @@ void main() {
     );
     final named = _advertisement(name: 'WCU_MY32_ABCD');
 
-    expect(extractMoyu32MacAddress(native), 'AA:BB:CC:DD:EE:FF');
-    expect(extractMoyu32MacAddress(advertised), '11:22:33:44:55:66');
-    expect(extractMoyu32MacAddress(named), 'CF:30:16:00:AB:CD');
+    expect(resolveMoyu32ProtocolIdentity(native)?.value, 'AA:BB:CC:DD:EE:FF');
+    expect(
+      resolveMoyu32ProtocolIdentity(native)?.source,
+      CubeProtocolIdentitySource.platformDeviceId,
+    );
+    expect(
+      resolveMoyu32ProtocolIdentity(advertised)?.value,
+      '11:22:33:44:55:66',
+    );
+    expect(
+      resolveMoyu32ProtocolIdentity(advertised)?.source,
+      CubeProtocolIdentitySource.manufacturerData,
+    );
+    expect(resolveMoyu32ProtocolIdentity(named)?.value, 'CF:30:16:00:AB:CD');
+    expect(
+      resolveMoyu32ProtocolIdentity(named)?.source,
+      CubeProtocolIdentitySource.advertisedName,
+    );
     expect(moyu32MacFromName('WCU_MY32'), isNull);
   });
 }
@@ -240,7 +260,10 @@ CubeDeviceCandidate _candidate() => const CubeDeviceCandidate(
   protocolFamily: CubeProtocolFamily.moyu32,
   supportStatus: CubeSupportStatus.supported,
   adapterId: Moyu32CubeAdapter.adapterId,
-  macAddress: _macAddress,
+  protocolIdentity: CubeProtocolIdentity(
+    value: _macAddress,
+    source: CubeProtocolIdentitySource.platformDeviceId,
+  ),
 );
 
 BleAdvertisement _advertisement({

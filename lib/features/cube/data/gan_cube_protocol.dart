@@ -65,9 +65,16 @@ GanProtocolDefinition? ganProtocolForServices(Iterable<String> services) {
   return null;
 }
 
-final class GanDecodedPacket {
-  const GanDecodedPacket({this.events = const [], this.commands = const []});
+enum GanPacketKind { state, move, moveHistory, ignored }
 
+final class GanDecodedPacket {
+  const GanDecodedPacket({
+    required this.kind,
+    this.events = const [],
+    this.commands = const [],
+  });
+
+  final GanPacketKind kind;
   final List<SmartCubeEvent> events;
   final List<Uint8List> commands;
 
@@ -241,6 +248,7 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
     if (eventType == 0x04) {
       _lastSerial = message.getBitWord(4, 8);
       return GanDecodedPacket(
+        kind: GanPacketKind.state,
         events: [
           _decodeCubeState(
             message,
@@ -255,13 +263,17 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
       );
     }
     if (eventType != 0x02 || _lastSerial == -1) {
-      return const GanDecodedPacket();
+      return GanDecodedPacket(
+        kind: eventType == 0x02 ? GanPacketKind.move : GanPacketKind.ignored,
+      );
     }
 
     final serial = message.getBitWord(4, 8);
     final difference = ((serial - _lastSerial) & 0xff).clamp(0, 7);
     _lastSerial = serial;
-    if (difference == 0) return const GanDecodedPacket();
+    if (difference == 0) {
+      return const GanDecodedPacket(kind: GanPacketKind.move);
+    }
 
     final moves = <SmartCubeMoveEvent>[];
     for (var index = difference - 1; index >= 0; index--) {
@@ -284,7 +296,7 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
       );
     }
     _lastReceivedAt = receivedAt;
-    return GanDecodedPacket(events: moves);
+    return GanDecodedPacket(kind: GanPacketKind.move, events: moves);
   }
 }
 
@@ -315,7 +327,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     final dataLength = message.getBitWord(_layout.dataLengthStart, 8);
     final header = _layout.header;
     if (header != null && message.getBitWord(0, 8) != header) {
-      return const GanDecodedPacket();
+      return const GanDecodedPacket(kind: GanPacketKind.ignored);
     }
 
     if (eventType == 0x01) {
@@ -327,14 +339,16 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     if (eventType == _layout.faceletsEvent) {
       return _decodeFacelets(message, receivedAt);
     }
-    return const GanDecodedPacket();
+    return const GanDecodedPacket(kind: GanPacketKind.ignored);
   }
 
   GanDecodedPacket _decodeMove(
     GanProtocolMessageView message,
     DateTime receivedAt,
   ) {
-    if (_lastSerial == -1) return const GanDecodedPacket();
+    if (_lastSerial == -1) {
+      return const GanDecodedPacket(kind: GanPacketKind.move);
+    }
     _lastLocalTimestamp = receivedAt;
     final base = _layout.dataStart;
     final cubeTimestamp = message.getBitWord(base, 32, littleEndian: true);
@@ -343,7 +357,9 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     final direction = message.getBitWord(base + 48, 2);
     final faceCode = message.getBitWord(base + 50, 6);
     final face = const [2, 32, 8, 1, 16, 4].indexOf(faceCode);
-    if (face < 0 || direction > 1) return const GanDecodedPacket();
+    if (face < 0 || direction > 1) {
+      return const GanDecodedPacket(kind: GanPacketKind.move);
+    }
 
     _moveBuffer.add(
       SmartCubeMoveEvent(
@@ -353,7 +369,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
         cubeTimestamp: Duration(milliseconds: cubeTimestamp),
       ),
     );
-    return _evictMoveBuffer(requestMissing: true);
+    return _evictMoveBuffer(kind: GanPacketKind.move, requestMissing: true);
   }
 
   GanDecodedPacket _decodeMoveHistory(
@@ -378,7 +394,10 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
         ),
       );
     }
-    return _evictMoveBuffer(requestMissing: false);
+    return _evictMoveBuffer(
+      kind: GanPacketKind.moveHistory,
+      requestMissing: false,
+    );
   }
 
   GanDecodedPacket _decodeFacelets(
@@ -397,7 +416,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     );
     if (_lastSerial == -1) {
       _lastSerial = _serial;
-      return GanDecodedPacket(events: [state]);
+      return GanDecodedPacket(kind: GanPacketKind.state, events: [state]);
     }
     final quietFor = receivedAt.difference(_lastLocalTimestamp ?? receivedAt);
     final difference = (_serial - _lastSerial) & 0xff;
@@ -405,20 +424,25 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       final bufferHead = _moveBuffer.firstOrNull;
       final startSerial = bufferHead?.serial ?? ((_serial + 1) & 0xff);
       return GanDecodedPacket(
+        kind: GanPacketKind.state,
         events: [state],
         commands: [_requestMoveHistory(startSerial, difference + 1)],
       );
     }
-    return GanDecodedPacket(events: [state]);
+    return GanDecodedPacket(kind: GanPacketKind.state, events: [state]);
   }
 
-  GanDecodedPacket _evictMoveBuffer({required bool requestMissing}) {
+  GanDecodedPacket _evictMoveBuffer({
+    required GanPacketKind kind,
+    required bool requestMissing,
+  }) {
     final moves = <SmartCubeMoveEvent>[];
     final commands = <Uint8List>[];
     while (_moveBuffer.isNotEmpty) {
       final head = _moveBuffer.first;
-      final difference =
-          _lastSerial == -1 ? 1 : (head.serial - _lastSerial) & 0xff;
+      final difference = _lastSerial == -1
+          ? 1
+          : (head.serial - _lastSerial) & 0xff;
       if (difference > 1) {
         if (requestMissing) {
           commands.add(_requestMoveHistory(head.serial, difference));
@@ -428,7 +452,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       moves.add(_moveBuffer.removeAt(0));
       _lastSerial = head.serial;
     }
-    return GanDecodedPacket(events: moves, commands: commands);
+    return GanDecodedPacket(kind: kind, events: moves, commands: commands);
   }
 
   void _injectRecoveredMove(SmartCubeMoveEvent move) {
