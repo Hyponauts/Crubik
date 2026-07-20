@@ -9,6 +9,8 @@ import 'ble/ble_central.dart';
 abstract interface class CubeConnectionGateway {
   Stream<CubeDeviceCandidate> get scanResults;
 
+  Future<bool> isBluetoothAvailable();
+
   Future<bool> hasPermissions();
 
   Future<void> requestPermissions();
@@ -44,6 +46,9 @@ final class BleCubeConnectionGateway implements CubeConnectionGateway {
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
+
+  @override
+  Future<bool> isBluetoothAvailable() => _central.isBluetoothAvailable();
 
   @override
   Future<bool> hasPermissions() => _central.hasPermissions();

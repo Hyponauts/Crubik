@@ -9,6 +9,7 @@ import 'package:crubik/features/cube/data/ble/ble_central.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/data/moyu32_cube_protocol.dart';
+import 'package:crubik/features/cube/data/remembered_cube_store.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
@@ -91,6 +92,150 @@ void main() {
       controller.dispose();
     },
   );
+
+  test('reconnects the remembered cube from a startup scan', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final store = _FakeRememberedCubeStore('gan-remembered', name: 'GAN12ui');
+    final controller = CubeConnectionController(
+      gateway: gateway,
+      rememberedCubeStore: store,
+    );
+    const device = CubeDeviceCandidate(
+      id: 'gan-remembered',
+      name: 'GAN12ui',
+      vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
+    );
+
+    await controller.reconnectRememberedCube();
+
+    expect(gateway.permissionRequestCount, 0);
+    expect(gateway.scanStartCount, 1);
+    expect(controller.status, CubeConnectionStatus.scanning);
+    expect(
+      controller.automaticReconnectPhase,
+      AutomaticReconnectPhase.searching,
+    );
+    expect(controller.automaticReconnectDeviceName, 'GAN12ui');
+
+    gateway.addDevice(
+      const CubeDeviceCandidate(
+        id: 'another-gan',
+        name: 'GAN14ui',
+        vendor: CubeVendor.gan,
+        protocolFamily: CubeProtocolFamily.gan,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'gan-family',
+      ),
+    );
+    await pumpEventQueue();
+    expect(gateway.connectCount, 0);
+    expect(controller.status, CubeConnectionStatus.scanning);
+    expect(
+      controller.automaticReconnectPhase,
+      AutomaticReconnectPhase.searching,
+    );
+
+    gateway.addDevice(device);
+    await pumpEventQueue();
+
+    expect(gateway.connectCount, 1);
+    expect(controller.status, CubeConnectionStatus.connected);
+    expect(
+      controller.automaticReconnectPhase,
+      AutomaticReconnectPhase.inactive,
+    );
+    expect(controller.connectedCube?.id, device.id);
+    expect(store.deviceId, device.id);
+    expect(store.name, device.name);
+
+    await controller.close();
+    controller.dispose();
+  });
+
+  test(
+    'startup reconnect does not request permission or scan without access',
+    () async {
+      final permissionGateway = _FakeCubeConnectionGateway(
+        permissionsGranted: false,
+      );
+      final permissionController = CubeConnectionController(
+        gateway: permissionGateway,
+        rememberedCubeStore: _FakeRememberedCubeStore('gan-remembered'),
+      );
+
+      await permissionController.reconnectRememberedCube();
+
+      expect(permissionGateway.permissionRequestCount, 0);
+      expect(permissionGateway.scanStartCount, 0);
+      expect(permissionController.status, CubeConnectionStatus.disconnected);
+
+      final unavailableGateway = _FakeCubeConnectionGateway(
+        bluetoothAvailable: false,
+      );
+      final unavailableController = CubeConnectionController(
+        gateway: unavailableGateway,
+        rememberedCubeStore: _FakeRememberedCubeStore('gan-remembered'),
+      );
+
+      await unavailableController.reconnectRememberedCube();
+
+      expect(unavailableGateway.scanStartCount, 0);
+      expect(unavailableController.status, CubeConnectionStatus.disconnected);
+
+      await permissionController.close();
+      permissionController.dispose();
+      await unavailableController.close();
+      unavailableController.dispose();
+    },
+  );
+
+  test('stops automatic searching before connection begins', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(
+      gateway: gateway,
+      rememberedCubeStore: _FakeRememberedCubeStore('gan-remembered'),
+    );
+
+    await controller.reconnectRememberedCube();
+    await controller.stopAutomaticReconnect();
+
+    expect(gateway.scanStopCount, 1);
+    expect(gateway.connectCount, 0);
+    expect(controller.status, CubeConnectionStatus.disconnected);
+    expect(
+      controller.automaticReconnectPhase,
+      AutomaticReconnectPhase.inactive,
+    );
+
+    await controller.close();
+    controller.dispose();
+  });
+
+  test('remembers a cube only after a successful connection', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final store = _FakeRememberedCubeStore(null);
+    final controller = CubeConnectionController(
+      gateway: gateway,
+      rememberedCubeStore: store,
+    );
+    const device = CubeDeviceCandidate(
+      id: 'moyu-remembered',
+      name: 'WCU_MY32',
+      vendor: CubeVendor.moyu,
+      protocolFamily: CubeProtocolFamily.moyu32,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'moyu32',
+    );
+
+    await controller.connect(device);
+
+    expect(store.deviceId, device.id);
+    await controller.close();
+    controller.dispose();
+  });
 
   test('scans, connects, and reacts to disconnect events', () async {
     final gateway = _FakeCubeConnectionGateway();
@@ -394,6 +539,7 @@ BleAdvertisement _advertisement(
 
 final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   _FakeCubeConnectionGateway({
+    this.bluetoothAvailable = true,
     this.permissionsGranted = true,
     this.grantPermissionOnRequest = true,
     this.sessionStartGate,
@@ -401,16 +547,21 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
 
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _sessions = <String, _FakeSmartCubeSession>{};
+  final bool bluetoothAvailable;
   bool permissionsGranted;
   final bool grantPermissionOnRequest;
   final Completer<void>? sessionStartGate;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
+  int scanStopCount = 0;
   int connectCount = 0;
   bool _closed = false;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
+
+  @override
+  Future<bool> isBluetoothAvailable() async => bluetoothAvailable;
 
   @override
   Future<SmartCubeSession> connect(
@@ -440,7 +591,9 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   }
 
   @override
-  Future<void> stopScan() async {}
+  Future<void> stopScan() async {
+    scanStopCount++;
+  }
 
   void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
 
@@ -514,5 +667,24 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
     await _eventController.close();
     await _batteryController.close();
     await _connectionController.close();
+  }
+}
+
+final class _FakeRememberedCubeStore implements RememberedCubeStore {
+  _FakeRememberedCubeStore(this.deviceId, {this.name});
+
+  String? deviceId;
+  String? name;
+
+  @override
+  Future<RememberedCube?> load() async {
+    final id = deviceId;
+    return id == null ? null : RememberedCube(deviceId: id, name: name);
+  }
+
+  @override
+  Future<void> save(RememberedCube cube) async {
+    deviceId = cube.deviceId;
+    name = cube.name;
   }
 }

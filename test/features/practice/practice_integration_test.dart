@@ -6,6 +6,7 @@ import 'package:crubik/core/theme/app_theme.dart';
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
 import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
+import 'package:crubik/features/cube/data/remembered_cube_store.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/scramble_generator.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
@@ -1321,6 +1322,114 @@ void main() {
     expect(find.byKey(const Key('manual-move-input')), findsNothing);
   });
 
+  for (final size in [const Size(390, 844), const Size(1200, 800)]) {
+    testWidgets(
+      'start view shows and stops automatic reconnect at ${size.width.toInt()}px',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.reset);
+
+        final practice = PracticeController();
+        final gateway = _SilentCubeConnectionGateway();
+        final connection = CubeConnectionController(
+          gateway: gateway,
+          rememberedCubeStore: _FakeRememberedCubeStore(
+            _supportedGan.id,
+            name: _supportedGan.name,
+          ),
+        );
+        addTearDown(practice.dispose);
+        addTearDown(connection.dispose);
+
+        await tester.pumpWidget(
+          CrubikApp(
+            practiceController: practice,
+            connectionController: connection,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          connection.automaticReconnectPhase,
+          AutomaticReconnectPhase.searching,
+        );
+        expect(
+          find.byKey(const Key('automatic-reconnect-status')),
+          findsOneWidget,
+        );
+        expect(find.text('Looking for GAN12ui'), findsOneWidget);
+        expect(
+          find.byKey(const Key('stop-automatic-reconnect')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(const Key('stop-automatic-reconnect')));
+        await tester.pump();
+
+        expect(gateway.stopScanCount, 1);
+        expect(connection.status, CubeConnectionStatus.disconnected);
+        expect(
+          connection.automaticReconnectPhase,
+          AutomaticReconnectPhase.inactive,
+        );
+        expect(
+          find.byKey(const Key('automatic-reconnect-status')),
+          findsNothing,
+        );
+      },
+    );
+  }
+
+  testWidgets('automatic reconnect cannot be stopped after connecting begins', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final connectGate = Completer<void>();
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway(connectGate: connectGate);
+    final connection = CubeConnectionController(
+      gateway: gateway,
+      rememberedCubeStore: _FakeRememberedCubeStore(
+        _supportedGan.id,
+        name: _supportedGan.name,
+      ),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pump();
+    await tester.pump();
+    gateway.addDevice(_supportedGan);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      connection.automaticReconnectPhase,
+      AutomaticReconnectPhase.connecting,
+    );
+    expect(find.text('Connecting to GAN12ui'), findsOneWidget);
+    expect(find.byKey(const Key('stop-automatic-reconnect')), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    connectGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(connection.isConnected, isTrue);
+    expect(
+      connection.automaticReconnectPhase,
+      AutomaticReconnectPhase.inactive,
+    );
+  });
+
   testWidgets('connection dialog groups cubes and other BLE devices', (
     tester,
   ) async {
@@ -1681,9 +1790,13 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   final _SilentSmartCubeSession _session;
   bool _closed = false;
   int startScanCount = 0;
+  int stopScanCount = 0;
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
+
+  @override
+  Future<bool> isBluetoothAvailable() async => true;
 
   @override
   Future<SmartCubeSession> connect(
@@ -1709,7 +1822,9 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   }
 
   @override
-  Future<void> stopScan() async {}
+  Future<void> stopScan() async {
+    stopScanCount++;
+  }
 
   void addEvent(SmartCubeEvent event) => _session.addEvent(event);
 
@@ -1768,5 +1883,24 @@ final class _SilentSmartCubeSession implements SmartCubeSession {
     _closed = true;
     await _eventController.close();
     await _batteryController.close();
+  }
+}
+
+final class _FakeRememberedCubeStore implements RememberedCubeStore {
+  _FakeRememberedCubeStore(this.deviceId, {this.name});
+
+  String? deviceId;
+  String? name;
+
+  @override
+  Future<RememberedCube?> load() async {
+    final id = deviceId;
+    return id == null ? null : RememberedCube(deviceId: id, name: name);
+  }
+
+  @override
+  Future<void> save(RememberedCube cube) async {
+    deviceId = cube.deviceId;
+    name = cube.name;
   }
 }
