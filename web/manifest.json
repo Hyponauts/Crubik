@@ -1,11 +1,11 @@
 {
-    "name": "crubik",
-    "short_name": "crubik",
+    "name": "Crubik",
+    "short_name": "Crubik",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#08367F",
+    "theme_color": "#08367F",
+    "description": "Offline-first companion app for GAN and MoYu smart cubes.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
