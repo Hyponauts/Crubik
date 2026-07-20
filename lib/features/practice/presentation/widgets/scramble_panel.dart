@@ -8,8 +8,6 @@ import 'practice_panel.dart';
 class PracticeScramblePanel extends StatelessWidget {
   const PracticeScramblePanel({
     required this.practice,
-    required this.demoMode,
-    this.onManualMoves,
     this.compact = false,
     this.dense = false,
     this.fillHeight = false,
@@ -18,8 +16,6 @@ class PracticeScramblePanel extends StatelessWidget {
   });
 
   final PracticeController practice;
-  final bool demoMode;
-  final VoidCallback? onManualMoves;
   final bool compact;
   final bool dense;
   final bool fillHeight;
@@ -68,29 +64,6 @@ class PracticeScramblePanel extends StatelessWidget {
             label: Text(compact ? 'New' : 'New scramble'),
           ),
         ),
-        if (demoMode) ...[
-          SizedBox(width: compact ? 6 : 10),
-          IconButton.outlined(
-            key: const Key('reset-scramble'),
-            onPressed: canChangeScramble ? practice.resetCubeToScramble : null,
-            visualDensity: compact ? VisualDensity.compact : null,
-            icon: Icon(Icons.replay_rounded, size: compact ? 18 : null),
-            tooltip: 'Reset virtual cube to scramble',
-          ),
-          if (compact && onManualMoves != null) ...[
-            const SizedBox(width: 6),
-            OutlinedButton.icon(
-              key: const Key('manual-moves-button'),
-              onPressed: onManualMoves,
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-              ),
-              icon: const Icon(Icons.touch_app_outlined, size: 17),
-              label: const Text('Moves'),
-            ),
-          ],
-        ],
       ],
     );
 

@@ -30,7 +30,6 @@ void main() {
               animation: practice,
               builder: (context, _) => PracticeScramblePanel(
                 practice: practice,
-                demoMode: false,
                 compact: true,
                 dense: true,
                 fillHeight: true,

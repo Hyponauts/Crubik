@@ -16,12 +16,12 @@ void main() {
     controller.startSolve();
     controller.toggleTimer();
     controller.applyMove(CubeMove.parse('R'));
-    controller.resetCubeToScramble();
     controller.newScramble();
 
     expect(controller.inputMode, PracticeInputMode.unselected);
     expect(controller.primaryActionEnabled, isFalse);
     expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.attemptInProgress, isFalse);
     expect(controller.scramble.toString(), scramble);
     expect(controller.cubeState.facelets, facelets);
     expect(controller.currentMoves, isEmpty);
@@ -33,14 +33,15 @@ void main() {
     final clock = _FakeSolveClock();
     final controller = PracticeController(
       clock: clock,
+      preInspectionDelay: Duration.zero,
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
 
     controller.activateDemoInput();
     final completedScramble = controller.scramble.toString();
     controller.startSolve();
-    clock.value = const Duration(seconds: 12);
     controller.applyMove(CubeMove.parse('R'));
+    clock.value = const Duration(seconds: 12);
     controller.stopSolve();
 
     expect(controller.inputMode, PracticeInputMode.demo);
@@ -67,6 +68,111 @@ void main() {
 
     controller.continueAfterSolve();
     expect(continuationNotifications, 1);
+    controller.dispose();
+  });
+
+  test(
+    'demo mode shares readiness, inspection, and first-move timing',
+    () async {
+      final clock = _FakeSolveClock();
+      var now = DateTime.utc(2026);
+      final controller = PracticeController(clock: clock, now: () => now);
+      controller.activateDemoInput();
+      final scrambledFacelets = controller.cubeState.facelets;
+
+      controller.startSolve();
+
+      expect(controller.phase, PracticePhase.inspectionDelay);
+      expect(controller.attemptInProgress, isTrue);
+      expect(controller.primaryActionEnabled, isTrue);
+      expect(
+        controller.preInspectionRemaining,
+        PracticeController.defaultPreInspectionDelay,
+      );
+      controller.applyMove(CubeMove.parse('R'));
+      expect(controller.cubeState.facelets, scrambledFacelets);
+      expect(controller.currentMoves, isEmpty);
+      expect(controller.cubeMoveRevision, 0);
+
+      now = now.add(PracticeController.defaultPreInspectionDelay);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(controller.phase, PracticePhase.inspection);
+      expect(controller.attemptInProgress, isTrue);
+
+      now = now.add(const Duration(seconds: 4));
+      controller.applyMove(CubeMove.parse('R'), occurredAt: now);
+
+      expect(controller.phase, PracticePhase.solving);
+      expect(controller.attemptInProgress, isTrue);
+      expect(controller.currentMoves, [CubeMove.parse('R')]);
+      clock.value = const Duration(seconds: 8);
+      controller.stopSolve();
+      expect(controller.attemptInProgress, isFalse);
+      expect(
+        controller.solves.single.inspectionElapsed,
+        const Duration(seconds: 4),
+      );
+      expect(
+        controller.solves.single.startTrigger,
+        SolveStartTrigger.firstMove,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('demo readiness can be aborted from the primary action', () {
+    final controller = PracticeController()..activateDemoInput();
+    final scrambledFacelets = controller.cubeState.facelets;
+    controller.startSolve();
+
+    controller.toggleTimer();
+
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.cubeState.facelets, scrambledFacelets);
+    expect(controller.solves, isEmpty);
+    controller.dispose();
+  });
+
+  test(
+    'demo inspection timeout starts solving with timeout metadata',
+    () async {
+      final controller = PracticeController(
+        preInspectionDelay: Duration.zero,
+        inspectionDuration: const Duration(milliseconds: 20),
+      );
+      controller.activateDemoInput();
+      controller.startSolve();
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(controller.phase, PracticePhase.solving);
+      controller.stopSolve();
+      expect(
+        controller.solves.single.inspectionElapsed,
+        const Duration(milliseconds: 20),
+      );
+      expect(
+        controller.solves.single.startTrigger,
+        SolveStartTrigger.inspectionTimeout,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('aborting a demo attempt restores the current scramble', () {
+    final controller = PracticeController(preInspectionDelay: Duration.zero);
+    controller.activateDemoInput();
+    final scrambledFacelets = controller.cubeState.facelets;
+    controller.startSolve();
+    controller.applyMove(CubeMove.parse('R'));
+
+    expect(controller.cubeState.facelets, isNot(scrambledFacelets));
+    controller.abortAttempt();
+
+    expect(controller.phase, PracticePhase.manualReady);
+    expect(controller.cubeState.facelets, scrambledFacelets);
+    expect(controller.currentMoves, isEmpty);
+    expect(controller.solves, isEmpty);
     controller.dispose();
   });
 
@@ -118,18 +224,17 @@ void main() {
     var timestamp = DateTime.utc(2026, 1, 1);
     final controller = PracticeController(
       clock: clock,
-      now: () {
-        timestamp = timestamp.add(const Duration(seconds: 1));
-        return timestamp;
-      },
+      now: () => timestamp,
+      preInspectionDelay: Duration.zero,
     );
     controller.activateDemoInput();
 
     for (final seconds in [12, 10, 15, 11, 13]) {
       controller.startSolve();
-      clock.value = Duration(seconds: seconds);
       controller.applyMove(CubeMove.parse('R'));
+      clock.value = Duration(seconds: seconds);
       controller.stopSolve();
+      timestamp = timestamp.add(const Duration(seconds: 1));
     }
 
     expect(controller.solves, hasLength(5));
@@ -137,8 +242,8 @@ void main() {
     expect(controller.sessionAverage, const Duration(milliseconds: 12200));
     expect(controller.averageOfFive, const Duration(seconds: 12));
     expect(controller.solves.first.moveCount, 1);
-    expect(controller.solves.first.startTrigger, SolveStartTrigger.manual);
-    expect(controller.solves.first.inspectionElapsed, isNull);
+    expect(controller.solves.first.startTrigger, SolveStartTrigger.firstMove);
+    expect(controller.solves.first.inspectionElapsed, Duration.zero);
 
     controller.dispose();
   });
@@ -147,6 +252,7 @@ void main() {
     final clock = _FakeSolveClock();
     final controller = PracticeController(
       clock: clock,
+      preInspectionDelay: Duration.zero,
       scrambleGenerator: ScrambleGenerator(random: Random(7)),
     );
     controller.activateDemoInput();
@@ -171,9 +277,10 @@ void main() {
   });
 
   test('deleting the reviewed solve clears the finish review', () {
-    final controller = PracticeController();
+    final controller = PracticeController(preInspectionDelay: Duration.zero);
     controller.activateDemoInput();
     controller.startSolve();
+    controller.applyMove(CubeMove.parse('R'));
     controller.stopSolve();
     final reviewedSolve = controller.pendingSolveReview!;
 
@@ -185,7 +292,7 @@ void main() {
   });
 
   test('publishes monotonic move metadata only for applied moves', () {
-    final controller = PracticeController();
+    final controller = PracticeController(preInspectionDelay: Duration.zero);
     controller.activateDemoInput();
 
     expect(controller.lastAppliedMove, isNull);
@@ -194,6 +301,11 @@ void main() {
     controller.syncCubeState(CubeState.solved());
     expect(controller.cubeMoveRevision, 0);
 
+    controller.applyMove(CubeMove.parse('R'));
+    expect(controller.lastAppliedMove, isNull);
+    expect(controller.cubeMoveRevision, 0);
+
+    controller.startSolve();
     controller.applyMove(CubeMove.parse('R'));
     expect(controller.lastAppliedMove, CubeMove.parse('R'));
     expect(controller.cubeMoveRevision, 1);
@@ -208,12 +320,16 @@ void main() {
   test('exports version 2 solve history while retaining manual metadata', () {
     final clock = _FakeSolveClock();
     final exportedAt = DateTime.utc(2026, 1, 1, 12);
-    final controller = PracticeController(clock: clock, now: () => exportedAt);
+    final controller = PracticeController(
+      clock: clock,
+      now: () => exportedAt,
+      preInspectionDelay: Duration.zero,
+    );
     controller.activateDemoInput();
 
     controller.startSolve();
-    clock.value = const Duration(milliseconds: 12345);
     controller.applyMove(CubeMove.parse('R'));
+    clock.value = const Duration(milliseconds: 12345);
     controller.stopSolve(inputSource: 'manual');
 
     final payload = jsonDecode(controller.exportJson()) as Map<String, Object?>;
@@ -225,8 +341,8 @@ void main() {
     expect(solve['elapsed_ms'], 12345);
     expect(solve['move_count'], 1);
     expect(solve['input_source'], 'manual');
-    expect(solve['start_trigger'], 'manual');
-    expect(solve['inspection_elapsed_ms'], isNull);
+    expect(solve['start_trigger'], 'first_move');
+    expect(solve['inspection_elapsed_ms'], 0);
     expect(solve['scramble'], isNotEmpty);
 
     controller.dispose();
