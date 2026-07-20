@@ -27,7 +27,10 @@ void main() {
     addTearDown(tester.view.reset);
 
     final clock = _FakeSolveClock();
-    final practice = PracticeController(clock: clock);
+    final practice = PracticeController(
+      clock: clock,
+      preInspectionDelay: Duration.zero,
+    );
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -63,8 +66,9 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-reset-view')), findsOneWidget);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
-    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
     expect(find.byType(ListView), findsNothing);
     expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
     expect(find.byKey(const Key('review-details-scroll')), findsNothing);
@@ -81,9 +85,13 @@ void main() {
     final completedScramble = practice.scramble.toString();
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
-    expect(find.text('STOP & SAVE'), findsOneWidget);
+    expect(practice.phase, PracticePhase.inspection);
+    expect(find.text('INSPECTION'), findsOneWidget);
+    expect(find.text('ABORT'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
     expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
     expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(find.text('Session'), findsNothing);
     expect(
@@ -91,8 +99,11 @@ void main() {
       lessThan(tester.getTopLeft(find.byKey(const Key('cube-3d-canvas'))).dy),
     );
 
+    await tester.tap(find.byKey(const Key('cube-move-R')));
+    await tester.pump();
+    expect(practice.phase, PracticePhase.solving);
+    expect(find.text('STOP & SAVE'), findsOneWidget);
     clock.value = const Duration(milliseconds: 12340);
-    practice.applyMove(CubeMove.parse('R'));
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(practice.solves, hasLength(1));
@@ -121,8 +132,9 @@ void main() {
     );
     expect(
       tester.widget<Text>(find.byKey(const Key('finish-inspection'))).data,
-      '—',
+      isNot('—'),
     );
+    expect(practice.solves.single.inspectionElapsed, isNotNull);
     expect(
       tester.widget<Text>(find.byKey(const Key('completed-scramble'))).data,
       completedScramble,
@@ -137,15 +149,11 @@ void main() {
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('manual-moves-button')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('cube-move-R')));
-    await tester.pump();
-    expect(practice.currentMoves, isEmpty);
-    await tester.tapAt(const Offset(2, 2));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+    expect(practice.phase, PracticePhase.inspection);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cube-move-R')));
     await tester.pump();
     expect(practice.phase, PracticePhase.solving);
     expect(find.byKey(const Key('finish-card')), findsNothing);
@@ -155,6 +163,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('readiness hides the demo cube until inspection begins', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    var now = DateTime.utc(2026);
+    final practice = PracticeController(now: () => now)..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    expect(practice.phase, PracticePhase.inspectionDelay);
+    expect(find.byKey(const Key('readiness-stage')), findsOneWidget);
+    expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
+    expect(find.text('ABORT'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('timer-toggle')))
+          .onPressed,
+      isNotNull,
+    );
+
+    now = now.add(PracticeController.defaultPreInspectionDelay);
+    await tester.pump(const Duration(milliseconds: 31));
+
+    expect(practice.phase, PracticePhase.inspection);
+    expect(find.byKey(const Key('readiness-stage')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
+    practice.abortAttempt();
+  });
+
   testWidgets('mobile practice fits a compact landscape viewport', (
     tester,
   ) async {
@@ -162,7 +215,7 @@ void main() {
     tester.view.physicalSize = const Size(640, 360);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = PracticeController(preInspectionDelay: Duration.zero);
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -182,7 +235,8 @@ void main() {
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
     expect(find.byType(ListView), findsNothing);
     expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
     await tester.tap(find.byKey(const Key('timer-toggle')));
@@ -193,7 +247,12 @@ void main() {
     );
     expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(practice.phase, PracticePhase.inspection);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    expect(find.byKey(const Key('cube-move-R')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cube-move-R')));
+    await tester.pump();
+    expect(practice.phase, PracticePhase.solving);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
@@ -213,6 +272,128 @@ void main() {
     expect(find.byKey(const Key('manual-moves-button')), findsNothing);
     expect(find.byKey(const Key('reset-scramble')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('landscape solve keeps 48px controls at 568 by 320', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(568, 320);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('mobile-focus-landscape-layout')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('attempt-scroll-fallback')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    for (final notation in [
+      'U',
+      "U'",
+      'R',
+      "R'",
+      'F',
+      "F'",
+      'D',
+      "D'",
+      'L',
+      "L'",
+      'B',
+      "B'",
+    ]) {
+      final size = tester.getSize(find.byKey(Key('cube-move-$notation')));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+    expect(
+      tester.getSize(find.byKey(const Key('timer-toggle'))).height,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getBottomRight(find.byKey(const Key('focus-action-bar'))).dy,
+      lessThanOrEqualTo(tester.view.physicalSize.height),
+    );
+    expect(tester.takeException(), isNull);
+    practice.abortAttempt();
+  });
+
+  testWidgets('very short landscape uses a controlled scroll fallback', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(480, 270);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    final fallback = find.byKey(const Key('attempt-scroll-fallback'));
+    expect(fallback, findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    final moveSize = tester.getSize(find.byKey(const Key('cube-move-R')));
+    expect(moveSize.width, greaterThanOrEqualTo(48));
+    expect(moveSize.height, greaterThanOrEqualTo(48));
+    await tester.drag(fallback, const Offset(0, -500));
+    await tester.pump();
+    expect(find.byKey(const Key('timer-toggle')).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    practice.abortAttempt();
+  });
+
+  testWidgets('scaled landscape text falls back without shrinking moves', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(568, 320);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
+    practice.startSolve();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    expect(find.byKey(const Key('attempt-scroll-fallback')), findsOneWidget);
+    final moveSize = tester.getSize(find.byKey(const Key('cube-move-R')));
+    expect(moveSize.width, greaterThanOrEqualTo(48));
+    expect(moveSize.height, greaterThanOrEqualTo(48));
+    expect(tester.takeException(), isNull);
+    practice.abortAttempt();
   });
 
   testWidgets(
@@ -341,7 +522,7 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    final practice = PracticeController();
+    final practice = PracticeController(preInspectionDelay: Duration.zero);
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -363,7 +544,8 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
     expect(find.byKey(const Key('timer-toggle')), findsOneWidget);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
     expect(find.byKey(const Key('scramble-content-scroll')), findsOneWidget);
     expect(find.byKey(const Key('review-details-scroll')), findsNothing);
     await tester.tap(find.byKey(const Key('timer-toggle')));
@@ -371,6 +553,9 @@ void main() {
     expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
     expect(find.byKey(const Key('scramble-content-scroll')), findsNothing);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cube-move-R')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
@@ -391,7 +576,8 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    final practice = PracticeController()..activateDemoInput();
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -416,14 +602,15 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
     expect(find.text('Session'), findsNothing);
     expect(
       tester.getSize(find.byKey(const Key('timer-toggle'))).height,
       greaterThanOrEqualTo(48),
     );
     expect(
-      tester.getSize(find.byKey(const Key('manual-moves-button'))).height,
+      tester.getSize(find.byKey(const Key('cube-move-R'))).height,
       greaterThanOrEqualTo(48),
     );
     expect(
@@ -432,6 +619,8 @@ void main() {
     );
     expect(tester.takeException(), isNull);
 
+    await tester.tap(find.byKey(const Key('cube-move-R')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
 
@@ -455,7 +644,8 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController()..activateDemoInput();
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -477,9 +667,11 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
 
-    expect(practice.phase, PracticePhase.solving);
+    expect(practice.phase, PracticePhase.inspection);
     expect(find.byKey(const Key('mobile-focus-layout')), findsOneWidget);
-    practice.abortAttempt();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(practice.phase, PracticePhase.manualReady);
   });
 
   testWidgets('mobile session fixes its summary above a bounded history list', (
@@ -494,10 +686,12 @@ void main() {
     final practice = PracticeController(
       clock: clock,
       now: () => timestamp = timestamp.add(const Duration(seconds: 1)),
+      preInspectionDelay: Duration.zero,
     );
     practice.activateDemoInput();
     for (var index = 0; index < 8; index++) {
       practice.startSolve();
+      practice.applyMove(CubeMove.parse('R'));
       clock.value = Duration(seconds: 10 + index);
       practice.stopSolve();
     }
@@ -528,6 +722,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('export-solves-button')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop attempt remains focused at the 900px breakpoint', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 600);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController(preInspectionDelay: Duration.zero)
+      ..activateDemoInput();
+    final connection = CubeConnectionController(
+      gateway: _SilentCubeConnectionGateway(),
+    );
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('timer-toggle')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('practice-desktop-layout')), findsOneWidget);
+    expect(find.text('SESSION SNAPSHOT'), findsNothing);
+    expect(find.byKey(const Key('scramble-text')), findsNothing);
+    expect(find.byKey(const Key('attempt-scroll-fallback')), findsNothing);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('manual-move-input'))).height,
+      lessThan(180),
+    );
+    for (final move in find.byType(OutlinedButton).evaluate()) {
+      final key = move.widget.key;
+      if (key is! ValueKey<String> || !key.value.startsWith('cube-move-')) {
+        continue;
+      }
+      final size = tester.getSize(find.byKey(key));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+    expect(tester.takeException(), isNull);
+    practice.abortAttempt();
   });
 
   testWidgets('desktop layout presents practice and session side by side', (
@@ -648,14 +888,14 @@ void main() {
     expect(find.text('Waiting for the physical cube state'), findsNothing);
   });
 
-  testWidgets('desktop demo shows manual controls and can return to chooser', (
+  testWidgets('desktop demo shows inline controls only during an attempt', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = PracticeController(preInspectionDelay: Duration.zero);
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -668,10 +908,12 @@ void main() {
     await tester.tap(find.byKey(const Key('use-demo-cube-choice')));
     await tester.pump();
 
-    expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
-    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
+    expect(find.text('MANUAL MOVE INPUT'), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
     expect(find.text('Demo cube'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     final desktopScrambleToken = find.descendant(
       of: find.byKey(const Key('scramble-step-0')),
       matching: find.byType(Text),
@@ -683,6 +925,15 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.text('SESSION SNAPSHOT'), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('manual-move-input'))).height,
+      lessThan(180),
+    );
+    expect(practice.phase, PracticePhase.inspection);
+    await tester.tap(find.byKey(const Key('cube-move-R')));
+    await tester.pump();
+    expect(practice.phase, PracticePhase.solving);
     await tester.tap(find.byKey(const Key('timer-toggle')));
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
@@ -693,12 +944,13 @@ void main() {
     expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
     expect(find.text('DISMISS'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
+    expect(find.text('SESSION SNAPSHOT'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const Key('continue-after-solve')));
     await tester.pump();
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
-    expect(find.text('MANUAL MOVE INPUT'), findsOneWidget);
+    expect(find.text('MANUAL MOVE INPUT'), findsNothing);
 
     await tester.tap(find.byKey(const Key('connect-cube-button')));
     await tester.pumpAndSettle();
@@ -971,12 +1223,16 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsNothing);
     expect(find.byKey(const Key('scramble-guidance')), findsNothing);
     expect(find.text('GET READY'), findsWidgets);
+    expect(find.text('ABORT'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsOneWidget);
+    expect(find.byKey(const Key('readiness-stage')), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('timer-toggle')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
     now = now.add(PracticeController.defaultPreInspectionDelay);
     await tester.pump(const Duration(milliseconds: 31));
@@ -984,6 +1240,20 @@ void main() {
     expect(practice.phase, PracticePhase.inspection);
     expect(find.text('INSPECTION'), findsOneWidget);
     expect(find.text('ABORT'), findsOneWidget);
+    expect(find.byKey(const Key('cube-3d-canvas')), findsOneWidget);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
+    expect(find.text('SESSION SNAPSHOT'), findsNothing);
+    final cubeRect = tester.getRect(find.byKey(const Key('cube-panel')));
+    final timerRect = tester.getRect(
+      find.byKey(const Key('focus-timer-panel')),
+    );
+    final actionRect = tester.getRect(
+      find.byKey(const Key('focus-action-bar')),
+    );
+    expect(
+      timerRect.top - cubeRect.top,
+      closeTo(cubeRect.bottom - actionRect.bottom, 1),
+    );
     expect(practice.currentMoves, isEmpty);
 
     gateway.addEvent(
@@ -1046,8 +1316,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(practice.inputMode, PracticeInputMode.demo);
     expect(connection.isConnected, isFalse);
-    expect(find.byKey(const Key('manual-moves-button')), findsOneWidget);
-    expect(find.byKey(const Key('reset-scramble')), findsOneWidget);
+    expect(find.byKey(const Key('manual-moves-button')), findsNothing);
+    expect(find.byKey(const Key('reset-scramble')), findsNothing);
+    expect(find.byKey(const Key('manual-move-input')), findsNothing);
   });
 
   testWidgets('connection dialog groups cubes and other BLE devices', (

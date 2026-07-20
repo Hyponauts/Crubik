@@ -8,14 +8,8 @@ import 'practice_formatters.dart';
 
 bool showsPracticeAccessory(PracticeController practice) =>
     practice.pendingSolveReview != null ||
-    isPracticeAttemptActive(practice) ||
     (practice.inputMode == PracticeInputMode.demo &&
         practice.phase == PracticePhase.manualReady);
-
-bool isPracticeAttemptActive(PracticeController practice) =>
-    practice.phase == PracticePhase.inspectionDelay ||
-    practice.phase == PracticePhase.inspection ||
-    practice.phase == PracticePhase.solving;
 
 class PracticeAccessoryPanel extends StatelessWidget {
   const PracticeAccessoryPanel({
@@ -41,8 +35,6 @@ class PracticeAccessoryPanel extends StatelessWidget {
             compact: compact,
             dense: dense,
           )
-        : isPracticeAttemptActive(practice)
-        ? _TimerContent(practice: practice, compact: compact, dense: dense)
         : _ReadyActionContent(
             onStart: practice.toggleTimer,
             compact: compact,
@@ -199,65 +191,6 @@ class PracticeMobileReviewPanel extends StatelessWidget {
   }
 }
 
-class _TimerContent extends StatelessWidget {
-  const _TimerContent({
-    required this.practice,
-    required this.compact,
-    required this.dense,
-  });
-
-  final PracticeController practice;
-  final bool compact;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    final timer = _TimerStatusContent(
-      practice: practice,
-      fontSize: dense
-          ? 42
-          : compact
-          ? 50
-          : 78,
-      dense: dense,
-    );
-    final button = _PrimaryActionButton(
-      practice: practice,
-      dense: dense,
-      compact: compact,
-    );
-
-    if (dense) {
-      return Row(
-        children: [
-          Expanded(child: timer),
-          const SizedBox(width: 8),
-          Flexible(child: button),
-        ],
-      );
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        timer,
-        SizedBox(height: compact ? 0 : 12),
-        SizedBox(width: double.infinity, child: button),
-        if (!compact) ...[
-          const SizedBox(height: 9),
-          Text(
-            _shortcutHint(practice),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 class PracticeTimerPanel extends StatelessWidget {
   const PracticeTimerPanel({
     required this.practice,
@@ -288,13 +221,11 @@ class PracticeTimerPanel extends StatelessWidget {
 class PracticeAttemptActionBar extends StatelessWidget {
   const PracticeAttemptActionBar({
     required this.practice,
-    this.onManualMoves,
     this.dense = false,
     super.key,
   });
 
   final PracticeController practice;
-  final VoidCallback? onManualMoves;
   final bool dense;
 
   @override
@@ -306,29 +237,7 @@ class PracticeAttemptActionBar extends StatelessWidget {
     );
     return SizedBox(
       key: const Key('focus-action-bar'),
-      child: Row(
-        children: [
-          if (onManualMoves != null) ...[
-            Expanded(
-              flex: 2,
-              child: OutlinedButton.icon(
-                key: const Key('manual-moves-button'),
-                onPressed: onManualMoves,
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 48),
-                  visualDensity: dense
-                      ? VisualDensity.compact
-                      : VisualDensity.standard,
-                ),
-                icon: const Icon(Icons.touch_app_outlined, size: 18),
-                label: const Text('MOVES'),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(flex: 3, child: primary),
-        ],
-      ),
+      child: SizedBox(width: double.infinity, child: primary),
     );
   }
 }
@@ -384,7 +293,7 @@ class _PrimaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final aborting = _connectedAttemptActive(practice);
+    final aborting = _attemptAborts(practice);
     return FilledButton.icon(
       key: const Key('timer-toggle'),
       onPressed: practice.primaryActionEnabled ? practice.toggleTimer : null,
@@ -778,43 +687,31 @@ Duration _displayedTime(PracticeController practice) =>
       _ => practice.elapsed,
     };
 
-bool _connectedAttemptActive(PracticeController practice) =>
-    practice.smartCubeWorkflowActive &&
-    (practice.phase == PracticePhase.inspection ||
+bool _attemptAborts(PracticeController practice) =>
+    practice.phase == PracticePhase.inspectionDelay ||
+    practice.phase == PracticePhase.inspection ||
+    (practice.smartCubeWorkflowActive &&
         practice.phase == PracticePhase.solving);
 
 String _primaryActionLabel(PracticeController practice) {
-  if (practice.smartCubeWorkflowActive) {
-    return switch (practice.phase) {
-      PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
-      PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
-      PracticePhase.scrambling => 'FOLLOW SCRAMBLE',
-      PracticePhase.inspectionDelay => 'GET READY',
-      PracticePhase.inspection || PracticePhase.solving => 'ABORT',
-      PracticePhase.manualReady => 'START SOLVE',
-    };
-  }
-  return practice.phase == PracticePhase.solving
-      ? 'STOP & SAVE'
-      : 'START SOLVE';
+  return switch (practice.phase) {
+    PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
+    PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
+    PracticePhase.scrambling => 'FOLLOW SCRAMBLE',
+    PracticePhase.inspectionDelay => 'ABORT',
+    PracticePhase.inspection => 'ABORT',
+    PracticePhase.solving =>
+      practice.smartCubeWorkflowActive ? 'ABORT' : 'STOP & SAVE',
+    PracticePhase.manualReady => 'START SOLVE',
+  };
 }
 
 IconData _primaryActionIcon(PracticeController practice) {
-  if (_connectedAttemptActive(practice)) return Icons.close_rounded;
+  if (_attemptAborts(practice)) return Icons.close_rounded;
   if (!practice.smartCubeWorkflowActive &&
       practice.phase == PracticePhase.solving) {
     return Icons.stop_rounded;
   }
   if (practice.smartCubeWorkflowActive) return Icons.sync_rounded;
   return Icons.play_arrow_rounded;
-}
-
-String _shortcutHint(PracticeController practice) {
-  if (!practice.smartCubeWorkflowActive) {
-    return 'Spacebar also starts and stops';
-  }
-  if (_connectedAttemptActive(practice)) {
-    return 'Spacebar aborts this attempt';
-  }
-  return 'Timing starts automatically from the physical cube';
 }

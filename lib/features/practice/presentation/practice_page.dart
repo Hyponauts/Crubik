@@ -9,7 +9,6 @@ import 'sessions_view.dart';
 import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
 import 'widgets/practice_panel.dart';
-import 'widgets/solve_controls.dart';
 
 /// Coordinates practice/session navigation, input selection, and page chrome.
 class PracticePage extends StatefulWidget {
@@ -100,7 +99,7 @@ class _PracticePageState extends State<PracticePage> {
         _selectedIndex == 0 &&
         !widget.inputController.isUnselected &&
         widget.practiceController.pendingSolveReview == null &&
-        isPracticeAttemptActive(widget.practiceController);
+        widget.practiceController.attemptInProgress;
     return Scaffold(
       key: const Key('practice-mobile-layout'),
       appBar: focusMode

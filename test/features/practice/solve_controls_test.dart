@@ -1,15 +1,17 @@
 import 'package:crubik/core/theme/app_theme.dart';
+import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/presentation/widgets/solve_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('renders ready, active timer, and finish states in isolation', (
-    tester,
-  ) async {
+  testWidgets('renders ready and finish states in isolation', (tester) async {
     final clock = _FakeSolveClock();
-    final practice = PracticeController(clock: clock)..activateDemoInput();
+    final practice = PracticeController(
+      clock: clock,
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     addTearDown(practice.dispose);
 
     await tester.pumpWidget(_host(practice));
@@ -17,12 +19,9 @@ void main() {
     expect(find.byKey(const Key('timer-display')), findsNothing);
 
     await tester.tap(find.byKey(const Key('timer-toggle')));
+    practice.applyMove(CubeMove.parse('R'));
     clock.value = const Duration(seconds: 12);
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(find.byKey(const Key('timer-display')), findsOneWidget);
-    expect(find.text('12.00'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('timer-toggle')));
+    practice.stopSolve();
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
