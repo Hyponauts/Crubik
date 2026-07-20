@@ -335,15 +335,6 @@ class _CompactCubePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '${practice.currentMoves.length} moves captured',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
-                ),
-              ),
             ],
           );
         },
@@ -413,19 +404,6 @@ class _DesktopCubeStage extends StatelessWidget {
           lastMove: practice.lastAppliedMove,
           moveRevision: practice.cubeMoveRevision,
           dimension: 280,
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.swipe, size: 16),
-            const SizedBox(width: 7),
-            Text(
-              '${practice.currentMoves.length} moves captured',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: CrubikColors.muted),
-            ),
-          ],
         ),
       ],
     );
