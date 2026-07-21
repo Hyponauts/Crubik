@@ -4,38 +4,50 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../cube/application/cube_connection_controller.dart';
 import '../../../cube/domain/smart_cube_device.dart';
-import '../../application/practice_input_controller.dart';
+import '../../application/practice_controller.dart';
 
 Future<void> showPracticeConnectionDialog(
   BuildContext context, {
-  required PracticeInputController input,
+  required PracticeController practice,
+  required CubeConnectionController connection,
+  required Future<void> Function() onUseDemoCube,
+  required VoidCallback onExitDemo,
+  required Future<void> Function(CubeDeviceCandidate) onConnect,
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _PracticeConnectionDialog(input: input),
+    builder: (context) => _PracticeConnectionDialog(
+      practice: practice,
+      connection: connection,
+      onUseDemoCube: onUseDemoCube,
+      onExitDemo: onExitDemo,
+      onConnect: onConnect,
+    ),
   );
 }
 
 class PracticeConnectionButton extends StatelessWidget {
   const PracticeConnectionButton({
-    required this.input,
+    required this.practice,
+    required this.connection,
     required this.onPressed,
     this.compact = false,
     super.key,
   });
 
-  final PracticeInputController input;
+  final PracticeController practice;
+  final CubeConnectionController connection;
   final VoidCallback onPressed;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final isConnected = input.isPhysicalCubeConnected;
-    final isDemo = input.isDemo;
+    final isConnected = connection.isConnected;
+    final isDemo = practice.inputMode == PracticeInputMode.demo;
     final label = isDemo
         ? (compact ? 'DEMO' : 'Demo cube')
         : isConnected
-        ? (compact ? 'LIVE' : input.connectedCube!.name)
+        ? (compact ? 'LIVE' : connection.connectedCube!.name)
         : (compact ? 'CONNECT' : 'Connect cube');
     return OutlinedButton.icon(
       key: const Key('connect-cube-button'),
@@ -67,17 +79,26 @@ class PracticeConnectionButton extends StatelessWidget {
 }
 
 class _PracticeConnectionDialog extends StatelessWidget {
-  const _PracticeConnectionDialog({required this.input});
+  const _PracticeConnectionDialog({
+    required this.practice,
+    required this.connection,
+    required this.onUseDemoCube,
+    required this.onExitDemo,
+    required this.onConnect,
+  });
 
-  final PracticeInputController input;
+  final PracticeController practice;
+  final CubeConnectionController connection;
+  final Future<void> Function() onUseDemoCube;
+  final VoidCallback onExitDemo;
+  final Future<void> Function(CubeDeviceCandidate) onConnect;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: input,
+      animation: Listenable.merge([practice, connection]),
       builder: (context, _) {
-        final scanning =
-            input.connectionStatus == CubeConnectionStatus.scanning;
+        final scanning = connection.status == CubeConnectionStatus.scanning;
         return Dialog(
           insetPadding: const EdgeInsets.all(18),
           backgroundColor: CrubikColors.surface,
@@ -96,17 +117,19 @@ class _PracticeConnectionDialog extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ConnectionDialogHeader(input: input),
+                  _ConnectionDialogHeader(connection: connection),
                   const SizedBox(height: 20),
-                  if (input.isDemo)
-                    _DemoInputCard(input: input)
-                  else if (input.isPhysicalCubeConnected)
-                    _ConnectedCubeCard(input: input)
+                  if (practice.inputMode == PracticeInputMode.demo)
+                    _DemoInputCard(onExitDemo: onExitDemo)
+                  else if (connection.isConnected)
+                    _ConnectedCubeCard(connection: connection)
                   else
                     Flexible(
                       child: _DisconnectedCubeContent(
-                        input: input,
+                        connection: connection,
                         scanning: scanning,
+                        onUseDemoCube: onUseDemoCube,
+                        onConnect: onConnect,
                       ),
                     ),
                 ],
@@ -120,9 +143,9 @@ class _PracticeConnectionDialog extends StatelessWidget {
 }
 
 class _ConnectionDialogHeader extends StatelessWidget {
-  const _ConnectionDialogHeader({required this.input});
+  const _ConnectionDialogHeader({required this.connection});
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -151,7 +174,7 @@ class _ConnectionDialogHeader extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                'Supported protocols: ${_formatProtocolNames(input.supportedProtocolDisplayNames)}',
+                'Supported protocols: ${_formatProtocolNames(connection.supportedProtocolDisplayNames)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -167,30 +190,44 @@ class _ConnectionDialogHeader extends StatelessWidget {
 }
 
 class _DisconnectedCubeContent extends StatelessWidget {
-  const _DisconnectedCubeContent({required this.input, required this.scanning});
+  const _DisconnectedCubeContent({
+    required this.connection,
+    required this.scanning,
+    required this.onUseDemoCube,
+    required this.onConnect,
+  });
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
   final bool scanning;
+  final Future<void> Function() onUseDemoCube;
+  final Future<void> Function(CubeDeviceCandidate) onConnect;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _DiscoveryControls(input: input, scanning: scanning),
+        _DiscoveryControls(
+          connection: connection,
+          scanning: scanning,
+          onUseDemoCube: onUseDemoCube,
+        ),
         if (scanning) ...[
           const SizedBox(height: 14),
           const LinearProgressIndicator(minHeight: 2),
         ],
-        if (input.errorMessage != null) ...[
+        if (connection.errorMessage != null) ...[
           const SizedBox(height: 14),
-          _ConnectionError(input: input),
+          _ConnectionError(connection: connection),
         ],
         const SizedBox(height: 16),
         Flexible(
-          child: input.discoveredDevices.isEmpty
+          child: connection.discoveredDevices.isEmpty
               ? _EmptyDeviceSearch(scanning: scanning)
-              : _DiscoveredDeviceList(input: input),
+              : _DiscoveredDeviceList(
+                  connection: connection,
+                  onConnect: onConnect,
+                ),
         ),
         const SizedBox(height: 14),
         Text(
@@ -205,10 +242,15 @@ class _DisconnectedCubeContent extends StatelessWidget {
 }
 
 class _DiscoveryControls extends StatelessWidget {
-  const _DiscoveryControls({required this.input, required this.scanning});
+  const _DiscoveryControls({
+    required this.connection,
+    required this.scanning,
+    required this.onUseDemoCube,
+  });
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
   final bool scanning;
+  final Future<void> Function() onUseDemoCube;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +258,7 @@ class _DiscoveryControls extends StatelessWidget {
       children: [
         Expanded(
           child: FilledButton.icon(
-            onPressed: scanning ? input.stopScan : input.startScan,
+            onPressed: scanning ? connection.stopScan : connection.startScan,
             icon: Icon(scanning ? Icons.stop : Icons.bluetooth_searching),
             label: Text(scanning ? 'Stop scan' : 'Scan nearby'),
           ),
@@ -225,7 +267,7 @@ class _DiscoveryControls extends StatelessWidget {
         OutlinedButton.icon(
           key: const Key('use-demo-cube-dialog'),
           onPressed: () async {
-            await input.useDemoCube();
+            await onUseDemoCube();
             if (context.mounted) Navigator.of(context).pop();
           },
           icon: const Icon(Icons.science_outlined),
@@ -237,9 +279,9 @@ class _DiscoveryControls extends StatelessWidget {
 }
 
 class _ConnectionError extends StatelessWidget {
-  const _ConnectionError({required this.input});
+  const _ConnectionError({required this.connection});
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -247,16 +289,16 @@ class _ConnectionError extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          input.errorMessage!,
+          connection.errorMessage!,
           style: const TextStyle(color: CrubikColors.danger),
         ),
-        if (input.hasDiagnostics) ...[
+        if (connection.hasDiagnostics) ...[
           const SizedBox(height: 8),
           OutlinedButton.icon(
             key: const Key('copy-bluetooth-diagnostics-button'),
             onPressed: () async {
               await Clipboard.setData(
-                ClipboardData(text: input.diagnosticReport),
+                ClipboardData(text: connection.diagnosticReport),
               );
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
@@ -282,14 +324,14 @@ String _formatProtocolNames(List<String> names) => switch (names) {
 };
 
 class _ConnectedCubeCard extends StatelessWidget {
-  const _ConnectedCubeCard({required this.input});
+  const _ConnectedCubeCard({required this.connection});
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
-    final device = input.connectedCube!;
-    final batteryLevel = input.batteryLevel;
+    final device = connection.connectedCube!;
+    final batteryLevel = connection.batteryLevel;
     final connectionStatus = batteryLevel == null
         ? 'BLE link active'
         : 'BLE link active · $batteryLevel% battery';
@@ -323,7 +365,7 @@ class _ConnectedCubeCard extends StatelessWidget {
             ),
           ),
           TextButton(
-            onPressed: input.disconnectPhysicalCube,
+            onPressed: connection.disconnect,
             child: const Text('Disconnect'),
           ),
         ],
@@ -333,9 +375,9 @@ class _ConnectedCubeCard extends StatelessWidget {
 }
 
 class _DemoInputCard extends StatelessWidget {
-  const _DemoInputCard({required this.input});
+  const _DemoInputCard({required this.onExitDemo});
 
-  final PracticeInputController input;
+  final VoidCallback onExitDemo;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +407,7 @@ class _DemoInputCard extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(onPressed: input.exitDemo, child: const Text('Exit demo')),
+          TextButton(onPressed: onExitDemo, child: const Text('Exit demo')),
         ],
       ),
     );
@@ -412,16 +454,19 @@ class _EmptyDeviceSearch extends StatelessWidget {
 }
 
 class _DiscoveredDeviceList extends StatelessWidget {
-  const _DiscoveredDeviceList({required this.input});
+  const _DiscoveredDeviceList({
+    required this.connection,
+    required this.onConnect,
+  });
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
+  final Future<void> Function(CubeDeviceCandidate) onConnect;
 
   @override
   Widget build(BuildContext context) {
-    final cubes = input.discoveredCubes;
-    final otherDevices = input.otherDiscoveredDevices;
-    final connectionBusy =
-        input.connectionStatus == CubeConnectionStatus.connecting;
+    final cubes = connection.discoveredCubes;
+    final otherDevices = connection.otherDiscoveredDevices;
+    final connectionBusy = connection.status == CubeConnectionStatus.connecting;
 
     return ListView(
       key: const Key('discovered-device-list'),
@@ -436,12 +481,12 @@ class _DiscoveredDeviceList extends StatelessWidget {
             if (index > 0) const SizedBox(height: 8),
             _DeviceResult(
               device: cubes[index],
-              connecting: input.connectingDeviceId == cubes[index].id,
+              connecting: connection.connectingDeviceId == cubes[index].id,
               connectionBusy: connectionBusy,
               onConnect: cubes[index].canConnect
                   ? () async {
-                      await input.connect(cubes[index]);
-                      if (context.mounted && input.isPhysicalCubeConnected) {
+                      await onConnect(cubes[index]);
+                      if (context.mounted && connection.isConnected) {
                         Navigator.of(context).pop();
                       }
                     }

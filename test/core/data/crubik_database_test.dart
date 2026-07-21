@@ -1,7 +1,7 @@
 import 'dart:io';
 
+import 'package:crubik/core/data/crubik_database.dart';
 import 'package:crubik/features/cube/application/remembered_cube_store.dart';
-import 'package:crubik/features/practice/data/crubik_database.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
