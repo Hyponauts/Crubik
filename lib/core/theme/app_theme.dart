@@ -8,26 +8,44 @@ abstract final class CrubikColors {
   static const text = Color(0xFFF2F5F3);
   static const muted = Color(0xFF919A9E);
   static const lime = Color(0xFFB7F34A);
+  static const limeTintSubtle = Color(0x12B7F34A);
+  static const limeTintSoft = Color(0x16B7F34A);
+  static const limeIndicator = Color(0x22B7F34A);
+  static const limeBorderSoft = Color(0x55B7F34A);
+  static const limeBorderStrong = Color(0x66B7F34A);
   static const cyan = Color(0xFF58D8DA);
   static const warning = Color(0xFFFFC857);
   static const danger = Color(0xFFFF6B6B);
 }
 
+abstract final class CrubikLayout {
+  static const desktopBreakpoint = 900.0;
+  static const largeTextScale = 1.3;
+  static const compactPreparationHeight = 520.0;
+  static const desktopAttemptMaxWidth = 1100.0;
+  static const desktopAttemptMaxHeight = 620.0;
+  static const desktopContentMaxWidth = 800.0;
+  static const sessionSidebarWidth = 330.0;
+  static const connectionDialogMaxWidth = 520.0;
+  static const connectionDialogMaxHeight = 650.0;
+}
+
 abstract final class CrubikTheme {
   static ThemeData get dark {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: CrubikColors.lime,
-      brightness: Brightness.dark,
-      surface: CrubikColors.surface,
-    ).copyWith(
-      primary: CrubikColors.lime,
-      onPrimary: CrubikColors.background,
-      secondary: CrubikColors.cyan,
-      surface: CrubikColors.surface,
-      onSurface: CrubikColors.text,
-      error: CrubikColors.danger,
-      outline: CrubikColors.border,
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: CrubikColors.lime,
+          brightness: Brightness.dark,
+          surface: CrubikColors.surface,
+        ).copyWith(
+          primary: CrubikColors.lime,
+          onPrimary: CrubikColors.background,
+          secondary: CrubikColors.cyan,
+          surface: CrubikColors.surface,
+          onSurface: CrubikColors.text,
+          error: CrubikColors.danger,
+          outline: CrubikColors.border,
+        );
 
     final base = ThemeData(
       useMaterial3: true,
@@ -76,7 +94,7 @@ abstract final class CrubikTheme {
       ),
       navigationRailTheme: const NavigationRailThemeData(
         backgroundColor: CrubikColors.background,
-        indicatorColor: Color(0x22B7F34A),
+        indicatorColor: CrubikColors.limeIndicator,
         selectedIconTheme: IconThemeData(color: CrubikColors.lime),
         unselectedIconTheme: IconThemeData(color: CrubikColors.muted),
         selectedLabelTextStyle: TextStyle(

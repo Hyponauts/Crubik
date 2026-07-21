@@ -96,8 +96,8 @@ void main() {
       matchesGoldenFile('goldens/cube_3d_solved.png'),
     );
 
-    final scrambled =
-        CubeState.solved()..applyAll(Scramble.parse("R U F' L2 D B").moves);
+    final scrambled = CubeState.solved()
+      ..applyAll(Scramble.parse("R U F' L2 D B").moves);
     await tester.pumpWidget(_host(state: scrambled));
     await tester.pump();
     await expectLater(

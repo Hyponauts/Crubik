@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:crubik/features/cube/application/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/adapters/moyu/moyu32_cube_adapter.dart';
-import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/ble/ble_central.dart';
 import 'package:crubik/features/cube/data/cube_packet_cipher.dart';
 import 'package:crubik/features/cube/data/moyu32_cube_protocol.dart';
@@ -160,6 +160,37 @@ void main() {
     },
   );
 
+  test(
+    'MoYu32 session forwards link loss, transport errors, and closes once',
+    () async {
+      final cipher = Moyu32CubeCipher(macSalt: cubeMacSalt(_macAddress));
+      final central = _FakeBleCentral(
+        services: const [moyu32Service],
+        cipher: cipher,
+      );
+      final session = await const Moyu32CubeAdapter().connect(
+        central,
+        _candidate(),
+      );
+      final linkLoss = session.connectionStates.first;
+
+      central.setConnected(false);
+      expect(await linkLoss, isFalse);
+
+      final startup = session.start();
+      await Future<void>.delayed(Duration.zero);
+      central.addTransportError(StateError('transport failed'));
+
+      await expectLater(startup, throwsA(isA<StateError>()));
+      await session.close();
+      await session.close();
+
+      expect(central.unsubscribeCount, 1);
+      expect(central.disconnectCount, 1);
+      await central.close();
+    },
+  );
+
   test('MoYu32 adapter disconnects when automatic MAC lookup fails', () async {
     final central = _FakeBleCentral(services: const [moyu32Service]);
     const candidate = CubeDeviceCandidate(
@@ -299,6 +330,8 @@ final class _FakeBleCentral implements BleCentral {
   final List<Uint8List> decryptedWrites = [];
   bool disconnected = false;
   bool unsubscribed = false;
+  int disconnectCount = 0;
+  int unsubscribeCount = 0;
   String? subscribedService;
   String? subscribedCharacteristic;
 
@@ -326,6 +359,7 @@ final class _FakeBleCentral implements BleCentral {
   @override
   Future<void> disconnect(String deviceId) async {
     disconnected = true;
+    disconnectCount++;
   }
 
   @override
@@ -357,7 +391,13 @@ final class _FakeBleCentral implements BleCentral {
     String characteristic,
   ) async {
     unsubscribed = true;
+    unsubscribeCount++;
   }
+
+  void setConnected(bool connected) => _connectionStates.add(connected);
+
+  void addTransportError(Object error) =>
+      _values.addError(error, StackTrace.empty);
 
   @override
   Future<void> write(

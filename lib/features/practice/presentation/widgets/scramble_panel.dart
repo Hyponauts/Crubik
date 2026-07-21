@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../cube/domain/cube_model.dart';
 import '../../application/practice_controller.dart';
+import 'practice_formatters.dart';
 import 'practice_panel.dart';
+import 'practice_phase_presentation.dart';
 
 class PracticeScramblePanel extends StatelessWidget {
   const PracticeScramblePanel({
@@ -23,10 +25,7 @@ class PracticeScramblePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canChangeScramble =
-        practice.phase != PracticePhase.inspectionDelay &&
-        practice.phase != PracticePhase.inspection &&
-        practice.phase != PracticePhase.solving;
+    final canChangeScramble = practice.canChangeScramble;
     final scramble = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,7 +354,9 @@ class _ScrambleGuidance extends StatelessWidget {
         practice.guidanceIsCorrection &&
         nextMove != null &&
         recoveryMoves.isNotEmpty;
-    final color = correction ? CrubikColors.warning : _phaseColor(practice);
+    final color = correction
+        ? CrubikColors.warning
+        : PracticePhasePresentation.color(practice.phase);
     final status = switch (practice.phase) {
       PracticePhase.awaitingCubeState => 'Waiting for the physical cube state',
       PracticePhase.needsSolvedCube =>
@@ -370,7 +371,8 @@ class _ScrambleGuidance extends StatelessWidget {
         '${practice.completedScrambleMoveCount} of '
             '${practice.scramble.moves.length} moves complete',
       PracticePhase.inspectionDelay =>
-        'Scramble verified · inspection starts in 3 seconds',
+        'Scramble verified · inspection starts in '
+            '${formatPracticeDelay(practice.preInspectionDelay)}',
       PracticePhase.inspection => 'Scramble verified · inspection started',
       PracticePhase.solving => 'Scramble verified · solve in progress',
       PracticePhase.manualReady => 'Ready',
@@ -430,13 +432,3 @@ class _ScrambleGuidance extends StatelessWidget {
     );
   }
 }
-
-Color _phaseColor(PracticeController practice) => switch (practice.phase) {
-  PracticePhase.needsSolvedCube => CrubikColors.warning,
-  PracticePhase.scrambling ||
-  PracticePhase.inspectionDelay ||
-  PracticePhase.inspection => CrubikColors.cyan,
-  PracticePhase.solving => CrubikColors.lime,
-  PracticePhase.manualReady ||
-  PracticePhase.awaitingCubeState => CrubikColors.muted,
-};

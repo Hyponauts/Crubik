@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/cube/application/cube_connection_controller.dart';
+import '../features/cube/data/ble_cube_connection_gateway.dart';
 import '../features/practice/application/practice_controller.dart';
 import '../features/practice/application/practice_input_controller.dart';
 import '../features/practice/data/crubik_database.dart';
@@ -47,6 +48,7 @@ class _CrubikAppState extends State<CrubikApp> {
     _connectionController =
         widget.connectionController ??
         CubeConnectionController(
+          gateway: BleCubeConnectionGateway(),
           rememberedCubeStore: _database == null
               ? null
               : DriftRememberedCubeStore(_database!),

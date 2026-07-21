@@ -50,6 +50,8 @@ final class PracticeInputController extends ChangeNotifier {
   String? get errorMessage => _connection.errorMessage;
   bool get hasDiagnostics => _connection.hasDiagnostics;
   String get diagnosticReport => _connection.diagnosticReport;
+  List<String> get supportedProtocolDisplayNames =>
+      _connection.supportedProtocolDisplayNames;
   List<CubeDeviceCandidate> get discoveredDevices =>
       _connection.discoveredDevices;
   List<CubeDeviceCandidate> get discoveredCubes => _connection.discoveredCubes;

@@ -1,31 +1,10 @@
 import 'dart:async';
 
+import '../application/cube_connection_gateway.dart';
 import '../domain/cube_connection_diagnostics.dart';
 import '../domain/smart_cube_device.dart';
 import 'adapters/cube_adapter_registry.dart';
-import 'adapters/smart_cube_adapter.dart';
 import 'ble/ble_central.dart';
-
-abstract interface class CubeConnectionGateway {
-  Stream<CubeDeviceCandidate> get scanResults;
-
-  Future<bool> isBluetoothAvailable();
-
-  Future<bool> hasPermissions();
-
-  Future<void> requestPermissions();
-
-  Future<void> startScan();
-
-  Future<void> stopScan();
-
-  Future<SmartCubeSession> connect(
-    CubeDeviceCandidate device, {
-    CubeDiagnosticSink? onDiagnostic,
-  });
-
-  Future<void> close();
-}
 
 final class BleCubeConnectionGateway implements CubeConnectionGateway {
   BleCubeConnectionGateway({BleCentral? central, CubeAdapterRegistry? registry})
@@ -46,6 +25,10 @@ final class BleCubeConnectionGateway implements CubeConnectionGateway {
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
+
+  @override
+  List<String> get supportedProtocolDisplayNames =>
+      _registry.supportedProtocolDisplayNames;
 
   @override
   Future<bool> isBluetoothAvailable() => _central.isBluetoothAvailable();

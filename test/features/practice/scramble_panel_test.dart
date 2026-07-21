@@ -9,6 +9,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('describes the configured pre-inspection delay', (tester) async {
+    final practice = PracticeController(
+      scrambleGenerator: ScrambleGenerator(random: Random(11)),
+      preInspectionDelay: const Duration(milliseconds: 1500),
+    );
+    addTearDown(practice.dispose);
+    practice.activateSmartCubeInput();
+    practice.syncCubeState(CubeState.solved());
+    for (final move in practice.scramble.moves) {
+      practice.applyMove(move, fromSmartCube: true);
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: CrubikTheme.dark,
+        home: Scaffold(body: PracticeScramblePanel(practice: practice)),
+      ),
+    );
+
+    expect(
+      find.text('Scramble verified · inspection starts in 1.5 seconds'),
+      findsOneWidget,
+    );
+    practice.abortAttempt();
+  });
+
   testWidgets('renders compact smart-cube scramble progress in isolation', (
     tester,
   ) async {

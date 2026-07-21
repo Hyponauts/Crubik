@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
+import 'package:crubik/features/cube/application/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/adapters/cube_adapter_registry.dart';
 import 'package:crubik/features/cube/data/adapters/gan/gan_cube_adapter.dart';
-import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/ble/ble_central.dart';
-import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
+import 'package:crubik/features/cube/data/ble_cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
@@ -176,6 +176,33 @@ void main() {
   });
 
   test(
+    'GAN session forwards link loss, transport errors, and closes once',
+    () async {
+      final central = _FakeBleCentral(services: const [ganGen2Service]);
+      final session = await const GanCubeAdapter().connect(
+        central,
+        _supportedGanCandidate(),
+      );
+      final linkLoss = session.connectionStates.first;
+
+      central.setConnected(false);
+      expect(await linkLoss, isFalse);
+
+      final startup = session.start();
+      await Future<void>.delayed(Duration.zero);
+      central.addTransportError(StateError('transport failed'));
+
+      await expectLater(startup, throwsA(isA<StateError>()));
+      await session.close();
+      await session.close();
+
+      expect(central.unsubscribeCount, 1);
+      expect(central.disconnectCount, 1);
+      await central.close();
+    },
+  );
+
+  test(
     'controller receives state and immediate move through the full stack',
     () async {
       const hardwareMac = '11:22:33:44:55:66';
@@ -339,6 +366,8 @@ final class _FakeBleCentral implements BleCentral {
   bool disconnected = false;
   bool subscribed = false;
   bool unsubscribed = false;
+  int disconnectCount = 0;
+  int unsubscribeCount = 0;
 
   @override
   Stream<BleAdvertisement> get advertisements => _advertisements.stream;
@@ -366,6 +395,7 @@ final class _FakeBleCentral implements BleCentral {
   @override
   Future<void> disconnect(String deviceId) async {
     disconnected = true;
+    disconnectCount++;
   }
 
   @override
@@ -396,7 +426,13 @@ final class _FakeBleCentral implements BleCentral {
     String characteristic,
   ) async {
     unsubscribed = true;
+    unsubscribeCount++;
   }
+
+  void setConnected(bool connected) => _connectionStates.add(connected);
+
+  void addTransportError(Object error) =>
+      _values.addError(error, StackTrace.empty);
 
   @override
   Future<void> write(

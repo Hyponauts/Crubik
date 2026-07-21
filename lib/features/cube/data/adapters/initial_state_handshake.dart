@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import '../../application/cube_connection_gateway.dart';
 import '../../domain/cube_connection_diagnostics.dart';
-import 'smart_cube_adapter.dart';
 
 /// Tracks the observable evidence for a session's initial-state handshake.
 final class InitialStateHandshake {

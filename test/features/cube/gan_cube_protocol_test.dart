@@ -100,27 +100,25 @@ void main() {
     expect(decoder.requestFaceletsCommand, hasLength(16));
     expect(decoder.requestFaceletsCommand.take(2), [0x68, 0x01]);
     final receivedAt = DateTime.utc(2026);
-    final facelets =
-        Uint8List(20)
-          ..[0] = 0x55
-          ..[1] = 0x02
-          ..[2] = 0x01
-          ..[3] = 10;
+    final facelets = Uint8List(20)
+      ..[0] = 0x55
+      ..[1] = 0x02
+      ..[2] = 0x01
+      ..[3] = 10;
     _setSolvedCubies(facelets, 40, 61, 77, 121);
     expect(
       decoder.decode(facelets, receivedAt).states.single.state.isSolved,
       isTrue,
     );
 
-    final packet =
-        Uint8List(16)
-          ..[0] = 0x55
-          ..[1] = 0x01
-          ..[2] = 0x08
-          ..[3] = 0xe8
-          ..[4] = 0x03
-          ..[7] = 11
-          ..[9] = 32;
+    final packet = Uint8List(16)
+      ..[0] = 0x55
+      ..[1] = 0x01
+      ..[2] = 0x08
+      ..[3] = 0xe8
+      ..[4] = 0x03
+      ..[7] = 11
+      ..[9] = 32;
     final decoded = decoder.decode(packet, receivedAt);
 
     expect(decoded.moves.single.move.notation, 'R');
@@ -140,25 +138,23 @@ void main() {
       0,
     ]);
     final receivedAt = DateTime.utc(2026);
-    final facelets =
-        Uint8List(20)
-          ..[0] = 0xed
-          ..[1] = 0x01
-          ..[2] = 20;
+    final facelets = Uint8List(20)
+      ..[0] = 0xed
+      ..[1] = 0x01
+      ..[2] = 20;
     _setSolvedCubies(facelets, 32, 53, 69, 113);
     expect(
       decoder.decode(facelets, receivedAt).states.single.state.isSolved,
       isTrue,
     );
 
-    final packet =
-        Uint8List(20)
-          ..[0] = 0x01
-          ..[1] = 0x08
-          ..[2] = 0xd0
-          ..[3] = 0x07
-          ..[6] = 21
-          ..[8] = 0x44;
+    final packet = Uint8List(20)
+      ..[0] = 0x01
+      ..[1] = 0x08
+      ..[2] = 0xd0
+      ..[3] = 0x07
+      ..[6] = 21
+      ..[8] = 0x44;
     final decoded = decoder.decode(packet, receivedAt);
 
     expect(decoded.moves.single.move.notation, "B'");
@@ -190,7 +186,8 @@ void _setBits(Uint8List target, int startBit, int bitLength, int value) {
     final valueBit = (value >> (bitLength - 1 - index)) & 1;
     final mask = 1 << (7 - absoluteBit % 8);
     final byteIndex = absoluteBit ~/ 8;
-    target[byteIndex] =
-        valueBit == 1 ? target[byteIndex] | mask : target[byteIndex] & ~mask;
+    target[byteIndex] = valueBit == 1
+        ? target[byteIndex] | mask
+        : target[byteIndex] & ~mask;
   }
 }

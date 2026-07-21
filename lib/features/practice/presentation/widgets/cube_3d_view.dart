@@ -194,14 +194,14 @@ class _Cube3DViewState extends State<Cube3DView>
       hint: 'Drag to orbit. Use arrow keys when focused.',
       child: CallbackShortcuts(
         bindings: {
-          const SingleActivator(LogicalKeyboardKey.arrowLeft):
-              () => _rotateCamera(yaw: -_cameraStep),
-          const SingleActivator(LogicalKeyboardKey.arrowRight):
-              () => _rotateCamera(yaw: _cameraStep),
-          const SingleActivator(LogicalKeyboardKey.arrowUp):
-              () => _rotateCamera(pitch: -_cameraStep),
-          const SingleActivator(LogicalKeyboardKey.arrowDown):
-              () => _rotateCamera(pitch: _cameraStep),
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+              _rotateCamera(yaw: -_cameraStep),
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+              _rotateCamera(yaw: _cameraStep),
+          const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+              _rotateCamera(pitch: -_cameraStep),
+          const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+              _rotateCamera(pitch: _cameraStep),
           const SingleActivator(LogicalKeyboardKey.home): _resetCamera,
         },
         child: Focus(
@@ -225,18 +225,16 @@ class _Cube3DViewState extends State<Cube3DView>
                           animation: _turnController,
                           builder: (context, _) {
                             final move = _activeMove;
-                            final progress =
-                                move == null
-                                    ? 1.0
-                                    : Curves.easeOutCubic.transform(
-                                      _turnController.value,
-                                    );
+                            final progress = move == null
+                                ? 1.0
+                                : Curves.easeOutCubic.transform(
+                                    _turnController.value,
+                                  );
                             return CustomPaint(
                               painter: _Cube3DPainter(
-                                state:
-                                    move == null
-                                        ? _targetState
-                                        : _animationStartState,
+                                state: move == null
+                                    ? _targetState
+                                    : _animationStartState,
                                 yaw: _yaw,
                                 pitch: _pitch,
                                 activeMove: move,
@@ -349,8 +347,8 @@ class _Cube3DPainter extends CustomPainter {
     polygons.sort((a, b) => a.depth.compareTo(b.depth));
     final scale = size.shortestSide / 280;
     for (final polygon in polygons) {
-      final path =
-          Path()..moveTo(polygon.points.first.dx, polygon.points.first.dy);
+      final path = Path()
+        ..moveTo(polygon.points.first.dx, polygon.points.first.dy);
       for (final point in polygon.points.skip(1)) {
         path.lineTo(point.dx, point.dy);
       }

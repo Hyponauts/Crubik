@@ -30,11 +30,11 @@ It deliberately omits:
 | Requests completed with no `protocol.notification.received` | The cube ignored the handshake, another initialization command is required, or the firmware behaves differently. |
 | `protocol.notification.received` followed by `protocol.message.rejected` | Packet length, MAC-derived key, cipher, or packet layout is wrong. |
 | `protocol.message.decoded message=state` | Decryption and state decoding worked. |
-| `protocol.handshake.succeeded` | The adapter is ready; later problems are in move delivery, state mapping, or reconnect handling. |
+| `handshake.succeeded` | The adapter is ready; later problems are in move delivery, state mapping, or reconnect handling. |
 
 For `WCU_MY32`/WeiLong V10 AI, a healthy initialization trace should subscribe
 to notifications, complete the `info`, `state`, and `battery` requests in that
-order, decode a state message, and finish with `protocol.handshake.succeeded`.
+order, decode a state message, and finish with `handshake.succeeded`.
 
 Do not add production logging of identifiers or decrypted packet contents to
 investigate a failure. If metadata is insufficient, use a separate,

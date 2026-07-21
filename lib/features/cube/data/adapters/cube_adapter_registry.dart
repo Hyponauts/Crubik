@@ -1,3 +1,4 @@
+import '../../application/cube_connection_gateway.dart';
 import '../../domain/smart_cube_device.dart';
 import '../ble/ble_central.dart';
 import 'gan/gan_cube_adapter.dart';
@@ -24,6 +25,12 @@ final class CubeAdapterRegistry {
 
   final List<CubeDeviceRecognizer> _recognizers;
   final Map<String, SmartCubeAdapter> _adapters;
+
+  List<String> get supportedProtocolDisplayNames => List.unmodifiable(
+    _adapters.values
+        .expand((adapter) => adapter.supportedProtocolDisplayNames)
+        .toSet(),
+  );
 
   CubeDeviceCandidate identify(BleAdvertisement advertisement) {
     CubeDeviceMatch? match;

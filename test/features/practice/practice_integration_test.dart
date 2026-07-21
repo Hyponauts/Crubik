@@ -4,9 +4,8 @@ import 'dart:math';
 import 'package:crubik/app/crubik_app.dart';
 import 'package:crubik/core/theme/app_theme.dart';
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
-import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
-import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
-import 'package:crubik/features/cube/data/remembered_cube_store.dart';
+import 'package:crubik/features/cube/application/cube_connection_gateway.dart';
+import 'package:crubik/features/cube/application/remembered_cube_store.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/scramble_generator.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
@@ -1287,7 +1286,12 @@ void main() {
     addTearDown(tester.view.reset);
 
     final practice = PracticeController();
-    final gateway = _SilentCubeConnectionGateway();
+    final gateway = _SilentCubeConnectionGateway(
+      supportedProtocolDisplayNames: const [
+        'Test protocol A',
+        'Test protocol B',
+      ],
+    );
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
     addTearDown(connection.dispose);
@@ -1299,7 +1303,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('MVP protocols: GAN Gen2–4, MoYu AI 2023, and MoYu32'),
+      find.text('Supported protocols: Test protocol A and Test protocol B'),
       findsOneWidget,
     );
     expect(find.text('Scan nearby'), findsOneWidget);
@@ -1781,11 +1785,18 @@ final class _SilentCubeConnectionGateway implements CubeConnectionGateway {
   _SilentCubeConnectionGateway({
     this.connectError,
     this.connectGate,
+    this.supportedProtocolDisplayNames = const [
+      'GAN Gen2–4',
+      'MoYu AI 2023',
+      'MoYu32',
+    ],
     SmartCubeEvent? initialEvent,
   }) : _session = _SilentSmartCubeSession(stateOnRequest: initialEvent);
 
   final Object? connectError;
   final Completer<void>? connectGate;
+  @override
+  final List<String> supportedProtocolDisplayNames;
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
   final _SilentSmartCubeSession _session;
   bool _closed = false;
