@@ -57,12 +57,19 @@ aligned whenever an approved decision changes the product direction.
   facelet/move decoding, five-move recovery, timestamps, and battery parsing.
 - `lib/features/cube/data/adapters/`: device recognition and protocol-specific
   smart-cube sessions, selected through `CubeAdapterRegistry`.
+- `lib/features/cube/application/cube_connection_gateway.dart`:
+  application-owned transport and normalized session contracts.
 - `lib/features/cube/data/ble/ble_central.dart` and
-  `cube_connection_gateway.dart`: BLE plugin boundary and adapter orchestration.
+  `lib/features/cube/data/ble_cube_connection_gateway.dart`: BLE plugin
+  boundary and production adapter orchestration.
 - `lib/features/cube/application/cube_connection_controller.dart`: discovery,
-  connection lifecycle, demo mode, and normalized event delivery to the UI.
+  physical connection lifecycle, and normalized event delivery to the UI.
+- `lib/features/practice/application/practice_input_controller.dart`: bridges
+  physical smart-cube events and demo selection into practice state.
 - `lib/features/practice/application/practice_controller.dart`: timer, live
-  cube state, solve lifecycle, statistics, JSON export, and serialized writes.
+  cube state, and solve lifecycle.
+- `lib/features/practice/application/solve_history.dart`: statistics, JSON
+  export, initialization merging, and serialized persistence writes.
 - `lib/features/practice/data/crubik_database.dart`: Drift schema and local
   solve repository.
 - `lib/features/practice/presentation/practice_page.dart`: responsive practice

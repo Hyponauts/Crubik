@@ -354,7 +354,7 @@ class _SolveRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   solve.moveCount == 0
-                      ? solve.inputSource.replaceAll('_', ' ')
+                      ? solve.inputSource.displayLabel
                       : '${solve.moveCount} moves · ${solve.turnsPerSecond?.toStringAsFixed(1)} TPS',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

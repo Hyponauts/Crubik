@@ -1,7 +1,7 @@
 import 'dart:io';
 
+import 'package:crubik/features/cube/application/remembered_cube_store.dart';
 import 'package:crubik/features/practice/data/crubik_database.dart';
-import 'package:crubik/features/cube/data/remembered_cube_store.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +19,7 @@ void main() {
         elapsed: const Duration(milliseconds: 9876),
         moveCount: 24,
         createdAt: DateTime.utc(2026, 1, 1),
-        inputSource: 'smart_cube',
+        inputSource: SolveInputSource.smartCube,
         inspectionElapsed: const Duration(milliseconds: 4321),
         startTrigger: SolveStartTrigger.firstMove,
       ),
@@ -37,6 +37,38 @@ void main() {
     expect(restored.single.inputSource, records.single.inputSource);
     expect(restored.single.inspectionElapsed, records.single.inspectionElapsed);
     expect(restored.single.startTrigger, records.single.startTrigger);
+  });
+
+  test('round trips every solve input source through Drift', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = DriftSolveHistoryRepository(database);
+    final sources = [
+      ...SolveInputSource.values,
+      SolveInputSource.fromSerializedValue('future_sensor'),
+    ];
+    final records = [
+      for (var index = 0; index < sources.length; index++)
+        SolveRecord(
+          id: 'source-$index',
+          scramble: 'R U',
+          elapsed: const Duration(seconds: 8),
+          moveCount: index,
+          createdAt: DateTime.utc(2026, 1, index + 1),
+          inputSource: sources[index],
+        ),
+    ];
+
+    await repository.replaceAll(records);
+    final restoredById = {
+      for (final record in await repository.load()) record.id: record,
+    };
+
+    for (var index = 0; index < sources.length; index++) {
+      final restored = restoredById['source-$index']!;
+      expect(restored.inputSource, sources[index]);
+      expect(restored.toJson()['input_source'], sources[index].serializedValue);
+    }
   });
 
   test('replaceAll removes deleted solves atomically', () async {
@@ -77,6 +109,11 @@ void main() {
     rememberedCube = await store.load();
     expect(rememberedCube?.deviceId, 'new-platform-cube-id');
     expect(rememberedCube?.name, 'WCU_MY32');
+
+    await store.save(const RememberedCube(deviceId: 'unnamed-cube-id'));
+    rememberedCube = await store.load();
+    expect(rememberedCube?.deviceId, 'unnamed-cube-id');
+    expect(rememberedCube?.name, isNull);
   });
 
   test(
@@ -105,7 +142,7 @@ void main() {
           12000,
           2,
           DateTime.utc(2025).millisecondsSinceEpoch ~/ 1000,
-          'smart_cube',
+          SolveInputSource.smartCube.serializedValue,
         ])
         ..userVersion = 1
         ..dispose();

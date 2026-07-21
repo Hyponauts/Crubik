@@ -50,8 +50,14 @@ class DesktopPracticeLayout extends StatelessWidget {
             child: activeAttempt
                 ? LayoutBuilder(
                     builder: (context, constraints) {
-                      final width = math.min(constraints.maxWidth, 1100.0);
-                      final height = math.min(constraints.maxHeight, 620.0);
+                      final width = math.min(
+                        constraints.maxWidth,
+                        CrubikLayout.desktopAttemptMaxWidth,
+                      );
+                      final height = math.min(
+                        constraints.maxHeight,
+                        CrubikLayout.desktopAttemptMaxHeight,
+                      );
                       return Center(
                         child: SizedBox(
                           width: width,
@@ -72,7 +78,9 @@ class DesktopPracticeLayout extends StatelessWidget {
                         child: SingleChildScrollView(
                           child: Center(
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 800),
+                              constraints: const BoxConstraints(
+                                maxWidth: CrubikLayout.desktopContentMaxWidth,
+                              ),
                               child: Column(
                                 children: [
                                   if (reviewing)
@@ -95,7 +103,7 @@ class DesktopPracticeLayout extends StatelessWidget {
                       ),
                       const SizedBox(width: 20),
                       SizedBox(
-                        width: 330,
+                        width: CrubikLayout.sessionSidebarWidth,
                         child: SessionSidebar(practice: practice),
                       ),
                     ],
@@ -161,7 +169,9 @@ class _MobilePreparationPortrait extends StatelessWidget {
     final reviewing = practice.pendingSolveReview != null;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compactHeight = constraints.maxHeight < 520 || textScale >= 1.3;
+        final compactHeight =
+            constraints.maxHeight < CrubikLayout.compactPreparationHeight ||
+            textScale >= CrubikLayout.largeTextScale;
         final showReadyAction =
             !reviewing &&
             input.isDemo &&
@@ -296,15 +306,17 @@ class _PracticeAttemptStage extends StatelessWidget {
         if (constraints.maxWidth < _minimumHorizontalWidth) {
           return SingleChildScrollView(
             key: const Key('attempt-scroll-fallback'),
-            child: _buildScrollablePortrait(
+            child: _buildPortrait(
               showManualInput,
-              constraints.maxWidth,
+              cubeHeight: (constraints.maxWidth * 0.55)
+                  .clamp(180.0, 240.0)
+                  .toDouble(),
             ),
           );
         }
 
         final textScale = MediaQuery.textScalerOf(context).scale(1);
-        final minimumHeight = textScale >= 1.3
+        final minimumHeight = textScale >= CrubikLayout.largeTextScale
             ? _scaledHorizontalHeight
             : _minimumHorizontalHeight;
         if (constraints.maxHeight < minimumHeight) {
@@ -322,34 +334,16 @@ class _PracticeAttemptStage extends StatelessWidget {
     );
   }
 
-  Widget _buildPortrait(bool showManualInput) {
+  Widget _buildPortrait(bool showManualInput, {double? cubeHeight}) {
+    final cubePanel = _CompactCubePanel(practice: practice, input: input);
     return Column(
       children: [
         PracticeTimerPanel(practice: practice),
         const SizedBox(height: 8),
-        Expanded(
-          child: _CompactCubePanel(practice: practice, input: input),
-        ),
-        if (showManualInput) ...[
-          const SizedBox(height: 8),
-          ManualMoveInputPanel(practice: practice, columns: 4),
-        ],
-        const SizedBox(height: 8),
-        PracticeAttemptActionBar(practice: practice),
-      ],
-    );
-  }
-
-  Widget _buildScrollablePortrait(bool showManualInput, double availableWidth) {
-    final cubeHeight = (availableWidth * 0.55).clamp(180.0, 240.0);
-    return Column(
-      children: [
-        PracticeTimerPanel(practice: practice),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: cubeHeight,
-          child: _CompactCubePanel(practice: practice, input: input),
-        ),
+        if (cubeHeight == null)
+          Expanded(child: cubePanel)
+        else
+          SizedBox(height: cubeHeight, child: cubePanel),
         if (showManualInput) ...[
           const SizedBox(height: 8),
           ManualMoveInputPanel(practice: practice, columns: 4),
@@ -476,7 +470,7 @@ class _DesktopPracticeHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cube = _DesktopCubeStage(practice: practice, input: input);
+    final cube = _DesktopCubeStage(practice: practice);
     final showAccessory = showsPracticeAccessory(practice);
     return PracticePanel(
       key: const Key('cube-panel'),
@@ -515,22 +509,17 @@ class _DesktopPracticeHero extends StatelessWidget {
 }
 
 class _DesktopCubeStage extends StatelessWidget {
-  const _DesktopCubeStage({required this.practice, required this.input});
+  const _DesktopCubeStage({required this.practice});
 
   final PracticeController practice;
-  final PracticeInputController input;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Cube3DView(
-          state: practice.cubeState,
-          lastMove: practice.lastAppliedMove,
-          moveRevision: practice.cubeMoveRevision,
-          dimension: 280,
-        ),
-      ],
+    return Cube3DView(
+      state: practice.cubeState,
+      lastMove: practice.lastAppliedMove,
+      moveRevision: practice.cubeMoveRevision,
+      dimension: 280,
     );
   }
 }

@@ -35,7 +35,8 @@ class _PracticePageState extends State<PracticePage> {
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
-            final isDesktop = constraints.maxWidth >= 900;
+            final isDesktop =
+                constraints.maxWidth >= CrubikLayout.desktopBreakpoint;
             final timerShortcutEnabled =
                 _selectedIndex == 0 &&
                 !widget.inputController.isUnselected &&
@@ -72,22 +73,7 @@ class _PracticePageState extends State<PracticePage> {
                   setState(() => _selectedIndex = index),
             ),
             const VerticalDivider(width: 1),
-            Expanded(
-              child: _selectedIndex == 0
-                  ? widget.inputController.isUnselected
-                        ? _InputModeChooser(
-                            desktop: true,
-                            input: widget.inputController,
-                            onConnectPressed: _showConnectionDialog,
-                            onDemoPressed: widget.inputController.useDemoCube,
-                          )
-                        : DesktopPracticeLayout(
-                            practice: widget.practiceController,
-                            input: widget.inputController,
-                            onConnectPressed: _showConnectionDialog,
-                          )
-                  : SessionsView(practice: widget.practiceController),
-            ),
+            Expanded(child: _desktopContent()),
           ],
         ),
       ),
@@ -122,25 +108,7 @@ class _PracticePageState extends State<PracticePage> {
                 ),
               ],
             ),
-      body: _selectedIndex == 0
-          ? widget.inputController.isUnselected
-                ? _InputModeChooser(
-                    input: widget.inputController,
-                    onConnectPressed: _showConnectionDialog,
-                    onDemoPressed: widget.inputController.useDemoCube,
-                  )
-                : focusMode
-                ? SafeArea(
-                    child: MobilePracticeLayout(
-                      practice: widget.practiceController,
-                      input: widget.inputController,
-                    ),
-                  )
-                : MobilePracticeLayout(
-                    practice: widget.practiceController,
-                    input: widget.inputController,
-                  )
-          : SessionsView(practice: widget.practiceController, mobile: true),
+      body: _mobileContent(focusMode: focusMode),
       bottomNavigationBar: focusMode
           ? null
           : BottomNavigationBar(
@@ -160,6 +128,43 @@ class _PracticePageState extends State<PracticePage> {
               ],
             ),
     );
+  }
+
+  Widget _desktopContent() {
+    if (_selectedIndex != 0) {
+      return SessionsView(practice: widget.practiceController);
+    }
+    if (widget.inputController.isUnselected) {
+      return _InputModeChooser(
+        desktop: true,
+        input: widget.inputController,
+        onConnectPressed: _showConnectionDialog,
+        onDemoPressed: widget.inputController.useDemoCube,
+      );
+    }
+    return DesktopPracticeLayout(
+      practice: widget.practiceController,
+      input: widget.inputController,
+      onConnectPressed: _showConnectionDialog,
+    );
+  }
+
+  Widget _mobileContent({required bool focusMode}) {
+    if (_selectedIndex != 0) {
+      return SessionsView(practice: widget.practiceController, mobile: true);
+    }
+    if (widget.inputController.isUnselected) {
+      return _InputModeChooser(
+        input: widget.inputController,
+        onConnectPressed: _showConnectionDialog,
+        onDemoPressed: widget.inputController.useDemoCube,
+      );
+    }
+    final practice = MobilePracticeLayout(
+      practice: widget.practiceController,
+      input: widget.inputController,
+    );
+    return focusMode ? SafeArea(child: practice) : practice;
   }
 
   Future<void> _showConnectionDialog() async {
@@ -234,7 +239,7 @@ class _InputModeChooser extends StatelessWidget {
       width: compactLandscape ? 52 : 64,
       height: compactLandscape ? 52 : 64,
       decoration: BoxDecoration(
-        color: const Color(0x16B7F34A),
+        color: CrubikColors.limeTintSoft,
         borderRadius: BorderRadius.circular(compactLandscape ? 16 : 20),
       ),
       child: Icon(
@@ -386,8 +391,8 @@ class _AutomaticReconnectCard extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
         decoration: BoxDecoration(
-          color: const Color(0x12B7F34A),
-          border: Border.all(color: const Color(0x55B7F34A)),
+          color: CrubikColors.limeTintSubtle,
+          border: Border.all(color: CrubikColors.limeBorderSoft),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(

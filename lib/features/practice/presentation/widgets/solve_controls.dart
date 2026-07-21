@@ -5,6 +5,7 @@ import '../../application/practice_controller.dart';
 import '../../domain/solve_record.dart';
 import 'practice_panel.dart';
 import 'practice_formatters.dart';
+import 'practice_phase_presentation.dart';
 
 bool showsPracticeAccessory(PracticeController practice) =>
     practice.pendingSolveReview != null ||
@@ -57,12 +58,7 @@ class PracticeMobileReviewPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final solve = practice.pendingSolveReview!;
-    final elapsed = formatPracticeDuration(solve.elapsed);
-    final inspection = solve.inspectionElapsed == null
-        ? '—'
-        : formatPracticeDuration(solve.inspectionElapsed!);
-    final tps = solve.moveCount == 0 ? null : solve.turnsPerSecond;
-    final tpsText = tps == null ? '—' : tps.toStringAsFixed(1);
+    final review = _SolveReviewData(solve);
     return PracticePanel(
       key: const Key('mobile-review-layout'),
       padding: const EdgeInsets.all(16),
@@ -70,46 +66,16 @@ class PracticeMobileReviewPanel extends StatelessWidget {
         key: const Key('finish-card'),
         container: true,
         liveRegion: true,
-        label:
-            'Solve complete. Time $elapsed. ${solve.moveCount} moves. '
-            'TPS $tpsText. Inspection $inspection. '
-            'Completed scramble ${solve.scramble}.',
+        label: review.semanticsLabel,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: CrubikColors.lime,
-                  size: 21,
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    'SOLVE COMPLETE',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: CrubikColors.lime,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.6,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            const _SolveReviewHeader(expandTitle: true),
             const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
+            _SolveReviewTime(
+              elapsed: review.elapsed,
+              fontSize: 56,
               alignment: Alignment.centerLeft,
-              child: Text(
-                elapsed,
-                key: const Key('finish-time'),
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                  color: CrubikColors.text,
-                  fontSize: 56,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -118,50 +84,11 @@ class PracticeMobileReviewPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        _FinishMetric(
-                          label: 'MOVES',
-                          value: solve.moveCount.toString(),
-                          valueKey: const Key('finish-moves'),
-                          dense: false,
-                        ),
-                        _FinishMetric(
-                          label: 'TPS',
-                          value: tpsText,
-                          valueKey: const Key('finish-tps'),
-                          dense: false,
-                        ),
-                        _FinishMetric(
-                          label: 'INSPECTION',
-                          value: inspection,
-                          valueKey: const Key('finish-inspection'),
-                          dense: false,
-                        ),
-                      ],
-                    ),
+                    _SolveReviewMetrics(solve: solve, review: review),
                     const SizedBox(height: 12),
                     const Divider(height: 1),
                     const SizedBox(height: 12),
-                    Text(
-                      'COMPLETED SCRAMBLE',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: CrubikColors.muted,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      solve.scramble,
-                      key: const Key('completed-scramble'),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: CrubikColors.text,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
+                    _CompletedScramble(solve: solve, mobile: true),
                   ],
                 ),
               ),
@@ -169,19 +96,8 @@ class PracticeMobileReviewPanel extends StatelessWidget {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
-                key: const Key('continue-after-solve'),
+              child: _DismissSolveButton(
                 onPressed: practice.continueAfterSolve,
-                style: FilledButton.styleFrom(
-                  backgroundColor: CrubikColors.lime,
-                  foregroundColor: CrubikColors.background,
-                  minimumSize: const Size(0, 48),
-                ),
-                icon: const Icon(Icons.close_rounded),
-                label: const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text('DISMISS'),
-                ),
               ),
             ),
           ],
@@ -237,7 +153,8 @@ class PracticeAttemptActionBar extends StatelessWidget {
     );
     return SizedBox(
       key: const Key('focus-action-bar'),
-      child: SizedBox(width: double.infinity, child: primary),
+      width: double.infinity,
+      child: primary,
     );
   }
 }
@@ -255,8 +172,8 @@ class _TimerStatusContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phaseLabel = _phaseLabel(practice);
-    final phaseColor = _phaseColor(practice);
+    final phaseLabel = PracticePhasePresentation.label(practice.phase);
+    final phaseColor = PracticePhasePresentation.color(practice.phase);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -293,7 +210,7 @@ class _PrimaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final aborting = _attemptAborts(practice);
+    final aborting = PracticePhasePresentation.attemptAborts(practice);
     return FilledButton.icon(
       key: const Key('timer-toggle'),
       onPressed: practice.primaryActionEnabled ? practice.toggleTimer : null,
@@ -310,10 +227,10 @@ class _PrimaryActionButton extends StatelessWidget {
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      icon: Icon(_primaryActionIcon(practice)),
+      icon: Icon(PracticePhasePresentation.primaryActionIcon(practice)),
       label: FittedBox(
         fit: BoxFit.scaleDown,
-        child: Text(_primaryActionLabel(practice)),
+        child: Text(PracticePhasePresentation.primaryActionLabel(practice)),
       ),
     );
   }
@@ -337,7 +254,9 @@ class _ClockTimeText extends StatelessWidget {
     return AnimatedBuilder(
       animation: practice.clockTicks,
       builder: (context, _) {
-        final formatted = formatPracticeDuration(_displayedTime(practice));
+        final formatted = formatPracticeDuration(
+          PracticePhasePresentation.displayedTime(practice),
+        );
         return FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -453,125 +372,32 @@ class _FinishCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final elapsed = formatPracticeDuration(solve.elapsed);
-    final inspection = solve.inspectionElapsed == null
-        ? '—'
-        : formatPracticeDuration(solve.inspectionElapsed!);
-    final tps = solve.moveCount == 0 ? null : solve.turnsPerSecond;
-    final tpsText = tps == null ? '—' : tps.toStringAsFixed(1);
-    final metrics = Row(
-      children: [
-        _FinishMetric(
-          label: 'MOVES',
-          value: solve.moveCount.toString(),
-          valueKey: const Key('finish-moves'),
-          dense: dense,
-        ),
-        _FinishMetric(
-          label: 'TPS',
-          value: tpsText,
-          valueKey: const Key('finish-tps'),
-          dense: dense,
-        ),
-        _FinishMetric(
-          label: 'INSPECTION',
-          value: inspection,
-          valueKey: const Key('finish-inspection'),
-          dense: dense,
-        ),
-      ],
+    final review = _SolveReviewData(solve);
+    final metrics = _SolveReviewMetrics(
+      solve: solve,
+      review: review,
+      dense: dense,
     );
-    final header = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.check_circle_rounded,
-          color: CrubikColors.lime,
-          size: dense ? 17 : 21,
-        ),
-        SizedBox(width: dense ? 5 : 7),
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'SOLVE COMPLETE',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: CrubikColors.lime,
-                fontWeight: FontWeight.w800,
-                letterSpacing: dense ? 1.1 : 1.6,
-                fontSize: dense ? 10 : null,
-              ),
-            ),
-          ),
-        ),
-      ],
+    final header = _SolveReviewHeader(dense: dense);
+    final time = _SolveReviewTime(
+      elapsed: review.elapsed,
+      fontSize: dense
+          ? 29
+          : compact
+          ? 48
+          : 62,
     );
-    final time = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Text(
-        elapsed,
-        key: const Key('finish-time'),
-        style: Theme.of(context).textTheme.displayLarge?.copyWith(
-          color: CrubikColors.text,
-          fontSize: dense
-              ? 29
-              : compact
-              ? 48
-              : 62,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
-      ),
-    );
-    final completedScramble = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'COMPLETED SCRAMBLE',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: CrubikColors.muted,
-            fontWeight: FontWeight.w700,
-            letterSpacing: dense ? 0.8 : 1.1,
-            fontSize: dense ? 8 : null,
-          ),
-        ),
-        SizedBox(height: dense ? 1 : 4),
-        Text(
-          solve.scramble,
-          key: const Key('completed-scramble'),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: CrubikColors.text,
-            fontFamily: 'monospace',
-            fontWeight: FontWeight.w600,
-            fontSize: dense ? 9 : null,
-            height: dense ? 1.05 : 1.3,
-          ),
-        ),
-      ],
-    );
-    final dismissButton = FilledButton.icon(
-      key: const Key('continue-after-solve'),
+    final completedScramble = _CompletedScramble(solve: solve, dense: dense);
+    final dismissButton = _DismissSolveButton(
       onPressed: onContinue,
-      style: FilledButton.styleFrom(
-        backgroundColor: CrubikColors.lime,
-        foregroundColor: CrubikColors.background,
-        minimumSize: const Size(0, 48),
-        visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,
-        padding: EdgeInsets.symmetric(vertical: dense ? 8 : 12),
-      ),
-      icon: Icon(Icons.close_rounded, size: dense ? 17 : 20),
-      label: const FittedBox(fit: BoxFit.scaleDown, child: Text('DISMISS')),
+      dense: dense,
     );
 
     return Semantics(
       key: const Key('finish-card'),
       container: true,
       liveRegion: true,
-      label:
-          'Solve complete. Time $elapsed. ${solve.moveCount} moves. '
-          'TPS $tpsText. Inspection $inspection. '
-          'Completed scramble ${solve.scramble}.',
+      label: review.semanticsLabel,
       child: dense
           ? Column(
               mainAxisSize: MainAxisSize.min,
@@ -608,6 +434,217 @@ class _FinishCardContent extends StatelessWidget {
                 SizedBox(width: double.infinity, child: dismissButton),
               ],
             ),
+    );
+  }
+}
+
+final class _SolveReviewData {
+  const _SolveReviewData._({
+    required this.elapsed,
+    required this.inspection,
+    required this.tps,
+    required this.semanticsLabel,
+  });
+
+  factory _SolveReviewData(SolveRecord solve) {
+    final elapsed = formatPracticeDuration(solve.elapsed);
+    final inspection = solve.inspectionElapsed == null
+        ? '—'
+        : formatPracticeDuration(solve.inspectionElapsed!);
+    final tps = solve.moveCount == 0 || solve.turnsPerSecond == null
+        ? '—'
+        : solve.turnsPerSecond!.toStringAsFixed(1);
+    return _SolveReviewData._(
+      elapsed: elapsed,
+      inspection: inspection,
+      tps: tps,
+      semanticsLabel:
+          'Solve complete. Time $elapsed. ${solve.moveCount} moves. '
+          'TPS $tps. Inspection $inspection. '
+          'Completed scramble ${solve.scramble}.',
+    );
+  }
+
+  final String elapsed;
+  final String inspection;
+  final String tps;
+  final String semanticsLabel;
+}
+
+class _SolveReviewHeader extends StatelessWidget {
+  const _SolveReviewHeader({this.dense = false, this.expandTitle = false});
+
+  final bool dense;
+  final bool expandTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        'SOLVE COMPLETE',
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: CrubikColors.lime,
+          fontWeight: FontWeight.w800,
+          letterSpacing: dense ? 1.1 : 1.6,
+          fontSize: dense ? 10 : null,
+        ),
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.check_circle_rounded,
+          color: CrubikColors.lime,
+          size: dense ? 17 : 21,
+        ),
+        SizedBox(width: dense ? 5 : 7),
+        if (expandTitle) Expanded(child: title) else Flexible(child: title),
+      ],
+    );
+  }
+}
+
+class _SolveReviewTime extends StatelessWidget {
+  const _SolveReviewTime({
+    required this.elapsed,
+    required this.fontSize,
+    this.alignment = Alignment.center,
+  });
+
+  final String elapsed;
+  final double fontSize;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: alignment,
+      child: Text(
+        elapsed,
+        key: const Key('finish-time'),
+        style: Theme.of(context).textTheme.displayLarge?.copyWith(
+          color: CrubikColors.text,
+          fontSize: fontSize,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+}
+
+class _SolveReviewMetrics extends StatelessWidget {
+  const _SolveReviewMetrics({
+    required this.solve,
+    required this.review,
+    this.dense = false,
+  });
+
+  final SolveRecord solve;
+  final _SolveReviewData review;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _FinishMetric(
+          label: 'MOVES',
+          value: solve.moveCount.toString(),
+          valueKey: const Key('finish-moves'),
+          dense: dense,
+        ),
+        _FinishMetric(
+          label: 'TPS',
+          value: review.tps,
+          valueKey: const Key('finish-tps'),
+          dense: dense,
+        ),
+        _FinishMetric(
+          label: 'INSPECTION',
+          value: review.inspection,
+          valueKey: const Key('finish-inspection'),
+          dense: dense,
+        ),
+      ],
+    );
+  }
+}
+
+class _CompletedScramble extends StatelessWidget {
+  const _CompletedScramble({
+    required this.solve,
+    this.dense = false,
+    this.mobile = false,
+  });
+
+  final SolveRecord solve;
+  final bool dense;
+  final bool mobile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'COMPLETED SCRAMBLE',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: CrubikColors.muted,
+            fontWeight: FontWeight.w700,
+            letterSpacing: dense ? 0.8 : 1.1,
+            fontSize: dense ? 8 : null,
+          ),
+        ),
+        SizedBox(height: dense ? 1 : 4),
+        Text(
+          solve.scramble,
+          key: const Key('completed-scramble'),
+          style:
+              (mobile
+                      ? Theme.of(context).textTheme.bodyMedium
+                      : Theme.of(context).textTheme.bodySmall)
+                  ?.copyWith(
+                    color: CrubikColors.text,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600,
+                    fontSize: dense ? 9 : null,
+                    height: mobile
+                        ? 1.35
+                        : dense
+                        ? 1.05
+                        : 1.3,
+                  ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DismissSolveButton extends StatelessWidget {
+  const _DismissSolveButton({required this.onPressed, this.dense = false});
+
+  final VoidCallback onPressed;
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      key: const Key('continue-after-solve'),
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: CrubikColors.lime,
+        foregroundColor: CrubikColors.background,
+        minimumSize: const Size(0, 48),
+        visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,
+        padding: EdgeInsets.symmetric(vertical: dense ? 8 : 12),
+      ),
+      icon: Icon(Icons.close_rounded, size: dense ? 17 : 20),
+      label: const FittedBox(fit: BoxFit.scaleDown, child: Text('DISMISS')),
     );
   }
 }
@@ -658,60 +695,4 @@ class _FinishMetric extends StatelessWidget {
       ),
     );
   }
-}
-
-String _phaseLabel(PracticeController practice) => switch (practice.phase) {
-  PracticePhase.manualReady => 'READY',
-  PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
-  PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
-  PracticePhase.scrambling => 'SCRAMBLING',
-  PracticePhase.inspectionDelay => 'GET READY',
-  PracticePhase.inspection => 'INSPECTION',
-  PracticePhase.solving => 'SOLVING',
-};
-
-Color _phaseColor(PracticeController practice) => switch (practice.phase) {
-  PracticePhase.needsSolvedCube => CrubikColors.warning,
-  PracticePhase.scrambling ||
-  PracticePhase.inspectionDelay ||
-  PracticePhase.inspection => CrubikColors.cyan,
-  PracticePhase.solving => CrubikColors.lime,
-  PracticePhase.manualReady ||
-  PracticePhase.awaitingCubeState => CrubikColors.muted,
-};
-
-Duration _displayedTime(PracticeController practice) =>
-    switch (practice.phase) {
-      PracticePhase.inspectionDelay => practice.preInspectionRemaining,
-      PracticePhase.inspection => practice.inspectionRemaining,
-      _ => practice.elapsed,
-    };
-
-bool _attemptAborts(PracticeController practice) =>
-    practice.phase == PracticePhase.inspectionDelay ||
-    practice.phase == PracticePhase.inspection ||
-    (practice.smartCubeWorkflowActive &&
-        practice.phase == PracticePhase.solving);
-
-String _primaryActionLabel(PracticeController practice) {
-  return switch (practice.phase) {
-    PracticePhase.awaitingCubeState => 'WAITING FOR CUBE',
-    PracticePhase.needsSolvedCube => 'SOLVE CUBE FIRST',
-    PracticePhase.scrambling => 'FOLLOW SCRAMBLE',
-    PracticePhase.inspectionDelay => 'ABORT',
-    PracticePhase.inspection => 'ABORT',
-    PracticePhase.solving =>
-      practice.smartCubeWorkflowActive ? 'ABORT' : 'STOP & SAVE',
-    PracticePhase.manualReady => 'START SOLVE',
-  };
-}
-
-IconData _primaryActionIcon(PracticeController practice) {
-  if (_attemptAborts(practice)) return Icons.close_rounded;
-  if (!practice.smartCubeWorkflowActive &&
-      practice.phase == PracticePhase.solving) {
-    return Icons.stop_rounded;
-  }
-  if (practice.smartCubeWorkflowActive) return Icons.sync_rounded;
-  return Icons.play_arrow_rounded;
 }

@@ -19,6 +19,10 @@ final class SolveHistory {
   final DateTime Function() _now;
   final List<SolveRecord> _records = [];
   Future<void> _persistenceQueue = Future.value();
+  Future<void>? _initializationFuture;
+  final Set<String> _deletedDuringInitialization = {};
+  bool _initializing = false;
+  bool _mutatedDuringInitialization = false;
   Object? _persistenceError;
 
   List<SolveRecord> get records => List.unmodifiable(_records);
@@ -62,30 +66,69 @@ final class SolveHistory {
     });
   }
 
-  Future<void> initialize() async {
-    final persisted = [...await _repository.load()]
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    _records
-      ..clear()
-      ..addAll(persisted);
+  Future<void> initialize() =>
+      _initializationFuture ??= _initialize(_persistenceQueue);
+
+  Future<void> _initialize(Future<void> pendingPersistence) async {
+    _initializing = true;
+    try {
+      await pendingPersistence;
+      final persisted = [...await _repository.load()]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (_mutatedDuringInitialization) {
+        final localIds = _records.map((solve) => solve.id).toSet();
+        _records.addAll(
+          persisted.where(
+            (solve) =>
+                !localIds.contains(solve.id) &&
+                !_deletedDuringInitialization.contains(solve.id),
+          ),
+        );
+        _records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      } else {
+        _records
+          ..clear()
+          ..addAll(persisted);
+      }
+    } finally {
+      _initializing = false;
+      _mutatedDuringInitialization = false;
+      _deletedDuringInitialization.clear();
+    }
   }
 
   void add(SolveRecord solve) {
+    if (_initializing) {
+      _mutatedDuringInitialization = true;
+      _deletedDuringInitialization.remove(solve.id);
+    }
     _records.insert(0, solve);
     _schedulePersistence();
   }
 
   void delete(String id) {
+    if (_initializing) {
+      _mutatedDuringInitialization = true;
+      _deletedDuringInitialization.add(id);
+    }
     _records.removeWhere((solve) => solve.id == id);
     _schedulePersistence();
   }
 
-  Future<void> flush() => _persistenceQueue;
+  Future<void> flush() async {
+    final initialization = _initializationFuture;
+    if (initialization != null) await initialization;
+    await _persistenceQueue;
+  }
 
   void _schedulePersistence() {
-    final snapshot = List<SolveRecord>.of(_records);
+    final initialization = _initializationFuture;
     _persistenceQueue = _persistenceQueue
-        .then((_) => _repository.replaceAll(snapshot))
+        .then((_) async {
+          if (initialization != null) await initialization;
+          await _repository.replaceAll(List<SolveRecord>.of(_records));
+          _persistenceError = null;
+        })
         .onError((error, _) {
           _persistenceError = error;
         });

@@ -18,19 +18,23 @@ session without an account or network connection.
   best/mean/Ao5 statistics, and recent-solve deletion.
 - Durable local solve storage through SQLite on native platforms and Drift's
   IndexedDB-backed storage on the web.
-- Versioned, lossless JSON solve-history export through the clipboard.
+- Versioned JSON solve-history export through the clipboard.
 - A hardware-free demo/manual-input path.
 
 The current scramble generator is deliberately labelled a **practice
 scramble**. A production WCA random-state generator remains a follow-up; its
 pure-Dart implementation should be validated against TNoodle and cubing.js.
 
+The current history schema exports solve summaries and timing/input metadata;
+versioned persistence and export of the raw per-move event stream remains
+Phase 0 work. Do not describe the current JSON as a lossless raw-event export.
+
 ## Cube scope
 
 The P0 vendor scope is intentionally limited to GAN and MoYu:
 
 - GAN Gen2: GAN Mini ui FreePlay, GAN12 ui / ui FreePlay, GAN356 i Carry / Carry
-  S / i 3, and other hardware exposing the same certified service.
+  S / i 3, and other hardware exposing the same packet-tested service.
 - GAN Gen3: GAN356 i Carry 2 protocol.
 - GAN Gen4: GAN12 ui Maglev and GAN14 ui FreePlay protocol.
 - MoYu: MoYu AI 2023 using its GAN Gen2-compatible protocol and MoYu key

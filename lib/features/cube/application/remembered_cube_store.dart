@@ -5,6 +5,7 @@ final class RememberedCube {
   final String? name;
 }
 
+/// Local preference boundary for automatic smart-cube reconnect.
 abstract interface class RememberedCubeStore {
   Future<RememberedCube?> load();
 

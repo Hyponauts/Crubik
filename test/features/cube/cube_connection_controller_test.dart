@@ -2,14 +2,13 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
+import 'package:crubik/features/cube/application/cube_connection_gateway.dart';
+import 'package:crubik/features/cube/application/remembered_cube_store.dart';
 import 'package:crubik/features/cube/data/adapters/cube_adapter_registry.dart';
 import 'package:crubik/features/cube/data/adapters/gan/gan_cube_adapter.dart';
-import 'package:crubik/features/cube/data/adapters/smart_cube_adapter.dart';
 import 'package:crubik/features/cube/data/ble/ble_central.dart';
-import 'package:crubik/features/cube/data/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/data/moyu32_cube_protocol.dart';
-import 'package:crubik/features/cube/data/remembered_cube_store.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
@@ -56,6 +55,48 @@ void main() {
     expect(headphones.isIdentifiedCube, isFalse);
     expect(headphones.name, 'Headphones');
     expect(unnamed.name, 'Unnamed Bluetooth device');
+    expect(registry.supportedProtocolDisplayNames, [
+      'GAN Gen2–4',
+      'MoYu AI 2023',
+      'MoYu32',
+    ]);
+  });
+
+  test('uses the configured timeout for manual and remembered scans', () async {
+    final manualGateway = _FakeCubeConnectionGateway();
+    final manualController = CubeConnectionController(
+      gateway: manualGateway,
+      scanTimeout: const Duration(milliseconds: 10),
+    );
+
+    await manualController.startScan();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await pumpEventQueue();
+
+    expect(manualController.status, CubeConnectionStatus.disconnected);
+    expect(manualGateway.scanStopCount, 1);
+    await manualController.close();
+    manualController.dispose();
+
+    final reconnectGateway = _FakeCubeConnectionGateway();
+    final reconnectController = CubeConnectionController(
+      gateway: reconnectGateway,
+      rememberedCubeStore: _FakeRememberedCubeStore('gan-remembered'),
+      scanTimeout: const Duration(milliseconds: 10),
+    );
+
+    await reconnectController.reconnectRememberedCube();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await pumpEventQueue();
+
+    expect(reconnectController.status, CubeConnectionStatus.disconnected);
+    expect(
+      reconnectController.automaticReconnectPhase,
+      AutomaticReconnectPhase.inactive,
+    );
+    expect(reconnectGateway.scanStopCount, 1);
+    await reconnectController.close();
+    reconnectController.dispose();
   });
 
   test('requests Bluetooth permission before starting a scan', () async {
@@ -210,6 +251,52 @@ void main() {
       AutomaticReconnectPhase.inactive,
     );
 
+    await controller.close();
+    controller.dispose();
+  });
+
+  test('stopping a scan cancels remembered-cube loading', () async {
+    final loadGate = Completer<void>();
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(
+      gateway: gateway,
+      rememberedCubeStore: _FakeRememberedCubeStore(
+        'gan-remembered',
+        loadGate: loadGate,
+      ),
+    );
+
+    final reconnect = controller.reconnectRememberedCube();
+    await Future<void>.delayed(Duration.zero);
+    await controller.stopScan();
+    loadGate.complete();
+    await reconnect;
+
+    expect(gateway.scanStartCount, 0);
+    expect(controller.status, CubeConnectionStatus.disconnected);
+    expect(
+      controller.automaticReconnectPhase,
+      AutomaticReconnectPhase.inactive,
+    );
+    await controller.close();
+    controller.dispose();
+  });
+
+  test('a late scan startup is stopped after cancellation', () async {
+    final scanStartGate = Completer<void>();
+    final gateway = _FakeCubeConnectionGateway(scanStartGate: scanStartGate);
+    final controller = CubeConnectionController(gateway: gateway);
+
+    final scan = controller.startScan();
+    await Future<void>.delayed(Duration.zero);
+    final stop = controller.stopScan();
+    scanStartGate.complete();
+    await scan;
+    await stop;
+
+    expect(gateway.scanStartCount, 1);
+    expect(gateway.scanStopCount, 1);
+    expect(controller.status, CubeConnectionStatus.disconnected);
     await controller.close();
     controller.dispose();
   });
@@ -488,6 +575,64 @@ void main() {
   });
 
   test(
+    'disconnect cancels a connection while scan shutdown is pending',
+    () async {
+      final scanStopGate = Completer<void>();
+      final gateway = _FakeCubeConnectionGateway(scanStopGate: scanStopGate);
+      final controller = CubeConnectionController(gateway: gateway);
+      const device = CubeDeviceCandidate(
+        id: 'gan-pending-scan-stop',
+        name: 'GAN12ui',
+        vendor: CubeVendor.gan,
+        protocolFamily: CubeProtocolFamily.gan,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'gan-family',
+      );
+
+      final connection = controller.connect(device);
+      await Future<void>.delayed(Duration.zero);
+      await controller.disconnect();
+      scanStopGate.complete();
+      await connection;
+
+      expect(gateway.connectCount, 0);
+      expect(controller.status, CubeConnectionStatus.disconnected);
+      expect(controller.connectedCube, isNull);
+      await controller.close();
+      controller.dispose();
+    },
+  );
+
+  test(
+    'a new scan supersedes a connection waiting for scan shutdown',
+    () async {
+      final scanStopGate = Completer<void>();
+      final gateway = _FakeCubeConnectionGateway(scanStopGate: scanStopGate);
+      final controller = CubeConnectionController(gateway: gateway);
+      const device = CubeDeviceCandidate(
+        id: 'gan-superseded',
+        name: 'GAN12ui',
+        vendor: CubeVendor.gan,
+        protocolFamily: CubeProtocolFamily.gan,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'gan-family',
+      );
+
+      final connection = controller.connect(device);
+      await Future<void>.delayed(Duration.zero);
+      final scan = controller.startScan();
+      scanStopGate.complete();
+      await connection;
+      await scan;
+
+      expect(gateway.connectCount, 0);
+      expect(controller.status, CubeConnectionStatus.scanning);
+      await controller.close();
+      controller.dispose();
+    },
+  );
+
+  test(
     'exports connection stages without cube identifiers or packet data',
     () async {
       final gateway = _FakeCubeConnectionGateway();
@@ -543,6 +688,8 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
     this.permissionsGranted = true,
     this.grantPermissionOnRequest = true,
     this.sessionStartGate,
+    this.scanStartGate,
+    this.scanStopGate,
   });
 
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
@@ -551,6 +698,8 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   bool permissionsGranted;
   final bool grantPermissionOnRequest;
   final Completer<void>? sessionStartGate;
+  final Completer<void>? scanStartGate;
+  final Completer<void>? scanStopGate;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
   int scanStopCount = 0;
@@ -559,6 +708,13 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
 
   @override
   Stream<CubeDeviceCandidate> get scanResults => _scanController.stream;
+
+  @override
+  List<String> get supportedProtocolDisplayNames => const [
+    'GAN Gen2–4',
+    'MoYu AI 2023',
+    'MoYu32',
+  ];
 
   @override
   Future<bool> isBluetoothAvailable() async => bluetoothAvailable;
@@ -588,11 +744,13 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   @override
   Future<void> startScan() async {
     scanStartCount++;
+    await scanStartGate?.future;
   }
 
   @override
   Future<void> stopScan() async {
     scanStopCount++;
+    await scanStopGate?.future;
   }
 
   void addDevice(CubeDeviceCandidate device) => _scanController.add(device);
@@ -671,13 +829,15 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
 }
 
 final class _FakeRememberedCubeStore implements RememberedCubeStore {
-  _FakeRememberedCubeStore(this.deviceId, {this.name});
+  _FakeRememberedCubeStore(this.deviceId, {this.name, this.loadGate});
 
   String? deviceId;
   String? name;
+  final Completer<void>? loadGate;
 
   @override
   Future<RememberedCube?> load() async {
+    await loadGate?.future;
     final id = deviceId;
     return id == null ? null : RememberedCube(deviceId: id, name: name);
   }

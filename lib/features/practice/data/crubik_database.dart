@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
-import '../../cube/data/remembered_cube_store.dart';
+import '../../cube/application/remembered_cube_store.dart';
 import '../domain/solve_record.dart';
 
 part 'crubik_database.g.dart';
@@ -103,6 +103,11 @@ final class DriftRememberedCubeStore implements RememberedCubeStore {
           AppSettingsCompanion.insert(key: _deviceNameKey, value: name),
       ]);
     });
+    if (cube.name == null) {
+      await (_database.delete(
+        _database.appSettings,
+      )..where((setting) => setting.key.equals(_deviceNameKey))).go();
+    }
   });
 }
 
@@ -124,7 +129,7 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
             elapsed: Duration(milliseconds: row.elapsedMs),
             moveCount: row.moveCount,
             createdAt: row.createdAt.toUtc(),
-            inputSource: row.inputSource,
+            inputSource: SolveInputSource.fromSerializedValue(row.inputSource),
             inspectionElapsed: row.inspectionElapsedMs == null
                 ? null
                 : Duration(milliseconds: row.inspectionElapsedMs!),
@@ -151,7 +156,7 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
                   elapsedMs: solve.elapsed.inMilliseconds,
                   moveCount: solve.moveCount,
                   createdAt: solve.createdAt,
-                  inputSource: solve.inputSource,
+                  inputSource: solve.inputSource.serializedValue,
                   inspectionElapsedMs: Value(
                     solve.inspectionElapsed?.inMilliseconds,
                   ),

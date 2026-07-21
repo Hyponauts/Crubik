@@ -19,10 +19,9 @@ void main() {
     test('a move followed by its inverse restores the cube', () {
       for (final notation in ['U', 'R', 'F', 'D', 'L', 'B', 'R2']) {
         final move = CubeMove.parse(notation);
-        final state =
-            CubeState.solved()
-              ..apply(move)
-              ..apply(move.inverse);
+        final state = CubeState.solved()
+          ..apply(move)
+          ..apply(move.inverse);
 
         expect(state.isSolved, isTrue, reason: notation);
       }
@@ -53,17 +52,16 @@ void main() {
 
     test('scramble followed by inverse restores the cube', () {
       final scramble = Scramble.parse("R U R' U' F2 D L2 B'");
-      final state =
-          CubeState.solved()
-            ..applyAll(scramble.moves)
-            ..applyAll(scramble.inverse.moves);
+      final state = CubeState.solved()
+        ..applyAll(scramble.moves)
+        ..applyAll(scramble.inverse.moves);
 
       expect(state.isSolved, isTrue);
     });
 
     test('round-trips a live cube state through Kociemba facelets', () {
-      final original =
-          CubeState.solved()..applyAll(Scramble.parse("R U F' L2 D B").moves);
+      final original = CubeState.solved()
+        ..applyAll(Scramble.parse("R U F' L2 D B").moves);
 
       final restored = CubeState.fromFacelets(original.facelets);
 
@@ -91,11 +89,10 @@ void main() {
       ).generate(length: 200);
 
       for (var index = 2; index < scramble.moves.length; index++) {
-        final axes =
-            scramble.moves
-                .sublist(index - 2, index + 1)
-                .map((move) => move.axis)
-                .toSet();
+        final axes = scramble.moves
+            .sublist(index - 2, index + 1)
+            .map((move) => move.axis)
+            .toSet();
         expect(axes.length, greaterThan(1));
       }
     });

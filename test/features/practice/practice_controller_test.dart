@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -8,6 +9,43 @@ import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('round trips every solve input source through JSON', () {
+    final sources = [
+      ...SolveInputSource.values,
+      SolveInputSource.fromSerializedValue('future_sensor'),
+    ];
+
+    for (var index = 0; index < sources.length; index++) {
+      final source = sources[index];
+      final record = SolveRecord(
+        id: 'solve-$index',
+        scramble: 'R U',
+        elapsed: const Duration(seconds: 1),
+        moveCount: index,
+        createdAt: DateTime.utc(2026, 1, index + 1),
+        inputSource: source,
+      );
+      final json = record.toJson();
+      final restored = SolveRecord.fromJson(json);
+
+      expect(json['input_source'], source.serializedValue);
+      expect(restored.inputSource, source);
+      expect(restored.toJson()['input_source'], source.serializedValue);
+    }
+  });
+
+  test('can be disposed while solve history is still loading', () async {
+    final repository = _DelayedSolveHistoryRepository();
+    final controller = PracticeController(repository: repository);
+
+    final initialization = controller.initialize();
+    await repository.loadStarted.future;
+    controller.dispose();
+    repository.completeLoad();
+
+    await expectLater(initialization, completes);
+  });
+
   test('starts unselected and ignores manual practice actions', () {
     final controller = PracticeController();
     final scramble = controller.scramble.toString();
@@ -47,7 +85,7 @@ void main() {
     expect(controller.inputMode, PracticeInputMode.demo);
     expect(controller.solves.single.elapsed, const Duration(seconds: 12));
     expect(controller.solves.single.moveCount, 1);
-    expect(controller.solves.single.inputSource, 'manual');
+    expect(controller.solves.single.inputSource, SolveInputSource.manual);
     expect(controller.solves.single.scramble, completedScramble);
     expect(controller.pendingSolveReview, same(controller.solves.single));
     expect(controller.scramble.toString(), isNot(completedScramble));
@@ -330,7 +368,7 @@ void main() {
     controller.startSolve();
     controller.applyMove(CubeMove.parse('R'));
     clock.value = const Duration(milliseconds: 12345);
-    controller.stopSolve(inputSource: 'manual');
+    controller.stopSolve(inputSource: SolveInputSource.manual);
 
     final payload = jsonDecode(controller.exportJson()) as Map<String, Object?>;
     final solves = payload['solves']! as List<Object?>;
@@ -842,7 +880,7 @@ void main() {
     expect(controller.scramble.toString(), isNot(completedScramble));
     expect(controller.solves.single.scramble, completedScramble);
     expect(controller.solves.single.moveCount, solution.length);
-    expect(controller.solves.single.inputSource, 'smart_cube');
+    expect(controller.solves.single.inputSource, SolveInputSource.smartCube);
     expect(controller.pendingSolveReview, same(controller.solves.single));
 
     final nextScramble = controller.scramble.toString();
@@ -890,7 +928,10 @@ void main() {
     controller.syncCubeState(CubeState.solved(), occurredAt: now);
 
     expect(controller.phase, PracticePhase.scrambling);
-    expect(controller.solves.single.inputSource, 'smart_cube_state');
+    expect(
+      controller.solves.single.inputSource,
+      SolveInputSource.smartCubeState,
+    );
     expect(controller.pendingSolveReview, same(controller.solves.single));
     controller.dispose();
   });
@@ -939,6 +980,23 @@ final class _FakeSolveClock implements SolveClock {
 
   @override
   void stop() {}
+}
+
+final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
+  final Completer<void> loadStarted = Completer<void>();
+  final Completer<void> _loadGate = Completer<void>();
+
+  void completeLoad() => _loadGate.complete();
+
+  @override
+  Future<List<SolveRecord>> load() async {
+    loadStarted.complete();
+    await _loadGate.future;
+    return const [];
+  }
+
+  @override
+  Future<void> replaceAll(List<SolveRecord> solves) async {}
 }
 
 final class _FaceFirstDoubleTurnRandom implements Random {

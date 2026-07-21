@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../domain/cube_model.dart';
 import '../domain/smart_cube_event.dart';
 import 'cube_packet_cipher.dart';
+import 'packet_bit_view.dart';
 
 // Protocol facts are independently implemented from the MoYu32 wire format
 // documented by csTimer. See THIRD_PARTY_NOTICES.md.
@@ -57,22 +58,27 @@ final class Moyu32PacketDecoder {
     if (packet.length != 20) {
       throw const FormatException('MoYu32 packets must contain 20 bytes.');
     }
+    final bits = PacketBitView(packet, protocolName: 'MoYu32');
     return switch (packet[0]) {
-      0xa3 => _decodeState(packet, receivedAt),
+      0xa3 => _decodeState(packet, bits, receivedAt),
       0xa4 => _decodeBattery(packet),
-      0xa5 => _decodeMoves(packet, receivedAt),
+      0xa5 => _decodeMoves(packet, bits, receivedAt),
       _ => const Moyu32DecodedPacket(),
     };
   }
 
-  Moyu32DecodedPacket _decodeState(Uint8List packet, DateTime receivedAt) {
+  Moyu32DecodedPacket _decodeState(
+    Uint8List packet,
+    PacketBitView bits,
+    DateTime receivedAt,
+  ) {
     const protocolFaces = 'FBUDLR';
     const faceOrder = [2, 5, 0, 3, 4, 1];
     final facelets = StringBuffer();
     for (final protocolFace in faceOrder) {
       final faceStart = 8 + protocolFace * 24;
       for (var sticker = 0; sticker < 8; sticker++) {
-        final color = _readBits(packet, faceStart + sticker * 3, 3);
+        final color = bits.read(faceStart + sticker * 3, 3);
         if (color >= protocolFaces.length) {
           throw const FormatException('Invalid MoYu32 facelet color.');
         }
@@ -102,7 +108,11 @@ final class Moyu32PacketDecoder {
     return Moyu32DecodedPacket(batteryLevel: batteryLevel);
   }
 
-  Moyu32DecodedPacket _decodeMoves(Uint8List packet, DateTime receivedAt) {
+  Moyu32DecodedPacket _decodeMoves(
+    Uint8List packet,
+    PacketBitView bits,
+    DateTime receivedAt,
+  ) {
     if (_lastSerial == -1 || _awaitingResync) {
       return const Moyu32DecodedPacket();
     }
@@ -114,14 +124,14 @@ final class Moyu32PacketDecoder {
     final moves = <SmartCubeMoveEvent>[];
     var dataLoss = difference > 5;
     for (var index = count - 1; index >= 0; index--) {
-      final moveCode = _readBits(packet, 96 + index * 5, 5);
+      final moveCode = bits.read(96 + index * 5, 5);
       if (moveCode >= 12) {
         dataLoss = true;
         break;
       }
       final face = 'FBUDLR'[moveCode >> 1];
       final move = CubeMove.parse('$face${moveCode.isOdd ? "'" : ''}');
-      _cubeTimestampMs += _readBits(packet, 8 + index * 16, 16);
+      _cubeTimestampMs += bits.read(8 + index * 16, 16);
       final moveSerial = (serial - index) & 0xff;
       moves.add(
         SmartCubeMoveEvent(
@@ -137,21 +147,6 @@ final class Moyu32PacketDecoder {
     if (dataLoss) _awaitingResync = true;
     return Moyu32DecodedPacket(events: moves, dataLoss: dataLoss);
   }
-}
-
-int _readBits(Uint8List bytes, int startBit, int bitLength) {
-  if (startBit < 0 ||
-      bitLength <= 0 ||
-      startBit + bitLength > bytes.length * 8) {
-    throw const FormatException('MoYu32 packet field exceeds packet bounds.');
-  }
-  var result = 0;
-  for (var index = 0; index < bitLength; index++) {
-    final absoluteBit = startBit + index;
-    final bit = (bytes[absoluteBit ~/ 8] >> (7 - absoluteBit % 8)) & 1;
-    result = (result << 1) | bit;
-  }
-  return result;
 }
 
 const _moyu32Key = <int>[
