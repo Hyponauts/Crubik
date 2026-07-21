@@ -43,8 +43,10 @@ aligned whenever an approved decision changes the product direction.
 ## Architecture map
 
 - `lib/main.dart`: application entry point.
-- `lib/app/crubik_app.dart`: composition root; owns controllers/database and
-  forwards normalized smart-cube move and state streams to practice state.
+- `lib/app/crubik_app.dart`: composition root; owns the shared database,
+  controllers, and practice-input coordinator.
+- `lib/core/data/crubik_database.dart`: shared Drift schema plus concrete solve
+  history and remembered-cube persistence adapters.
 - `lib/features/cube/domain/cube_model.dart`: pure-Dart 54-sticker 3x3 model,
   URFDLB notation, transformations, and Kociemba facelet interchange.
 - `lib/features/cube/domain/scramble_generator.dart`: local practice scrambles.
@@ -64,14 +66,13 @@ aligned whenever an approved decision changes the product direction.
   boundary and production adapter orchestration.
 - `lib/features/cube/application/cube_connection_controller.dart`: discovery,
   physical connection lifecycle, and normalized event delivery to the UI.
-- `lib/features/practice/application/practice_input_controller.dart`: bridges
-  physical smart-cube events and demo selection into practice state.
+- `lib/features/practice/application/practice_input_coordinator.dart`: bridges
+  physical smart-cube events and cross-controller input selection into practice
+  state; connection presentation reads `CubeConnectionController` directly.
 - `lib/features/practice/application/practice_controller.dart`: timer, live
   cube state, and solve lifecycle.
 - `lib/features/practice/application/solve_history.dart`: statistics, JSON
   export, initialization merging, and serialized persistence writes.
-- `lib/features/practice/data/crubik_database.dart`: Drift schema and local
-  solve repository.
 - `lib/features/practice/presentation/practice_page.dart`: responsive practice
   experience; widths of 900 px and above use the desktop layout.
 - `lib/features/practice/presentation/widgets/isometric_cube.dart`: cube
@@ -131,7 +132,7 @@ storage and requires both `web/sqlite3.wasm` and
 `pubspec.lock`; do not upgrade Drift/sqlite3 or replace only one web artifact
 in isolation.
 
-`lib/features/practice/data/crubik_database.g.dart` is generated and committed.
+`lib/core/data/crubik_database.g.dart` is generated and committed.
 After changing Drift tables, migrations, or DAOs, run:
 
 ```sh

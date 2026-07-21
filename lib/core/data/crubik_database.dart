@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
-import '../../cube/application/remembered_cube_store.dart';
-import '../domain/solve_record.dart';
+import '../../features/cube/application/remembered_cube_store.dart';
+import '../../features/practice/domain/solve_record.dart';
 
 part 'crubik_database.g.dart';
 

@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/data/crubik_database.dart';
 import '../core/theme/app_theme.dart';
 import '../features/cube/application/cube_connection_controller.dart';
 import '../features/cube/data/ble_cube_connection_gateway.dart';
 import '../features/practice/application/practice_controller.dart';
-import '../features/practice/application/practice_input_controller.dart';
-import '../features/practice/data/crubik_database.dart';
+import '../features/practice/application/practice_input_coordinator.dart';
 import '../features/practice/presentation/practice_page.dart';
 
 class CrubikApp extends StatefulWidget {
@@ -27,7 +27,7 @@ class CrubikApp extends StatefulWidget {
 class _CrubikAppState extends State<CrubikApp> {
   late final PracticeController _practiceController;
   late final CubeConnectionController _connectionController;
-  late final PracticeInputController _inputController;
+  late final PracticeInputCoordinator _inputCoordinator;
   CrubikDatabase? _database;
   late final bool _ownsPracticeController;
   late final bool _ownsConnectionController;
@@ -53,7 +53,7 @@ class _CrubikAppState extends State<CrubikApp> {
               ? null
               : DriftRememberedCubeStore(_database!),
         );
-    _inputController = PracticeInputController(
+    _inputCoordinator = PracticeInputCoordinator(
       practiceController: _practiceController,
       connectionController: _connectionController,
     );
@@ -63,7 +63,7 @@ class _CrubikAppState extends State<CrubikApp> {
 
   @override
   void dispose() {
-    _inputController.dispose();
+    _inputCoordinator.dispose();
     if (_ownsPracticeController) {
       final database = _database;
       final flush = _practiceController.flushPersistence();
@@ -84,7 +84,8 @@ class _CrubikAppState extends State<CrubikApp> {
       theme: CrubikTheme.dark,
       home: PracticePage(
         practiceController: _practiceController,
-        inputController: _inputController,
+        inputCoordinator: _inputCoordinator,
+        connectionController: _connectionController,
       ),
     );
   }

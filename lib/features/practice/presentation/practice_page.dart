@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../cube/application/cube_connection_controller.dart';
 import '../application/practice_controller.dart';
-import '../application/practice_input_controller.dart';
+import '../application/practice_input_coordinator.dart';
 import 'practice_layout.dart';
 import 'sessions_view.dart';
 import 'widgets/practice_brand.dart';
@@ -14,12 +15,14 @@ import 'widgets/practice_panel.dart';
 class PracticePage extends StatefulWidget {
   const PracticePage({
     required this.practiceController,
-    required this.inputController,
+    required this.inputCoordinator,
+    required this.connectionController,
     super.key,
   });
 
   final PracticeController practiceController;
-  final PracticeInputController inputController;
+  final PracticeInputCoordinator inputCoordinator;
+  final CubeConnectionController connectionController;
 
   @override
   State<PracticePage> createState() => _PracticePageState();
@@ -31,7 +34,10 @@ class _PracticePageState extends State<PracticePage> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.inputController,
+      animation: Listenable.merge([
+        widget.practiceController,
+        widget.connectionController,
+      ]),
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -39,7 +45,8 @@ class _PracticePageState extends State<PracticePage> {
                 constraints.maxWidth >= CrubikLayout.desktopBreakpoint;
             final timerShortcutEnabled =
                 _selectedIndex == 0 &&
-                !widget.inputController.isUnselected &&
+                widget.practiceController.inputMode !=
+                    PracticeInputMode.unselected &&
                 widget.practiceController.pendingSolveReview == null;
             return CallbackShortcuts(
               bindings: timerShortcutEnabled
@@ -83,7 +90,7 @@ class _PracticePageState extends State<PracticePage> {
   Widget _buildMobile(BuildContext context) {
     final focusMode =
         _selectedIndex == 0 &&
-        !widget.inputController.isUnselected &&
+        widget.practiceController.inputMode != PracticeInputMode.unselected &&
         widget.practiceController.pendingSolveReview == null &&
         widget.practiceController.attemptInProgress;
     return Scaffold(
@@ -101,7 +108,8 @@ class _PracticePageState extends State<PracticePage> {
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: PracticeConnectionButton(
-                    input: widget.inputController,
+                    practice: widget.practiceController,
+                    connection: widget.connectionController,
                     onPressed: _showConnectionDialog,
                     compact: true,
                   ),
@@ -134,17 +142,18 @@ class _PracticePageState extends State<PracticePage> {
     if (_selectedIndex != 0) {
       return SessionsView(practice: widget.practiceController);
     }
-    if (widget.inputController.isUnselected) {
+    if (widget.practiceController.inputMode == PracticeInputMode.unselected) {
       return _InputModeChooser(
         desktop: true,
-        input: widget.inputController,
+        practice: widget.practiceController,
+        connection: widget.connectionController,
         onConnectPressed: _showConnectionDialog,
-        onDemoPressed: widget.inputController.useDemoCube,
+        onDemoPressed: widget.inputCoordinator.useDemoCube,
       );
     }
     return DesktopPracticeLayout(
       practice: widget.practiceController,
-      input: widget.inputController,
+      connection: widget.connectionController,
       onConnectPressed: _showConnectionDialog,
     );
   }
@@ -153,22 +162,30 @@ class _PracticePageState extends State<PracticePage> {
     if (_selectedIndex != 0) {
       return SessionsView(practice: widget.practiceController, mobile: true);
     }
-    if (widget.inputController.isUnselected) {
+    if (widget.practiceController.inputMode == PracticeInputMode.unselected) {
       return _InputModeChooser(
-        input: widget.inputController,
+        practice: widget.practiceController,
+        connection: widget.connectionController,
         onConnectPressed: _showConnectionDialog,
-        onDemoPressed: widget.inputController.useDemoCube,
+        onDemoPressed: widget.inputCoordinator.useDemoCube,
       );
     }
     final practice = MobilePracticeLayout(
       practice: widget.practiceController,
-      input: widget.inputController,
+      connection: widget.connectionController,
     );
     return focusMode ? SafeArea(child: practice) : practice;
   }
 
   Future<void> _showConnectionDialog() async {
-    await showPracticeConnectionDialog(context, input: widget.inputController);
+    await showPracticeConnectionDialog(
+      context,
+      practice: widget.practiceController,
+      connection: widget.connectionController,
+      onUseDemoCube: widget.inputCoordinator.useDemoCube,
+      onExitDemo: widget.inputCoordinator.exitDemo,
+      onConnect: widget.inputCoordinator.connect,
+    );
   }
 }
 
@@ -219,13 +236,15 @@ class _DesktopNavigation extends StatelessWidget {
 
 class _InputModeChooser extends StatelessWidget {
   const _InputModeChooser({
-    required this.input,
+    required this.practice,
+    required this.connection,
     required this.onConnectPressed,
     required this.onDemoPressed,
     this.desktop = false,
   });
 
-  final PracticeInputController input;
+  final PracticeController practice;
+  final CubeConnectionController connection;
   final VoidCallback onConnectPressed;
   final VoidCallback onDemoPressed;
   final bool desktop;
@@ -292,8 +311,9 @@ class _InputModeChooser extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (input.isAutomaticReconnectActive) ...[
-            _AutomaticReconnectCard(input: input),
+          if (connection.automaticReconnectPhase !=
+              AutomaticReconnectPhase.inactive) ...[
+            _AutomaticReconnectCard(connection: connection),
             const SizedBox(height: 12),
           ],
           PracticePanel(
@@ -335,7 +355,8 @@ class _InputModeChooser extends StatelessWidget {
             children: [
               const Expanded(child: PracticeBrand()),
               PracticeConnectionButton(
-                input: input,
+                practice: practice,
+                connection: connection,
                 onPressed: onConnectPressed,
               ),
             ],
@@ -369,14 +390,15 @@ class _InputModeChooser extends StatelessWidget {
 }
 
 class _AutomaticReconnectCard extends StatelessWidget {
-  const _AutomaticReconnectCard({required this.input});
+  const _AutomaticReconnectCard({required this.connection});
 
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
-    final searching = input.isAutomaticReconnectSearching;
-    final cubeName = input.automaticReconnectDeviceName;
+    final searching =
+        connection.automaticReconnectPhase == AutomaticReconnectPhase.searching;
+    final cubeName = connection.automaticReconnectDeviceName;
     final action = searching ? 'Looking for' : 'Connecting to';
     final title = '$action ${cubeName ?? 'your recent cube'}';
     final description = searching
@@ -439,7 +461,7 @@ class _AutomaticReconnectCard extends StatelessWidget {
               const SizedBox(width: 6),
               TextButton(
                 key: const Key('stop-automatic-reconnect'),
-                onPressed: input.stopAutomaticReconnect,
+                onPressed: connection.stopAutomaticReconnect,
                 child: const Text('Stop'),
               ),
             ],

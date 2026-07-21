@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../cube/application/cube_connection_controller.dart';
 import '../application/practice_controller.dart';
-import '../application/practice_input_controller.dart';
 import 'sessions_view.dart';
 import 'widgets/cube_3d_view.dart';
 import 'widgets/manual_move_input.dart';
@@ -18,13 +18,13 @@ import 'widgets/solve_controls.dart';
 class DesktopPracticeLayout extends StatelessWidget {
   const DesktopPracticeLayout({
     required this.practice,
-    required this.input,
+    required this.connection,
     required this.onConnectPressed,
     super.key,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
   final VoidCallback onConnectPressed;
 
   @override
@@ -40,7 +40,8 @@ class DesktopPracticeLayout extends StatelessWidget {
             children: [
               const Expanded(child: PracticeBrand()),
               PracticeConnectionButton(
-                input: input,
+                practice: practice,
+                connection: connection,
                 onPressed: onConnectPressed,
               ),
             ],
@@ -64,7 +65,7 @@ class DesktopPracticeLayout extends StatelessWidget {
                           height: height,
                           child: _PracticeAttemptStage(
                             practice: practice,
-                            input: input,
+                            connection: connection,
                             axis: Axis.horizontal,
                           ),
                         ),
@@ -91,7 +92,7 @@ class DesktopPracticeLayout extends StatelessWidget {
                                   else
                                     _DesktopPracticeHero(
                                       practice: practice,
-                                      input: input,
+                                      connection: connection,
                                     ),
                                   const SizedBox(height: 16),
                                   PracticeScramblePanel(practice: practice),
@@ -119,12 +120,12 @@ class DesktopPracticeLayout extends StatelessWidget {
 class MobilePracticeLayout extends StatelessWidget {
   const MobilePracticeLayout({
     required this.practice,
-    required this.input,
+    required this.connection,
     super.key,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -142,12 +143,18 @@ class MobilePracticeLayout extends StatelessWidget {
                         : 'mobile-focus-layout',
                   ),
                   practice: practice,
-                  input: input,
+                  connection: connection,
                   axis: landscape ? Axis.horizontal : Axis.vertical,
                 )
               : landscape
-              ? _MobilePreparationLandscape(practice: practice, input: input)
-              : _MobilePreparationPortrait(practice: practice, input: input),
+              ? _MobilePreparationLandscape(
+                  practice: practice,
+                  connection: connection,
+                )
+              : _MobilePreparationPortrait(
+                  practice: practice,
+                  connection: connection,
+                ),
         );
       },
     );
@@ -157,11 +164,11 @@ class MobilePracticeLayout extends StatelessWidget {
 class _MobilePreparationPortrait extends StatelessWidget {
   const _MobilePreparationPortrait({
     required this.practice,
-    required this.input,
+    required this.connection,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -174,7 +181,7 @@ class _MobilePreparationPortrait extends StatelessWidget {
             textScale >= CrubikLayout.largeTextScale;
         final showReadyAction =
             !reviewing &&
-            input.isDemo &&
+            practice.inputMode == PracticeInputMode.demo &&
             practice.phase == PracticePhase.manualReady;
         return Column(
           key: const Key('mobile-preparation-layout'),
@@ -192,7 +199,10 @@ class _MobilePreparationPortrait extends StatelessWidget {
               flex: compactHeight ? 7 : 6,
               child: reviewing
                   ? PracticeMobileReviewPanel(practice: practice)
-                  : _CompactCubePanel(practice: practice, input: input),
+                  : _CompactCubePanel(
+                      practice: practice,
+                      connection: connection,
+                    ),
             ),
             if (showReadyAction) ...[
               const SizedBox(height: 8),
@@ -213,18 +223,18 @@ class _MobilePreparationPortrait extends StatelessWidget {
 class _MobilePreparationLandscape extends StatelessWidget {
   const _MobilePreparationLandscape({
     required this.practice,
-    required this.input,
+    required this.connection,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
     final reviewing = practice.pendingSolveReview != null;
     final showReadyAction =
         !reviewing &&
-        input.isDemo &&
+        practice.inputMode == PracticeInputMode.demo &&
         practice.phase == PracticePhase.manualReady;
     return Row(
       key: const Key('mobile-preparation-landscape-layout'),
@@ -233,7 +243,7 @@ class _MobilePreparationLandscape extends StatelessWidget {
           flex: 5,
           child: reviewing
               ? PracticeMobileReviewPanel(practice: practice)
-              : _CompactCubePanel(practice: practice, input: input),
+              : _CompactCubePanel(practice: practice, connection: connection),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -269,13 +279,13 @@ class _MobilePreparationLandscape extends StatelessWidget {
 class _PracticeAttemptStage extends StatelessWidget {
   const _PracticeAttemptStage({
     required this.practice,
-    required this.input,
+    required this.connection,
     required this.axis,
     super.key,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
   final Axis axis;
 
   static const _minimumHorizontalWidth = 552.0;
@@ -294,7 +304,7 @@ class _PracticeAttemptStage extends StatelessWidget {
     }
 
     final showManualInput =
-        input.isDemo &&
+        practice.inputMode == PracticeInputMode.demo &&
         (practice.phase == PracticePhase.inspection ||
             practice.phase == PracticePhase.solving);
     if (axis == Axis.vertical) {
@@ -335,7 +345,10 @@ class _PracticeAttemptStage extends StatelessWidget {
   }
 
   Widget _buildPortrait(bool showManualInput, {double? cubeHeight}) {
-    final cubePanel = _CompactCubePanel(practice: practice, input: input);
+    final cubePanel = _CompactCubePanel(
+      practice: practice,
+      connection: connection,
+    );
     return Column(
       children: [
         PracticeTimerPanel(practice: practice),
@@ -362,7 +375,7 @@ class _PracticeAttemptStage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: _CompactCubePanel(practice: practice, input: input),
+          child: _CompactCubePanel(practice: practice, connection: connection),
         ),
         const SizedBox(width: 8),
         SizedBox(
@@ -415,10 +428,10 @@ class _ReadinessAttemptStage extends StatelessWidget {
 }
 
 class _CompactCubePanel extends StatelessWidget {
-  const _CompactCubePanel({required this.practice, required this.input});
+  const _CompactCubePanel({required this.practice, required this.connection});
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -441,7 +454,7 @@ class _CompactCubePanel extends StatelessWidget {
                 trailing: _CubeConnectionStatus(
                   key: const Key('cube-connection-status'),
                   practice: practice,
-                  input: input,
+                  connection: connection,
                 ),
               ),
               Expanded(
@@ -463,10 +476,13 @@ class _CompactCubePanel extends StatelessWidget {
 }
 
 class _DesktopPracticeHero extends StatelessWidget {
-  const _DesktopPracticeHero({required this.practice, required this.input});
+  const _DesktopPracticeHero({
+    required this.practice,
+    required this.connection,
+  });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
@@ -484,7 +500,7 @@ class _DesktopPracticeHero extends StatelessWidget {
             trailing: _CubeConnectionStatus(
               key: const Key('cube-connection-status'),
               practice: practice,
-              input: input,
+              connection: connection,
             ),
           ),
           if (!showAccessory)
@@ -527,23 +543,23 @@ class _DesktopCubeStage extends StatelessWidget {
 class _CubeConnectionStatus extends StatelessWidget {
   const _CubeConnectionStatus({
     required this.practice,
-    required this.input,
+    required this.connection,
     super.key,
   });
 
   final PracticeController practice;
-  final PracticeInputController input;
+  final CubeConnectionController connection;
 
   @override
   Widget build(BuildContext context) {
-    final color = input.isPhysicalCubeConnected
+    final color = connection.isConnected
         ? CrubikColors.lime
         : practice.smartCubeWorkflowActive
         ? CrubikColors.warning
         : CrubikColors.muted;
-    final label = input.isDemo
+    final label = practice.inputMode == PracticeInputMode.demo
         ? 'DEMO'
-        : input.isPhysicalCubeConnected
+        : connection.isConnected
         ? 'LINKED'
         : practice.smartCubeWorkflowActive
         ? 'RECONNECT'
