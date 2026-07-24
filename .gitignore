@@ -76,3 +76,8 @@ DerivedData/
 .env
 .env.*
 !.env.example
+
+# Flutter generated plugin registrant files
+**/flutter/generated_plugin_registrant.*
+**/flutter/generated_plugins.cmake
+macos/Flutter/GeneratedPluginRegistrant.swift
