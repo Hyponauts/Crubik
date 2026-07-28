@@ -12,6 +12,16 @@ targets:
                 - --no-source-maps
       crubik:drift_worker_copy:
         enabled: true
+      crubik:external_asset:
+        enabled: true
+        generate_for:
+          - tool/sqlite3_wasm_asset.json
+        options:
+          input_path: tool/sqlite3_wasm_asset.json
+          output_path: web/sqlite3.wasm
+          locked_package: sqlite3
+          timeout_seconds: 60
+          maximum_bytes: 5242880
 
 builders:
   drift_worker_copy:
@@ -25,3 +35,12 @@ builders:
     build_to: source
     required_inputs:
       - ".dart.js"
+  external_asset:
+    import: "tool/external_asset_fetcher.dart"
+    builder_factories:
+      - externalAssetFetcher
+    build_extensions:
+      "^tool/sqlite3_wasm_asset.json":
+        - "web/sqlite3.wasm"
+    auto_apply: none
+    build_to: source
