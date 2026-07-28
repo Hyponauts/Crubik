@@ -53,12 +53,14 @@ class PracticeConnectionButton extends StatelessWidget {
       key: const Key('connect-cube-button'),
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: isConnected ? CrubikColors.lime : CrubikColors.text,
+        foregroundColor: isConnected
+            ? CrubikColors.primaryAccent
+            : CrubikColors.text,
         side: BorderSide(
-          color: isConnected ? CrubikColors.lime : CrubikColors.border,
+          color: isConnected ? CrubikColors.primaryAccent : CrubikColors.border,
         ),
         backgroundColor: isConnected
-            ? CrubikColors.limeTintSubtle
+            ? CrubikColors.accentStatusBackground
             : CrubikColors.surface,
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 10 : 14,
@@ -155,12 +157,12 @@ class _ConnectionDialogHeader extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: CrubikColors.limeTintSoft,
+            color: CrubikColors.accentIconBackground,
             borderRadius: BorderRadius.circular(13),
           ),
           child: const Icon(
             Icons.bluetooth_searching,
-            color: CrubikColors.lime,
+            color: CrubikColors.primaryAccent,
           ),
         ),
         const SizedBox(width: 13),
@@ -338,13 +340,16 @@ class _ConnectedCubeCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CrubikColors.limeTintSubtle,
-        border: Border.all(color: CrubikColors.limeBorderStrong),
+        color: CrubikColors.accentStatusBackground,
+        border: Border.all(color: CrubikColors.activeInputBorder),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          const Icon(Icons.bluetooth_connected, color: CrubikColors.lime),
+          const Icon(
+            Icons.bluetooth_connected,
+            color: CrubikColors.primaryAccent,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -384,13 +389,13 @@ class _DemoInputCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CrubikColors.limeTintSubtle,
-        border: Border.all(color: CrubikColors.limeBorderStrong),
+        color: CrubikColors.accentStatusBackground,
+        border: Border.all(color: CrubikColors.activeInputBorder),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          const Icon(Icons.science_outlined, color: CrubikColors.lime),
+          const Icon(Icons.science_outlined, color: CrubikColors.primaryAccent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

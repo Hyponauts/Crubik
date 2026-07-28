@@ -33,7 +33,7 @@ class PracticeBrandMark extends StatelessWidget {
       width: 38,
       height: 38,
       decoration: BoxDecoration(
-        color: CrubikColors.lime,
+        color: CrubikColors.primaryAccent,
         borderRadius: BorderRadius.circular(11),
       ),
       child: const Icon(

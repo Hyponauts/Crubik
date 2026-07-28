@@ -48,12 +48,12 @@ final class CubeConnectionController extends ChangeNotifier {
   final StreamController<SmartCubeEvent> _eventController =
       StreamController.broadcast();
   final CubeConnectionDiagnostics _diagnostics = CubeConnectionDiagnostics();
-  Future<void> _scanOperations = Future.value();
+  Future<void> _scanOperationTail = Future.value();
   Timer? _scanTimeout;
   SmartCubeSession? _session;
   bool _closed = false;
-  var _scanAttempt = 0;
-  var _connectionAttempt = 0;
+  int _scanAttempt = 0;
+  int _connectionAttempt = 0;
   String? _automaticReconnectDeviceId;
   String? _automaticReconnectDeviceName;
   AutomaticReconnectPhase _automaticReconnectPhase =
@@ -185,6 +185,14 @@ final class CubeConnectionController extends ChangeNotifier {
           'Bluetooth permission was not granted.',
         );
       }
+      final bluetoothAvailable = await _gateway.isBluetoothAvailable();
+      if (!_isCurrentScanAttempt(scanAttempt)) return;
+      if (!bluetoothAvailable) {
+        throw const CubeConnectionFailure(
+          CubeConnectionFailureCode.bluetoothUnavailable,
+          'Bluetooth is not available.',
+        );
+      }
       await _startPlatformScan();
       if (!_isCurrentScanAttempt(scanAttempt)) {
         await _stopLateScanIfUnused();
@@ -232,6 +240,11 @@ final class CubeConnectionController extends ChangeNotifier {
   bool _isCurrentScanAttempt(int scanAttempt) =>
       !_closed && scanAttempt == _scanAttempt;
 
+  // Disconnecting, scanning, closing, or starting a newer connection can
+  // supersede work that is awaiting scan shutdown or session startup.
+  bool _isCurrentConnectionAttempt(int connectionAttempt) =>
+      !_closed && connectionAttempt == _connectionAttempt;
+
   Future<void> _stopLateScanIfUnused() async {
     if (_status == CubeConnectionStatus.scanning) return;
     await _stopPlatformScan();
@@ -249,8 +262,14 @@ final class CubeConnectionController extends ChangeNotifier {
   }
 
   Future<void> _scheduleScanOperation(Future<void> Function() operation) {
-    final scheduled = _scanOperations.then((_) => operation());
-    _scanOperations = scheduled.then<void>((_) {}, onError: (_, _) {});
+    final scheduled = _scanOperationTail.then((_) => operation());
+    // The caller receives `scheduled` and therefore observes its error. Only
+    // the private queue tail recovers so one platform failure cannot prevent a
+    // later start/stop operation from running.
+    _scanOperationTail = scheduled.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
     return scheduled;
   }
 
@@ -263,7 +282,7 @@ final class CubeConnectionController extends ChangeNotifier {
   }) async {
     final connectionAttempt = ++_connectionAttempt;
     await _stopScan(cancelAutomaticReconnect: !automaticReconnect);
-    if (_closed || connectionAttempt != _connectionAttempt) return;
+    if (!_isCurrentConnectionAttempt(connectionAttempt)) return;
     _errorMessage = null;
     _diagnostics.begin(platform: _platformName, device: device);
     if (!device.canConnect) {
@@ -279,7 +298,7 @@ final class CubeConnectionController extends ChangeNotifier {
       return;
     }
     await _releaseActiveSession();
-    if (_closed || connectionAttempt != _connectionAttempt) return;
+    if (!_isCurrentConnectionAttempt(connectionAttempt)) return;
     _prepareConnection(device);
 
     SmartCubeSession? openingSession;
@@ -289,7 +308,7 @@ final class CubeConnectionController extends ChangeNotifier {
         onDiagnostic: _diagnostics.add,
       );
       openingSession = session;
-      if (_closed || connectionAttempt != _connectionAttempt) {
+      if (!_isCurrentConnectionAttempt(connectionAttempt)) {
         _clearAutomaticReconnect();
         _diagnostics.add('connection.cancelled', 'request superseded');
         await session.close();
@@ -298,8 +317,7 @@ final class CubeConnectionController extends ChangeNotifier {
       _session = session;
       await _bindSession(session);
       await session.start();
-      if (_closed ||
-          connectionAttempt != _connectionAttempt ||
+      if (!_isCurrentConnectionAttempt(connectionAttempt) ||
           !identical(_session, session)) {
         return;
       }
@@ -491,11 +509,6 @@ final class CubeConnectionController extends ChangeNotifier {
   static String _friendlyError(Object error) {
     if (error is CubeConnectionFailure) {
       return _messageForFailure(error);
-    }
-    final message = error.toString().toLowerCase();
-    if (message.contains('permission')) return _permissionMessage;
-    if (message.contains('powered') || message.contains('available')) {
-      return _bluetoothUnavailableMessage;
     }
     return _connectionFailedMessage;
   }

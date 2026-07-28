@@ -7,13 +7,13 @@ abstract final class CrubikColors {
   static const border = Color(0xFF2A3036);
   static const text = Color(0xFFF2F5F3);
   static const muted = Color(0xFF919A9E);
-  static const lime = Color(0xFFB7F34A);
-  static const limeTintSubtle = Color(0x12B7F34A);
-  static const limeTintSoft = Color(0x16B7F34A);
-  static const limeIndicator = Color(0x22B7F34A);
-  static const limeBorderSoft = Color(0x55B7F34A);
-  static const limeBorderStrong = Color(0x66B7F34A);
-  static const cyan = Color(0xFF58D8DA);
+  static const primaryAccent = Color(0xFFB7F34A);
+  static const accentStatusBackground = Color(0x12B7F34A);
+  static const accentIconBackground = Color(0x16B7F34A);
+  static const navigationIndicator = Color(0x22B7F34A);
+  static const reconnectStatusBorder = Color(0x55B7F34A);
+  static const activeInputBorder = Color(0x66B7F34A);
+  static const secondaryAccent = Color(0xFF58D8DA);
   static const warning = Color(0xFFFFC857);
   static const danger = Color(0xFFFF6B6B);
 }
@@ -34,13 +34,13 @@ abstract final class CrubikTheme {
   static ThemeData get dark {
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: CrubikColors.lime,
+          seedColor: CrubikColors.primaryAccent,
           brightness: Brightness.dark,
           surface: CrubikColors.surface,
         ).copyWith(
-          primary: CrubikColors.lime,
+          primary: CrubikColors.primaryAccent,
           onPrimary: CrubikColors.background,
-          secondary: CrubikColors.cyan,
+          secondary: CrubikColors.secondaryAccent,
           surface: CrubikColors.surface,
           onSurface: CrubikColors.text,
           error: CrubikColors.danger,
@@ -94,8 +94,8 @@ abstract final class CrubikTheme {
       ),
       navigationRailTheme: const NavigationRailThemeData(
         backgroundColor: CrubikColors.background,
-        indicatorColor: CrubikColors.limeIndicator,
-        selectedIconTheme: IconThemeData(color: CrubikColors.lime),
+        indicatorColor: CrubikColors.navigationIndicator,
+        selectedIconTheme: IconThemeData(color: CrubikColors.primaryAccent),
         unselectedIconTheme: IconThemeData(color: CrubikColors.muted),
         selectedLabelTextStyle: TextStyle(
           color: CrubikColors.text,
@@ -105,7 +105,7 @@ abstract final class CrubikTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: CrubikColors.surface,
-        selectedItemColor: CrubikColors.lime,
+        selectedItemColor: CrubikColors.primaryAccent,
         unselectedItemColor: CrubikColors.muted,
         type: BottomNavigationBarType.fixed,
         elevation: 0,

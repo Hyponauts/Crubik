@@ -134,6 +134,47 @@ void main() {
     },
   );
 
+  test('explains how to recover when Bluetooth is unavailable', () async {
+    final gateway = _FakeCubeConnectionGateway(bluetoothAvailable: false);
+    final controller = CubeConnectionController(gateway: gateway);
+
+    await controller.startScan();
+
+    expect(gateway.scanStartCount, 0);
+    expect(controller.status, CubeConnectionStatus.error);
+    expect(
+      controller.errorMessage,
+      'Turn Bluetooth on, then try scanning again.',
+    );
+
+    await controller.close();
+    controller.dispose();
+  });
+
+  test(
+    'a failed scan reaches the controller and does not poison retries',
+    () async {
+      final gateway = _FakeCubeConnectionGateway(
+        scanStartError: StateError('service unavailable'),
+      );
+      final controller = CubeConnectionController(gateway: gateway);
+
+      await controller.startScan();
+
+      expect(controller.status, CubeConnectionStatus.error);
+      expect(controller.errorMessage, contains('Could not connect'));
+      expect(controller.errorMessage, isNot(contains('Turn Bluetooth on')));
+
+      await controller.startScan();
+
+      expect(gateway.scanStartCount, 2);
+      expect(controller.status, CubeConnectionStatus.scanning);
+
+      await controller.close();
+      controller.dispose();
+    },
+  );
+
   test('reconnects the remembered cube from a startup scan', () async {
     final gateway = _FakeCubeConnectionGateway();
     final store = _FakeRememberedCubeStore('gan-remembered', name: 'GAN12ui');
@@ -690,6 +731,7 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
     this.sessionStartGate,
     this.scanStartGate,
     this.scanStopGate,
+    this.scanStartError,
   });
 
   final _scanController = StreamController<CubeDeviceCandidate>.broadcast();
@@ -700,6 +742,7 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   final Completer<void>? sessionStartGate;
   final Completer<void>? scanStartGate;
   final Completer<void>? scanStopGate;
+  Object? scanStartError;
   int permissionRequestCount = 0;
   int scanStartCount = 0;
   int scanStopCount = 0;
@@ -744,6 +787,9 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   @override
   Future<void> startScan() async {
     scanStartCount++;
+    final error = scanStartError;
+    scanStartError = null;
+    if (error != null) throw error;
     await scanStartGate?.future;
   }
 

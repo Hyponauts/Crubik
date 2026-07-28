@@ -193,15 +193,18 @@ final class _Moyu32CubeSession extends BleSmartCubeSession {
   }
 
   static String _diagnosticMessageType(int opcode) => switch (opcode) {
-    0xa1 => 'message=info',
-    0xa3 => 'message=state',
-    0xa4 => 'message=battery',
-    0xa5 => 'message=moves',
+    moyu32InfoOpcode => 'message=info',
+    moyu32StateOpcode => 'message=state',
+    moyu32BatteryOpcode => 'message=battery',
+    moyu32MovesOpcode => 'message=moves',
     _ => 'message=unknown',
   };
 
   static bool _isRecognizedOpcode(int opcode) =>
-      opcode == 0xa1 || opcode == 0xa3 || opcode == 0xa4 || opcode == 0xa5;
+      opcode == moyu32InfoOpcode ||
+      opcode == moyu32StateOpcode ||
+      opcode == moyu32BatteryOpcode ||
+      opcode == moyu32MovesOpcode;
 
   void _requestResync() {
     if (isClosed || _resyncPending) return;

@@ -15,13 +15,17 @@ Protocol constants and behavior are adapted from the MIT-licensed `afedotov/gan-
 
 ## Generated artifacts
 
-After changing Drift tables, migrations, or DAOs, run:
+Generated Dart source is local build output and must not be committed. After
+`flutter pub get`, and after changing Drift tables, migrations, or DAOs, run:
 
 ```sh
 dart run build_runner build
 ```
 
-Platform plugin registrants are Flutter-generated; do not hand edit them unless a platform tool explicitly requires it.
+Platform plugin registrants and `*.g.dart` files are generated; do not hand edit
+them. Version-matched web runtime payloads such as `web/sqlite3.wasm` and
+`web/drift_worker.dart.js` remain committed because static deployments load them
+directly.
 
 ## UI and accessibility expectations
 
@@ -54,5 +58,5 @@ Native builds have additional local prerequisites: Android requires a configured
 - Follow the maintenance criteria in `docs/architecture.md` and update its explanations, tables, and diagrams in the same change whenever they are affected.
 - Keep the product vision aligned whenever an approved decision changes product direction.
 - Keep the cube device compatibility document aligned whenever protocol coverage, validation evidence, or release support changes.
-- Do not commit generated build output such as `build/`; only commit generated source/runtime artifacts already called out above when their inputs change.
+- Do not commit generated build output such as `build/` or `*.g.dart`. Commit only the generated runtime artifacts explicitly called out above when their inputs change.
 - For dependency or protocol code copied or adapted from another project, confirm license compatibility and update third-party notices in the same change.

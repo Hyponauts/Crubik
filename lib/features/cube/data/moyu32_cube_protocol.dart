@@ -11,6 +11,13 @@ import 'packet_bit_view.dart';
 const moyu32Service = '0783b03e-7735-b5a0-1760-a305d2795cb0';
 const moyu32ReadCharacteristic = '0783b03e-7735-b5a0-1760-a305d2795cb1';
 const moyu32WriteCharacteristic = '0783b03e-7735-b5a0-1760-a305d2795cb2';
+const moyu32InfoOpcode = 0xa1;
+const moyu32StateOpcode = 0xa3;
+const moyu32BatteryOpcode = 0xa4;
+const moyu32MovesOpcode = 0xa5;
+
+// The pinned csTimer implementation documents A1, A3, A4, and A5, but no A2
+// message. Keep A2 unknown until protocol evidence gives it a defined meaning.
 
 final class Moyu32CubeCipher {
   Moyu32CubeCipher({required List<int> macSalt})
@@ -48,11 +55,12 @@ final class Moyu32PacketDecoder {
   int _cubeTimestampMs = 0;
   bool _awaitingResync = false;
 
-  Uint8List get requestInfoCommand => Uint8List(20)..[0] = 0xa1;
+  Uint8List get requestInfoCommand => Uint8List(20)..[0] = moyu32InfoOpcode;
 
-  Uint8List get requestStateCommand => Uint8List(20)..[0] = 0xa3;
+  Uint8List get requestStateCommand => Uint8List(20)..[0] = moyu32StateOpcode;
 
-  Uint8List get requestBatteryCommand => Uint8List(20)..[0] = 0xa4;
+  Uint8List get requestBatteryCommand =>
+      Uint8List(20)..[0] = moyu32BatteryOpcode;
 
   Moyu32DecodedPacket decode(Uint8List packet, DateTime receivedAt) {
     if (packet.length != 20) {
@@ -60,9 +68,9 @@ final class Moyu32PacketDecoder {
     }
     final bits = PacketBitView(packet, protocolName: 'MoYu32');
     return switch (packet[0]) {
-      0xa3 => _decodeState(packet, bits, receivedAt),
-      0xa4 => _decodeBattery(packet),
-      0xa5 => _decodeMoves(packet, bits, receivedAt),
+      moyu32StateOpcode => _decodeState(packet, bits, receivedAt),
+      moyu32BatteryOpcode => _decodeBattery(packet),
+      moyu32MovesOpcode => _decodeMoves(packet, bits, receivedAt),
       _ => const Moyu32DecodedPacket(),
     };
   }

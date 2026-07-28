@@ -190,7 +190,7 @@ class _MobilePreparationPortrait extends StatelessWidget {
               flex: compactHeight ? 3 : 4,
               child: PracticeScramblePanel(
                 practice: practice,
-                compact: true,
+                density: ScramblePanelDensity.compact,
                 bounded: true,
               ),
             ),
@@ -253,8 +253,7 @@ class _MobilePreparationLandscape extends StatelessWidget {
               Expanded(
                 child: PracticeScramblePanel(
                   practice: practice,
-                  compact: true,
-                  dense: true,
+                  density: ScramblePanelDensity.dense,
                   fillHeight: true,
                   bounded: true,
                 ),
@@ -553,7 +552,7 @@ class _CubeConnectionStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = connection.isConnected
-        ? CrubikColors.lime
+        ? CrubikColors.primaryAccent
         : practice.smartCubeWorkflowActive
         ? CrubikColors.warning
         : CrubikColors.muted;

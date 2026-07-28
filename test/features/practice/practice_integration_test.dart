@@ -1639,6 +1639,50 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('unsupported cubes without curated copy use a safe fallback', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    final practice = PracticeController();
+    final gateway = _SilentCubeConnectionGateway();
+    final connection = CubeConnectionController(gateway: gateway);
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.tap(find.byKey(const Key('connect-cube-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan nearby'));
+    await tester.pump();
+
+    gateway.addDevice(
+      const CubeDeviceCandidate(
+        id: 'unsupported-cube',
+        name: 'Unsupported cube',
+        vendor: CubeVendor.moyu,
+        protocolFamily: CubeProtocolFamily.moyuMhc,
+        supportStatus: CubeSupportStatus.detectedUnsupported,
+        rssi: -40,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text('This smart-cube protocol is not supported yet.'),
+      findsOneWidget,
+    );
+    expect(find.text('Connect'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await connection.stopScan();
+    await tester.pump();
+  });
+
   testWidgets('failed connection offers redacted diagnostics export', (
     tester,
   ) async {

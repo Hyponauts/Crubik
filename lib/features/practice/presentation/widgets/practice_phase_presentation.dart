@@ -18,8 +18,8 @@ abstract final class PracticePhasePresentation {
     PracticePhase.needsSolvedCube => CrubikColors.warning,
     PracticePhase.scrambling ||
     PracticePhase.inspectionDelay ||
-    PracticePhase.inspection => CrubikColors.cyan,
-    PracticePhase.solving => CrubikColors.lime,
+    PracticePhase.inspection => CrubikColors.secondaryAccent,
+    PracticePhase.solving => CrubikColors.primaryAccent,
     PracticePhase.manualReady ||
     PracticePhase.awaitingCubeState => CrubikColors.muted,
   };

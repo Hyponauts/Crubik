@@ -215,7 +215,9 @@ class _PrimaryActionButton extends StatelessWidget {
       key: const Key('timer-toggle'),
       onPressed: practice.primaryActionEnabled ? practice.toggleTimer : null,
       style: FilledButton.styleFrom(
-        backgroundColor: aborting ? CrubikColors.danger : CrubikColors.lime,
+        backgroundColor: aborting
+            ? CrubikColors.danger
+            : CrubikColors.primaryAccent,
         foregroundColor: CrubikColors.background,
         minimumSize: const Size(0, 48),
         padding: EdgeInsets.symmetric(
@@ -292,7 +294,7 @@ class _ReadyActionContent extends StatelessWidget {
       key: const Key('timer-toggle'),
       onPressed: onStart,
       style: FilledButton.styleFrom(
-        backgroundColor: CrubikColors.lime,
+        backgroundColor: CrubikColors.primaryAccent,
         foregroundColor: CrubikColors.background,
         padding: EdgeInsets.symmetric(vertical: dense ? 10 : 14),
       ),
@@ -309,7 +311,7 @@ class _ReadyActionContent extends StatelessWidget {
           'READY',
           key: const Key('ready-action-label'),
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: CrubikColors.lime,
+            color: CrubikColors.primaryAccent,
             fontWeight: FontWeight.w700,
             letterSpacing: 1.8,
           ),
@@ -485,7 +487,7 @@ class _SolveReviewHeader extends StatelessWidget {
       child: Text(
         'SOLVE COMPLETE',
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: CrubikColors.lime,
+          color: CrubikColors.primaryAccent,
           fontWeight: FontWeight.w800,
           letterSpacing: dense ? 1.1 : 1.6,
           fontSize: dense ? 10 : null,
@@ -497,7 +499,7 @@ class _SolveReviewHeader extends StatelessWidget {
       children: [
         Icon(
           Icons.check_circle_rounded,
-          color: CrubikColors.lime,
+          color: CrubikColors.primaryAccent,
           size: dense ? 17 : 21,
         ),
         SizedBox(width: dense ? 5 : 7),
@@ -637,7 +639,7 @@ class _DismissSolveButton extends StatelessWidget {
       key: const Key('continue-after-solve'),
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: CrubikColors.lime,
+        backgroundColor: CrubikColors.primaryAccent,
         foregroundColor: CrubikColors.background,
         minimumSize: const Size(0, 48),
         visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,

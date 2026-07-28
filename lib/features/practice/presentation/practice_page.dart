@@ -258,12 +258,12 @@ class _InputModeChooser extends StatelessWidget {
       width: compactLandscape ? 52 : 64,
       height: compactLandscape ? 52 : 64,
       decoration: BoxDecoration(
-        color: CrubikColors.limeTintSoft,
+        color: CrubikColors.accentIconBackground,
         borderRadius: BorderRadius.circular(compactLandscape ? 16 : 20),
       ),
       child: Icon(
         Icons.view_in_ar_rounded,
-        color: CrubikColors.lime,
+        color: CrubikColors.primaryAccent,
         size: compactLandscape ? 28 : 34,
       ),
     );
@@ -413,8 +413,8 @@ class _AutomaticReconnectCard extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
         decoration: BoxDecoration(
-          color: CrubikColors.limeTintSubtle,
-          border: Border.all(color: CrubikColors.limeBorderSoft),
+          color: CrubikColors.accentStatusBackground,
+          border: Border.all(color: CrubikColors.reconnectStatusBorder),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -428,14 +428,14 @@ class _AutomaticReconnectCard extends StatelessWidget {
                     dimension: 36,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: CrubikColors.lime,
+                      color: CrubikColors.primaryAccent,
                     ),
                   ),
                   Icon(
                     searching
                         ? Icons.bluetooth_searching
                         : Icons.bluetooth_connected,
-                    color: CrubikColors.lime,
+                    color: CrubikColors.primaryAccent,
                     size: 18,
                   ),
                 ],

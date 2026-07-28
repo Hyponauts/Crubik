@@ -7,19 +7,34 @@ import 'practice_formatters.dart';
 import 'practice_panel.dart';
 import 'practice_phase_presentation.dart';
 
+enum ScramblePanelDensity {
+  full,
+  compact,
+  dense;
+
+  bool get isCompact => this != full;
+
+  bool get isDense => this == dense;
+
+  T layoutSize<T>({required T dense, required T compact, required T full}) =>
+      switch (this) {
+        ScramblePanelDensity.dense => dense,
+        ScramblePanelDensity.compact => compact,
+        ScramblePanelDensity.full => full,
+      };
+}
+
 class PracticeScramblePanel extends StatelessWidget {
   const PracticeScramblePanel({
     required this.practice,
-    this.compact = false,
-    this.dense = false,
+    this.density = ScramblePanelDensity.full,
     this.fillHeight = false,
     this.bounded = false,
     super.key,
   });
 
   final PracticeController practice;
-  final bool compact;
-  final bool dense;
+  final ScramblePanelDensity density;
   final bool fillHeight;
   final bool bounded;
 
@@ -30,20 +45,10 @@ class PracticeScramblePanel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ScrambleProgressText(
-          practice: practice,
-          compact: compact,
-          dense: dense,
-        ),
+        _ScrambleProgressText(practice: practice, density: density),
         if (practice.smartCubeWorkflowActive) ...[
-          SizedBox(
-            height: dense
-                ? 1
-                : compact
-                ? 5
-                : 14,
-          ),
-          _ScrambleGuidance(practice: practice, compact: compact, dense: dense),
+          SizedBox(height: density.layoutSize(dense: 1, compact: 5, full: 14)),
+          _ScrambleGuidance(practice: practice, density: density),
         ],
       ],
     );
@@ -53,14 +58,14 @@ class PracticeScramblePanel extends StatelessWidget {
           child: OutlinedButton.icon(
             key: const Key('new-scramble'),
             onPressed: canChangeScramble ? practice.newScramble : null,
-            style: compact
+            style: density.isCompact
                 ? OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   )
                 : null,
             icon: const Icon(Icons.shuffle_rounded, size: 18),
-            label: Text(compact ? 'New' : 'New scramble'),
+            label: Text(density.isCompact ? 'New' : 'New scramble'),
           ),
         ),
       ],
@@ -77,30 +82,18 @@ class PracticeScramblePanel extends StatelessWidget {
               ? 'PRACTICE SCRAMBLE'
               : 'NEXT PRACTICE SCRAMBLE',
         ),
-        SizedBox(
-          height: dense
-              ? 3
-              : compact
-              ? 7
-              : 14,
-        ),
+        SizedBox(height: density.layoutSize(dense: 3, compact: 7, full: 14)),
         scramble,
-        SizedBox(
-          height: dense
-              ? 3
-              : compact
-              ? 7
-              : 16,
-        ),
+        SizedBox(height: density.layoutSize(dense: 3, compact: 7, full: 16)),
         actions,
       ],
     );
 
     return PracticePanel(
       key: const Key('scramble-panel'),
-      padding: compact
-          ? EdgeInsets.all(dense ? 9 : 12)
-          : const EdgeInsets.all(18),
+      padding: EdgeInsets.all(
+        density.layoutSize(dense: 9, compact: 12, full: 18),
+      ),
       child: bounded
           ? SingleChildScrollView(
               key: const Key('scramble-content-scroll'),
@@ -112,15 +105,10 @@ class PracticeScramblePanel extends StatelessWidget {
 }
 
 class _ScrambleProgressText extends StatelessWidget {
-  const _ScrambleProgressText({
-    required this.practice,
-    required this.compact,
-    required this.dense,
-  });
+  const _ScrambleProgressText({required this.practice, required this.density});
 
   final PracticeController practice;
-  final bool compact;
-  final bool dense;
+  final ScramblePanelDensity density;
 
   @override
   Widget build(BuildContext context) {
@@ -148,16 +136,8 @@ class _ScrambleProgressText extends StatelessWidget {
           '${practice.scramble}',
       child: Wrap(
         key: const Key('scramble-text'),
-        spacing: dense
-            ? 2
-            : compact
-            ? 3
-            : 5,
-        runSpacing: dense
-            ? 2
-            : compact
-            ? 3
-            : 5,
+        spacing: density.layoutSize(dense: 2, compact: 3, full: 5),
+        runSpacing: density.layoutSize(dense: 2, compact: 3, full: 5),
         children: [
           for (var index = 0; index < completed; index++)
             _ScrambleMoveToken(
@@ -167,8 +147,7 @@ class _ScrambleProgressText extends StatelessWidget {
               next: false,
               partialTurns: 0,
               recovery: false,
-              compact: compact,
-              dense: dense,
+              density: density,
             ),
           for (var index = 0; index < recoveryMoves.length; index++)
             _ScrambleMoveToken(
@@ -178,8 +157,7 @@ class _ScrambleProgressText extends StatelessWidget {
               next: index == 0,
               partialTurns: 0,
               recovery: true,
-              compact: compact,
-              dense: dense,
+              density: density,
             ),
           for (var index = completed; index < moves.length; index++)
             _ScrambleMoveToken(
@@ -189,8 +167,7 @@ class _ScrambleProgressText extends StatelessWidget {
               next: showNext && index == completed,
               partialTurns: index == completed ? partialTurns : 0,
               recovery: false,
-              compact: compact,
-              dense: dense,
+              density: density,
             ),
         ],
       ),
@@ -206,8 +183,7 @@ class _ScrambleMoveToken extends StatelessWidget {
     required this.next,
     required this.partialTurns,
     required this.recovery,
-    required this.compact,
-    required this.dense,
+    required this.density,
   });
 
   final CubeMove move;
@@ -216,8 +192,7 @@ class _ScrambleMoveToken extends StatelessWidget {
   final bool next;
   final int partialTurns;
   final bool recovery;
-  final bool compact;
-  final bool dense;
+  final ScramblePanelDensity density;
 
   @override
   Widget build(BuildContext context) {
@@ -228,9 +203,9 @@ class _ScrambleMoveToken extends StatelessWidget {
     final color = recovery
         ? CrubikColors.warning
         : completed || partiallyCompleted
-        ? CrubikColors.lime
+        ? CrubikColors.primaryAccent
         : next
-        ? CrubikColors.cyan
+        ? CrubikColors.secondaryAccent
         : CrubikColors.text;
     return Semantics(
       label:
@@ -255,40 +230,32 @@ class _ScrambleMoveToken extends StatelessWidget {
               ? null
               : Key('scramble-step-$index'),
           padding: EdgeInsets.symmetric(
-            horizontal: dense
-                ? 2
-                : compact
-                ? 3
-                : 5,
-            vertical: dense
-                ? 1
-                : compact
-                ? 2
-                : 3,
+            horizontal: density.layoutSize(dense: 2, compact: 3, full: 5),
+            vertical: density.layoutSize(dense: 1, compact: 2, full: 3),
           ),
           decoration: BoxDecoration(
             color: recovery
                 ? CrubikColors.warning.withValues(alpha: next ? 0.22 : 0.12)
                 : completed
-                ? CrubikColors.lime.withValues(alpha: 0.14)
+                ? CrubikColors.primaryAccent.withValues(alpha: 0.14)
                 : null,
             gradient: recovery
                 ? null
                 : partiallyCompleted
                 ? LinearGradient(
                     colors: [
-                      CrubikColors.lime.withValues(alpha: 0.24),
-                      CrubikColors.lime.withValues(alpha: 0.24),
-                      CrubikColors.cyan.withValues(alpha: 0.10),
-                      CrubikColors.cyan.withValues(alpha: 0.10),
+                      CrubikColors.primaryAccent.withValues(alpha: 0.24),
+                      CrubikColors.primaryAccent.withValues(alpha: 0.24),
+                      CrubikColors.secondaryAccent.withValues(alpha: 0.10),
+                      CrubikColors.secondaryAccent.withValues(alpha: 0.10),
                     ],
                     stops: [0, partialFraction, partialFraction, 1],
                   )
                 : next
                 ? LinearGradient(
                     colors: [
-                      CrubikColors.cyan.withValues(alpha: 0.10),
-                      CrubikColors.cyan.withValues(alpha: 0.10),
+                      CrubikColors.secondaryAccent.withValues(alpha: 0.10),
+                      CrubikColors.secondaryAccent.withValues(alpha: 0.10),
                     ],
                   )
                 : null,
@@ -301,9 +268,13 @@ class _ScrambleMoveToken extends StatelessWidget {
                     width: next ? 1.5 : 1,
                   )
                 : partiallyCompleted
-                ? Border.all(color: CrubikColors.lime.withValues(alpha: 0.8))
+                ? Border.all(
+                    color: CrubikColors.primaryAccent.withValues(alpha: 0.8),
+                  )
                 : next
-                ? Border.all(color: CrubikColors.cyan.withValues(alpha: 0.7))
+                ? Border.all(
+                    color: CrubikColors.secondaryAccent.withValues(alpha: 0.7),
+                  )
                 : null,
           ),
           child: Text(
@@ -311,11 +282,7 @@ class _ScrambleMoveToken extends StatelessWidget {
             style: TextStyle(
               color: color,
               fontFamily: 'monospace',
-              fontSize: dense
-                  ? 15
-                  : compact
-                  ? 18
-                  : 20,
+              fontSize: density.layoutSize(dense: 15, compact: 18, full: 20),
               fontWeight: recovery
                   ? next
                         ? FontWeight.w900
@@ -324,7 +291,7 @@ class _ScrambleMoveToken extends StatelessWidget {
                   ? FontWeight.w800
                   : FontWeight.w600,
               decoration: completed ? TextDecoration.lineThrough : null,
-              decorationColor: CrubikColors.lime,
+              decorationColor: CrubikColors.primaryAccent,
               decorationThickness: 1.5,
             ),
           ),
@@ -335,15 +302,10 @@ class _ScrambleMoveToken extends StatelessWidget {
 }
 
 class _ScrambleGuidance extends StatelessWidget {
-  const _ScrambleGuidance({
-    required this.practice,
-    required this.compact,
-    required this.dense,
-  });
+  const _ScrambleGuidance({required this.practice, required this.density});
 
   final PracticeController practice;
-  final bool compact;
-  final bool dense;
+  final ScramblePanelDensity density;
 
   @override
   Widget build(BuildContext context) {
@@ -390,9 +352,11 @@ class _ScrambleGuidance extends StatelessWidget {
       child: Container(
         key: const Key('scramble-guidance'),
         width: double.infinity,
-        padding: dense
+        padding: density.isDense
             ? const EdgeInsets.symmetric(horizontal: 4, vertical: 2)
-            : EdgeInsets.all(compact ? 7 : 11),
+            : EdgeInsets.all(
+                density.layoutSize(dense: 2, compact: 7, full: 11),
+              ),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
@@ -400,14 +364,14 @@ class _ScrambleGuidance extends StatelessWidget {
         ),
         child: Row(
           children: [
-            if (!dense) ...[
+            if (!density.isDense) ...[
               Icon(
                 correction
                     ? Icons.warning_amber_rounded
                     : practice.phase == PracticePhase.needsSolvedCube
                     ? Icons.restart_alt_rounded
                     : Icons.route_rounded,
-                size: compact ? 15 : 18,
+                size: density.layoutSize(dense: 15, compact: 15, full: 18),
                 color: color,
               ),
               const SizedBox(width: 6),
@@ -421,8 +385,8 @@ class _ScrambleGuidance extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: color,
                   fontWeight: FontWeight.w700,
-                  fontSize: dense ? 10 : null,
-                  height: dense ? 1 : null,
+                  fontSize: density.isDense ? 10 : null,
+                  height: density.isDense ? 1 : null,
                 ),
               ),
             ),
