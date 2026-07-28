@@ -9,6 +9,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('scramble panel densities resolve full, compact, and dense sizes', () {
+    expect(
+      ScramblePanelDensity.full.layoutSize(dense: 15, compact: 18, full: 20),
+      20,
+    );
+    expect(
+      ScramblePanelDensity.compact.layoutSize(dense: 15, compact: 18, full: 20),
+      18,
+    );
+    expect(
+      ScramblePanelDensity.dense.layoutSize(dense: 15, compact: 18, full: 20),
+      15,
+    );
+  });
+
   testWidgets('describes the configured pre-inspection delay', (tester) async {
     final practice = PracticeController(
       scrambleGenerator: ScrambleGenerator(random: Random(11)),
@@ -56,8 +71,7 @@ void main() {
               animation: practice,
               builder: (context, _) => PracticeScramblePanel(
                 practice: practice,
-                compact: true,
-                dense: true,
+                density: ScramblePanelDensity.dense,
                 fillHeight: true,
               ),
             ),

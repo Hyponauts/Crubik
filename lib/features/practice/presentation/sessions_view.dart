@@ -28,7 +28,7 @@ class SessionSidebar extends StatelessWidget {
                     child: _StatValue(
                       label: 'BEST',
                       value: formatOptionalPracticeDuration(practice.bestTime),
-                      accent: CrubikColors.lime,
+                      accent: CrubikColors.primaryAccent,
                     ),
                   ),
                   Expanded(
@@ -173,7 +173,7 @@ class _MobileStats extends StatelessWidget {
             child: _StatValue(
               label: 'BEST',
               value: formatOptionalPracticeDuration(practice.bestTime),
-              accent: CrubikColors.lime,
+              accent: CrubikColors.primaryAccent,
             ),
           ),
           Expanded(

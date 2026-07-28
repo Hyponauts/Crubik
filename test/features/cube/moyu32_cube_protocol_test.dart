@@ -38,11 +38,21 @@ void main() {
     final decoder = Moyu32PacketDecoder();
 
     expect(decoder.requestInfoCommand, hasLength(20));
-    expect(decoder.requestInfoCommand.first, 0xa1);
+    expect(decoder.requestInfoCommand.first, moyu32InfoOpcode);
     expect(decoder.requestStateCommand, hasLength(20));
-    expect(decoder.requestStateCommand.first, 0xa3);
+    expect(decoder.requestStateCommand.first, moyu32StateOpcode);
     expect(decoder.requestBatteryCommand, hasLength(20));
-    expect(decoder.requestBatteryCommand.first, 0xa4);
+    expect(decoder.requestBatteryCommand.first, moyu32BatteryOpcode);
+  });
+
+  test('decoder keeps undocumented opcode A2 unknown', () {
+    final packet = Uint8List(20)..first = 0xa2;
+
+    final decoded = Moyu32PacketDecoder().decode(packet, DateTime.utc(2026));
+
+    expect(decoded.events, isEmpty);
+    expect(decoded.batteryLevel, isNull);
+    expect(decoded.dataLoss, isFalse);
   });
 
   test('decoder maps solved and scrambled facelets into URFDLB state', () {

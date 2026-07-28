@@ -280,6 +280,15 @@ class _Cube3DPainter extends CustomPainter {
   static const _stickerOffset = 0.472;
   static const _stickerHalfSize = 0.375;
   static const _cameraDistance = 6.8;
+  // Signed camera-space components point the light left, up, and toward the
+  // viewer; the negative x component is intentional direction, not a color.
+  static const _lightDirection = _Vec3(-0.32, 0.68, 0.66);
+  static const _cubeletShadowColor = Color(0xFF090B0D);
+  static const _cubeletHighlightColor = Color(0xFF292F33);
+  static const _cubeletAmbientMix = 0.35;
+  static const _cubeletDiffuseMix = 0.5;
+  static const _stickerAmbientLightnessScale = 0.76;
+  static const _stickerDiffuseLightnessScale = 0.28;
   static const _faceNormals = [
     _Vec3(1, 0, 0),
     _Vec3(-1, 0, 0),
@@ -467,19 +476,21 @@ class _Cube3DPainter extends CustomPainter {
   }
 
   static Color _litColor(Color color, _Vec3 normal, bool isSticker) {
-    const light = _Vec3(-0.32, 0.68, 0.66);
-    final brightness = math.max(0.0, normal.dot(light));
+    final brightness = math.max(0.0, normal.dot(_lightDirection));
     if (!isSticker) {
       return Color.lerp(
-        const Color(0xFF090B0D),
-        const Color(0xFF292F33),
-        0.35 + brightness * 0.5,
+        _cubeletShadowColor,
+        _cubeletHighlightColor,
+        _cubeletAmbientMix + brightness * _cubeletDiffuseMix,
       )!;
     }
     final hsl = HSLColor.fromColor(color);
     return hsl
         .withLightness(
-          (hsl.lightness * (0.76 + brightness * 0.28)).clamp(0.0, 1.0),
+          (hsl.lightness *
+                  (_stickerAmbientLightnessScale +
+                      brightness * _stickerDiffuseLightnessScale))
+              .clamp(0.0, 1.0),
         )
         .toColor();
   }

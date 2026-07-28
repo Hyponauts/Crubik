@@ -77,8 +77,7 @@ List<int> cubeMacSalt(String macAddress) {
   }
   return normalized
       .split(':')
-      .map((part) => int.parse(part, radix: 16))
-      .toList(growable: false)
       .reversed
+      .map((part) => int.parse(part, radix: 16))
       .toList(growable: false);
 }

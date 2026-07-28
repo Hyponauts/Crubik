@@ -25,18 +25,34 @@ Current protocol coverage, compatibility evidence, physical-device compatibility
 
 ```sh
 flutter pub get
+dart run build_runner build
 flutter run
 flutter analyze
 flutter test
 ```
 
-The generated Drift schema is committed. After changing the database tables, regenerate it with:
+Generated Drift Dart source is intentionally excluded from Git. Generate it
+after dependency setup and whenever database tables, migrations, or DAOs change:
 
 ```sh
 dart run build_runner build
 ```
 
-The web build includes `sqlite3.wasm` matching the locked `sqlite3` dependency and a worker compiled from the locked Drift version.
+For active schema work, `dart run build_runner watch` keeps the local source
+current.
+
+The web build includes two committed runtime payloads because a static/offline
+deployment loads them directly:
+
+- `web/drift_worker.dart.js` is compiled from `web/drift_worker.dart` with
+  `dart compile js -O4 web/drift_worker.dart -o web/drift_worker.dart.js`.
+- `web/sqlite3.wasm` comes from the upstream release matching the locked
+  `sqlite3` package (`2.9.4`). Its SHA-256 checksum is
+  `922a76b182b6af69b030c8e2fdd3283ecc8e827248b20e4b1f3f3db170b52117`.
+
+When either dependency changes, regenerate or download the matching payload,
+update the checksum above, build the web app, and test database startup in a
+browser before committing the runtime artifact.
 
 ## Product documentation
 
