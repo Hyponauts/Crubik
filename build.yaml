@@ -1,0 +1,27 @@
+targets:
+  $default:
+    builders:
+      build_web_compilers:entrypoint:
+        generate_for:
+          - web/drift_worker_entrypoint.dart
+        options:
+          compilers:
+            dart2js:
+              args:
+                - -O4
+                - --no-source-maps
+      crubik:drift_worker_copy:
+        enabled: true
+
+builders:
+  drift_worker_copy:
+    import: "tool/drift_worker_copy_builder.dart"
+    builder_factories:
+      - driftWorkerCopyBuilder
+    build_extensions:
+      "web/drift_worker_entrypoint.dart.js":
+        - "web/drift_worker.dart.js"
+    auto_apply: none
+    build_to: source
+    required_inputs:
+      - ".dart.js"
