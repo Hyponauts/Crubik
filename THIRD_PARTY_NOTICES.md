@@ -41,7 +41,8 @@ this entry records the protocol research source and its license.
 
 ## Drift web worker
 
-`web/drift_worker.dart.js` is compiled from Drift 2.31.0.
+`web/drift_worker.dart.js` is generated locally from
+`web/drift_worker_entrypoint.dart` and Drift 2.31.0.
 
 MIT License
 

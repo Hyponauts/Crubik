@@ -1,3 +1,2 @@
-# Browser runtime artifacts are generated but intentionally deployed from Git.
-web/drift_worker.dart.js linguist-generated=true
+# Committed browser runtime artifact.
 web/sqlite3.wasm binary linguist-generated=true
