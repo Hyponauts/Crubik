@@ -1,0 +1,249 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  # Create GitHub Release and attach all build artifacts
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate build_runner artifacts
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Run quality checks
+        run: |
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+
+      # Build all platforms
+      - name: Build Web
+        run: flutter build web --release
+
+      - name: Create Web archive
+        run: |
+          cd build/web
+          zip -r ../../crubik-web-${{ steps.get_version.outputs.version }}.zip .
+          cd ../..
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release
+
+      - name: Rename Android artifacts
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk build/crubik-android-${{ steps.get_version.outputs.version }}.apk
+          cp build/app/outputs/bundle/release/app-release.aab build/crubik-android-${{ steps.get_version.outputs.version }}.aab
+
+      # Build Windows
+      - name: Build Windows
+        if: runner.os == 'Linux'
+        run: echo "Windows build requires Windows runner - skipping on Linux"
+        continue-on-error: true
+
+      # Build macOS
+      - name: Build macOS
+        if: runner.os == 'Linux'
+        run: echo "macOS build requires macOS runner - skipping on Linux"
+        continue-on-error: true
+
+      # Build Linux
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Create Linux archive
+        run: |
+          cd build/linux/x64/release/bundle
+          tar -czf ../../../../../crubik-linux-x64-${{ steps.get_version.outputs.version }}.tar.gz *
+          cd ../../../../../
+
+      # Generate release notes
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "First release"
+            NOTES="First release of Crubik v${{ steps.get_version.outputs.version }}"
+          else
+            echo "Generating changelog from $PREVIOUS_TAG to ${GITHUB_REF#refs/tags/}"
+            NOTES=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s" --no-merges)
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # Create GitHub Release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body: |
+            # Crubik ${{ steps.get_version.outputs.version }}
+            
+            ## Changes
+            ${{ steps.release_notes.outputs.notes }}
+            
+            ## Downloads
+            
+            ### Mobile
+            - **Android APK**: `crubik-android-${{ steps.get_version.outputs.version }}.apk`
+            - **Android App Bundle**: `crubik-android-${{ steps.get_version.outputs.version }}.aab`
+            
+            ### Desktop
+            - **Linux**: `crubik-linux-x64-${{ steps.get_version.outputs.version }}.tar.gz`
+            
+            ### Web
+            - **Web Archive**: `crubik-web-${{ steps.get_version.outputs.version }}.zip`
+            - **Live Web App**: Available at GitHub Pages
+            
+            ---
+            
+            **Note**: Windows and macOS builds are available as artifacts from the CI workflow but require platform-specific runners for release builds.
+          files: |
+            crubik-web-${{ steps.get_version.outputs.version }}.zip
+            crubik-android-${{ steps.get_version.outputs.version }}.apk
+            crubik-android-${{ steps.get_version.outputs.version }}.aab
+            crubik-linux-x64-${{ steps.get_version.outputs.version }}.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build Windows for release (runs on Windows runner)
+  build-windows-release:
+    name: Build Windows for Release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate build_runner artifacts
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Create Windows archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath crubik-windows-x64-${{ steps.get_version.outputs.version }}.zip
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: crubik-windows-x64-${{ steps.get_version.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build macOS for release (runs on macOS runner)
+  build-macos-release:
+    name: Build macOS for Release
+    runs-on: macos-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate build_runner artifacts
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS app
+        run: flutter build macos --release
+
+      - name: Create macOS archive
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../crubik-macos-universal-${{ steps.get_version.outputs.version }}.zip crubik.app
+          cd ../../../../../
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: crubik-macos-universal-${{ steps.get_version.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
