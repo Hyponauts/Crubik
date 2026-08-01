@@ -76,7 +76,6 @@ void main() {
       expect(downloaded, isFalse);
       expect(result.outputs, isEmpty);
     });
-
   });
 
   group('fetchExternalAsset', () {
@@ -149,14 +148,13 @@ const _inputPath = 'tool/sqlite3_wasm_asset.json';
 const _outputPath = 'web/sqlite3.wasm';
 const _downloadUri = 'https://example.com/asset.bin';
 
-ExternalAssetFetcher _fetcher({
-  required ExternalAssetDownloader downloader,
-}) => ExternalAssetFetcher(
-  inputPath: _inputPath,
-  outputPath: _outputPath,
-  lockedPackage: 'sqlite3',
-  downloader: downloader,
-);
+ExternalAssetFetcher _fetcher({required ExternalAssetDownloader downloader}) =>
+    ExternalAssetFetcher(
+      inputPath: _inputPath,
+      outputPath: _outputPath,
+      lockedPackage: 'sqlite3',
+      downloader: downloader,
+    );
 
 Future<TestBuilderResult> _runFailingFetcher({
   required String metadata,
@@ -184,14 +182,9 @@ packages:
 ''',
 };
 
-String _metadataFor(
-  List<int> bytes, {
-  String url = _downloadUri,
-}) => jsonEncode({
-  'version': '2.9.4',
-  'url': url,
-  'sha256': sha256.convert(bytes).toString(),
-});
+String _metadataFor(List<int> bytes, {String url = _downloadUri}) => jsonEncode(
+  {'version': '2.9.4', 'url': url, 'sha256': sha256.convert(bytes).toString()},
+);
 
 Uri _serverUri(HttpServer server) =>
     Uri.parse('http://${server.address.address}:${server.port}/asset.bin');
