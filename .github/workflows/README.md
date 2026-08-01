@@ -87,14 +87,39 @@ Creates GitHub releases with all platform builds attached when version tags are 
 
 ## Setup Requirements
 
+### Global Configuration Variables
+
+Both workflows use global environment variables for easier maintenance:
+
+#### Version Control Variables
+- `FLUTTER_VERSION`: Flutter SDK version (currently `3.44.6`)
+- `TIMEOUT_MINUTES_DEFAULT`: Default job timeout (30 minutes)
+- `TIMEOUT_MINUTES_BUILD`: Build job timeout (45 minutes)
+
+#### Action Version Variables
+- `CHECKOUT_ACTION_VERSION`: GitHub checkout action version (`v4`)
+- `FLUTTER_ACTION_VERSION`: Flutter setup action version (`v2`)
+- `SETUP_JAVA_ACTION_VERSION`: Java setup action version (`v4`)
+- `UPLOAD_ARTIFACT_ACTION_VERSION`: Upload artifact action version (`v4.5.0`)
+- `DOWNLOAD_ARTIFACT_ACTION_VERSION`: Download artifact action version (`v4.1.3`)
+- `CODECOV_ACTION_VERSION`: Codecov action version (`v4`)
+- `CONFIGURE_PAGES_ACTION_VERSION`: Configure Pages action version (`v5`)
+- `UPLOAD_PAGES_ARTIFACT_ACTION_VERSION`: Upload Pages artifact action version (`v3`)
+- `DEPLOY_PAGES_ACTION_VERSION`: Deploy Pages action version (`v4`)
+
+To update any version, modify the `env:` section at the top of the workflow file.
+
 ### Repository Settings
 
 #### 1. Enable GitHub Pages
-To enable web deployment:
-1. Go to **Settings** → **Pages**
-2. Under "Build and deployment":
+**Note**: GitHub Pages deployment is currently disabled in the workflow (`if: false`) as it requires a paid subscription.
+
+To enable web deployment when available:
+1. Remove the `if: false` condition from the `deploy-web` job in `ci.yml`
+2. Go to **Settings** → **Pages**
+3. Under "Build and deployment":
    - Source: **GitHub Actions**
-3. Save changes
+4. Save changes
 
 The web app will be available at: `https://<username>.github.io/<repository>/`
 
@@ -244,10 +269,33 @@ To update the Flutter version used in CI:
    }
    ```
 
-2. Update all workflow files (`.github/workflows/*.yml`):
+2. Update the `FLUTTER_VERSION` environment variable in both workflow files:
    ```yaml
-   flutter-version: '3.xx.x'
+   env:
+     FLUTTER_VERSION: '3.xx.x'
    ```
+
+### Updating Action Versions
+All action versions are centralized in the `env:` section at the top of each workflow file. To update:
+
+1. Locate the action version variable (e.g., `UPLOAD_ARTIFACT_ACTION_VERSION`)
+2. Update the version in the `env:` section
+3. The change will automatically apply to all jobs using that action
+
+Example:
+```yaml
+env:
+  UPLOAD_ARTIFACT_ACTION_VERSION: 'v4.6.0'  # Update this
+```
+
+### Updating Timeout Values
+Timeout values are also centralized:
+
+```yaml
+env:
+  TIMEOUT_MINUTES_DEFAULT: 30  # For quality checks and web builds
+  TIMEOUT_MINUTES_BUILD: 45    # For platform builds
+```
 
 ### Adding New Build Targets
 To add support for new platforms:
