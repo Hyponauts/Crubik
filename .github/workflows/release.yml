@@ -8,7 +8,6 @@ on:
 
 env:
   FLUTTER_VERSION: '3.44.6'
-  TIMEOUT_MINUTES_BUILD: 45
   # Action versions
   CHECKOUT_ACTION_VERSION: 'v4'
   FLUTTER_ACTION_VERSION: 'v2'
@@ -168,7 +167,7 @@ jobs:
   build-windows-release:
     name: Build Windows for Release
     runs-on: windows-latest
-    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
+    timeout-minutes: 45
     
     steps:
       - name: Checkout repository
@@ -214,7 +213,7 @@ jobs:
   build-macos-release:
     name: Build macOS for Release
     runs-on: macos-latest
-    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
+    timeout-minutes: 45
     
     steps:
       - name: Checkout repository
