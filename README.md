@@ -1,5 +1,7 @@
 # Crubik
 
+[![codecov](https://codecov.io/gh/Hyponauts/Crubik/graph/badge.svg?token=OUWHSOUDOH)](https://codecov.io/gh/Hyponauts/Crubik)
+
 Crubik is an offline-first Flutter companion for Bluetooth smart cubes. The MVP keeps the complete practice loop on-device: connect a cube, follow a scramble, watch turns update a live 3x3 model, time the solve, and retain the session without an account or network connection.
 
 ## MVP capabilities
