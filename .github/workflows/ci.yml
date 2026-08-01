@@ -13,21 +13,36 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FLUTTER_VERSION: '3.44.6'
+  TIMEOUT_MINUTES_DEFAULT: 30
+  TIMEOUT_MINUTES_BUILD: 45
+  # Action versions
+  CHECKOUT_ACTION_VERSION: 'v4'
+  FLUTTER_ACTION_VERSION: 'v2'
+  SETUP_JAVA_ACTION_VERSION: 'v4'
+  UPLOAD_ARTIFACT_ACTION_VERSION: 'v4.5.0'
+  DOWNLOAD_ARTIFACT_ACTION_VERSION: 'v4.1.3'
+  CODECOV_ACTION_VERSION: 'v4'
+  CONFIGURE_PAGES_ACTION_VERSION: 'v5'
+  UPLOAD_PAGES_ARTIFACT_ACTION_VERSION: 'v3'
+  DEPLOY_PAGES_ACTION_VERSION: 'v4'
+
 jobs:
   # Quality checks: format, analyze, and test
   quality-checks:
     name: Quality Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_DEFAULT || '30') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
           cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
@@ -54,7 +69,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@${{ env.CODECOV_ACTION_VERSION }}
         if: success()
         with:
           files: ./coverage/lcov.info
@@ -66,16 +81,16 @@ jobs:
     name: Build Web
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_DEFAULT || '30') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -89,7 +104,7 @@ jobs:
         run: flutter build web --release --base-href '/${{ github.event.repository.name }}/'
 
       - name: Upload web build artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: web-build
           path: build/web/
@@ -100,23 +115,23 @@ jobs:
     name: Build Android
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@${{ env.SETUP_JAVA_ACTION_VERSION }}
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -133,14 +148,14 @@ jobs:
         run: flutter build appbundle --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
       - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: android-appbundle
           path: build/app/outputs/bundle/release/app-release.aab
@@ -151,16 +166,16 @@ jobs:
     name: Build Windows
     needs: quality-checks
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -179,7 +194,7 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/windows/crubik-windows-x64.zip
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: windows-build
           path: build/windows/crubik-windows-x64.zip
@@ -190,16 +205,16 @@ jobs:
     name: Build macOS
     needs: quality-checks
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -219,7 +234,7 @@ jobs:
           mv crubik-macos-universal.zip ../../../../
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: macos-build
           path: build/crubik-macos-universal.zip
@@ -230,11 +245,11 @@ jobs:
     name: Build Linux
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
 
       - name: Install Linux build dependencies
         run: |
@@ -242,9 +257,9 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
         with:
-          flutter-version: '3.44.6'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -264,18 +279,19 @@ jobs:
           mv crubik-linux-x64.tar.gz ../../../../
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4.5.0
+        uses: actions/upload-artifact@${{ env.UPLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: linux-build
           path: build/crubik-linux-x64.tar.gz
           retention-days: 30
 
   # Deploy web app to GitHub Pages (only on main branch or tags)
+  # Temporarily disabled - GitHub Pages requires paid subscription
   deploy-web:
     name: Deploy to GitHub Pages
     needs: build-web
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: false  # Temporarily disabled
     
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
     permissions:
@@ -290,19 +306,19 @@ jobs:
     
     steps:
       - name: Download web build artifact
-        uses: actions/download-artifact@v4.1.3
+        uses: actions/download-artifact@${{ env.DOWNLOAD_ARTIFACT_ACTION_VERSION }}
         with:
           name: web-build
           path: ./web-build
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@${{ env.CONFIGURE_PAGES_ACTION_VERSION }}
 
       - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@${{ env.UPLOAD_PAGES_ARTIFACT_ACTION_VERSION }}
         with:
           path: ./web-build
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@${{ env.DEPLOY_PAGES_ACTION_VERSION }}
