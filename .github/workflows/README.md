@@ -89,25 +89,23 @@ Creates GitHub releases with all platform builds attached when version tags are 
 
 ### Global Configuration Variables
 
-Both workflows use global environment variables for easier maintenance:
+Both workflows use global environment variables where supported by GitHub Actions:
 
 #### Version Control Variables
-- `FLUTTER_VERSION`: Flutter SDK version (currently `3.44.6`)
-- `TIMEOUT_MINUTES_DEFAULT`: Default job timeout (30 minutes)
-- `TIMEOUT_MINUTES_BUILD`: Build job timeout (45 minutes)
+- `FLUTTER_VERSION`: Flutter SDK version (currently `3.44.6`, from `.fvmrc`)
 
-#### Action Version Variables
-- `CHECKOUT_ACTION_VERSION`: GitHub checkout action version (`v4`)
-- `FLUTTER_ACTION_VERSION`: Flutter setup action version (`v2`)
-- `SETUP_JAVA_ACTION_VERSION`: Java setup action version (`v4`)
-- `UPLOAD_ARTIFACT_ACTION_VERSION`: Upload artifact action version (`v4.5.0`)
-- `DOWNLOAD_ARTIFACT_ACTION_VERSION`: Download artifact action version (`v4.1.3`)
-- `CODECOV_ACTION_VERSION`: Codecov action version (`v4`)
-- `CONFIGURE_PAGES_ACTION_VERSION`: Configure Pages action version (`v5`)
-- `UPLOAD_PAGES_ARTIFACT_ACTION_VERSION`: Upload Pages artifact action version (`v3`)
-- `DEPLOY_PAGES_ACTION_VERSION`: Deploy Pages action version (`v4`)
+#### Action Versions and Timeouts
 
-To update any version, modify the `env:` section at the top of the workflow file.
+**Important GitHub Actions Limitations**: 
+- Action versions (e.g., `actions/checkout@v4`, `subosito/flutter-action@v2`) **must be hardcoded** directly in each `uses:` field. GitHub Actions does not support using environment variables in `uses:` fields.
+- Job timeouts **must be literal numbers**. The `timeout-minutes` field cannot reference environment variables.
+
+Current configuration:
+- Quality checks and web build jobs: **30 minutes** timeout
+- Platform build jobs (Android, Windows, macOS, Linux): **45 minutes** timeout
+- Action versions: hardcoded as `v4` for checkout, `v2` for Flutter, `v4` for setup-java, `v4.5.0` for upload-artifact, `v4.1.3` for download-artifact, etc.
+
+To update action versions or timeouts, you must edit each occurrence directly in the workflow YAML files.
 
 ### Repository Settings
 
