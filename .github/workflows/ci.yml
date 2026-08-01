@@ -278,10 +278,31 @@ jobs:
           path: build/crubik-linux-x64.tar.gz
           retention-days: 30
 
+  deploy-web-vercel:
+    name: Deploy Web to Vercel
+    needs: build-web
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download web build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: web-build
+          path: ./web-build
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v42
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./web-build
+
   # Deploy web app to GitHub Pages (only on main branch or tags)
   # Temporarily disabled - GitHub Pages requires paid subscription
-  deploy-web:
-    name: Deploy to GitHub Pages
+  deploy-web-ghpages:
+    name: Deploy Web to GitHub Pages
     needs: build-web
     runs-on: ubuntu-latest
     if: false  # Temporarily disabled

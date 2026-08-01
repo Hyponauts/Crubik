@@ -87,3 +87,5 @@ DerivedData/
 **/flutter/generated_plugin_registrant.*
 **/flutter/generated_plugins.cmake
 macos/Flutter/GeneratedPluginRegistrant.swift
+.vercel
+.env*
