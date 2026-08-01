@@ -168,7 +168,7 @@ jobs:
   build-windows-release:
     name: Build Windows for Release
     runs-on: windows-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository
@@ -214,7 +214,7 @@ jobs:
   build-macos-release:
     name: Build macOS for Release
     runs-on: macos-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository

@@ -33,7 +33,7 @@ jobs:
   quality-checks:
     name: Quality Checks
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_DEFAULT || '30') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_DEFAULT }}
     
     steps:
       - name: Checkout repository
@@ -81,7 +81,7 @@ jobs:
     name: Build Web
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_DEFAULT || '30') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_DEFAULT }}
     
     steps:
       - name: Checkout repository
@@ -115,7 +115,7 @@ jobs:
     name: Build Android
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository
@@ -166,7 +166,7 @@ jobs:
     name: Build Windows
     needs: quality-checks
     runs-on: windows-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository
@@ -205,7 +205,7 @@ jobs:
     name: Build macOS
     needs: quality-checks
     runs-on: macos-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository
@@ -245,7 +245,7 @@ jobs:
     name: Build Linux
     needs: quality-checks
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON(vars.TIMEOUT_MINUTES_BUILD || '45') }}
+    timeout-minutes: ${{ env.TIMEOUT_MINUTES_BUILD }}
     
     steps:
       - name: Checkout repository
