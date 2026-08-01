@@ -284,6 +284,9 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout repository # required by vercel-action
+        uses: actions/checkout@v7
+
       - name: Download web build artifact
         uses: actions/download-artifact@v8
         with:
