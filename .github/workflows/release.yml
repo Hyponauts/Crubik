@@ -8,10 +8,6 @@ on:
 
 env:
   FLUTTER_VERSION: '3.44.6'
-  # Action versions
-  CHECKOUT_ACTION_VERSION: 'v4'
-  FLUTTER_ACTION_VERSION: 'v2'
-  SETUP_JAVA_ACTION_VERSION: 'v4'
 
 jobs:
   # Create GitHub Release and attach all build artifacts
@@ -23,7 +19,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -35,14 +31,14 @@ jobs:
           echo "Release version: $VERSION"
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
       - name: Setup Java
-        uses: actions/setup-java@${{ env.SETUP_JAVA_ACTION_VERSION }}
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -171,7 +167,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
+        uses: actions/checkout@v4
 
       - name: Extract version from tag
         id: get_version
@@ -181,7 +177,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
@@ -217,7 +213,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@${{ env.CHECKOUT_ACTION_VERSION }}
+        uses: actions/checkout@v4
 
       - name: Extract version from tag
         id: get_version
@@ -226,7 +222,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@${{ env.FLUTTER_ACTION_VERSION }}
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
