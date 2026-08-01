@@ -89,7 +89,7 @@ jobs:
         run: flutter build web --release --base-href '/${{ github.event.repository.name }}/'
 
       - name: Upload web build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: web-build
           path: build/web/
@@ -133,14 +133,14 @@ jobs:
         run: flutter build appbundle --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
       - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: android-appbundle
           path: build/app/outputs/bundle/release/app-release.aab
@@ -179,7 +179,7 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/windows/crubik-windows-x64.zip
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: windows-build
           path: build/windows/crubik-windows-x64.zip
@@ -219,7 +219,7 @@ jobs:
           mv crubik-macos-universal.zip ../../../../
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: macos-build
           path: build/crubik-macos-universal.zip
@@ -264,7 +264,7 @@ jobs:
           mv crubik-linux-x64.tar.gz ../../../../
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.5.0
         with:
           name: linux-build
           path: build/crubik-linux-x64.tar.gz
@@ -290,7 +290,7 @@ jobs:
     
     steps:
       - name: Download web build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.3
         with:
           name: web-build
           path: ./web-build
