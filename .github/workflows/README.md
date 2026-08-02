@@ -93,17 +93,18 @@ Both workflows use global environment variables where supported by GitHub Action
 
 #### Version Control Variables
 - `FLUTTER_VERSION`: Flutter SDK version (currently `3.44.6`, from `.fvmrc`)
+- `ARTIFACT_RETENTION_DAYS`: Artifact retention period (currently `30` days)
 
 #### Action Versions and Timeouts
 
 **Important GitHub Actions Limitations**: 
-- Action versions (e.g., `actions/checkout@v4`, `subosito/flutter-action@v2`) **must be hardcoded** directly in each `uses:` field. GitHub Actions does not support using environment variables in `uses:` fields.
+- Action versions (e.g., `actions/checkout@v7`, `subosito/flutter-action@v2`) **must be hardcoded** directly in each `uses:` field. GitHub Actions does not support using environment variables in `uses:` fields.
 - Job timeouts **must be literal numbers**. The `timeout-minutes` field cannot reference environment variables.
 
 Current configuration:
 - Quality checks and web build jobs: **30 minutes** timeout
 - Platform build jobs (Android, Windows, macOS, Linux): **45 minutes** timeout
-- Action versions: hardcoded as `v4` for checkout, `v2` for Flutter, `v4` for setup-java, `v4.5.0` for upload-artifact, `v4.1.3` for download-artifact, etc.
+- Action versions: hardcoded as `v7` for checkout, `v2` for Flutter, `v5` for setup-java, `v7` for upload-artifact, etc.
 
 To update action versions or timeouts, you must edit each occurrence directly in the workflow YAML files.
 
@@ -161,48 +162,6 @@ Both workflows can be triggered manually:
 2. Select the workflow (CI or Release)
 3. Click **Run workflow**
 4. Select the branch and click **Run workflow**
-
-## Development Workflow
-
-### Local Development
-Follow the standard development workflow documented in `AGENTS.md`:
-
-```bash
-flutter pub get
-dart run build_runner build
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze
-flutter test
-```
-
-### Pull Request Process
-1. Create a feature branch
-2. Make changes
-3. Push to GitHub - CI workflow runs automatically
-4. CI validates:
-   - Code formatting
-   - Static analysis
-   - Tests pass
-   - All platforms build successfully
-5. Review artifacts in the Actions tab if needed
-6. Merge when CI passes and review is complete
-
-### Testing Builds Locally
-To test platform builds locally before pushing:
-
-```bash
-# Web
-flutter build web --release
-
-# Android
-flutter build apk --release
-flutter build appbundle --release
-
-# Desktop (on respective platforms)
-flutter build windows --release  # Windows only
-flutter build macos --release    # macOS only
-flutter build linux --release    # Linux only
-```
 
 ## Caching Strategy
 
@@ -273,27 +232,11 @@ To update the Flutter version used in CI:
      FLUTTER_VERSION: '3.xx.x'
    ```
 
-### Updating Action Versions
-All action versions are centralized in the `env:` section at the top of each workflow file. To update:
-
-1. Locate the action version variable (e.g., `UPLOAD_ARTIFACT_ACTION_VERSION`)
-2. Update the version in the `env:` section
-3. The change will automatically apply to all jobs using that action
-
-Example:
-```yaml
-env:
-  UPLOAD_ARTIFACT_ACTION_VERSION: 'v4.6.0'  # Update this
-```
-
-### Updating Timeout Values
-Timeout values are also centralized:
-
-```yaml
-env:
-  TIMEOUT_MINUTES_DEFAULT: 30  # For quality checks and web builds
-  TIMEOUT_MINUTES_BUILD: 45    # For platform builds
-```
+3. Update the `ARTIFACT_RETENTION_DAYS` environment variable if you want to change artifact retention:
+   ```yaml
+   env:
+     ARTIFACT_RETENTION_DAYS: 30  # Change retention period for build artifacts
+   ```
 
 ### Adding New Build Targets
 To add support for new platforms:

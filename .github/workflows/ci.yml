@@ -15,6 +15,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.44.6'
+  ARTIFACT_RETENTION_DAYS: 30
 
 jobs:
   # Quality checks: format, analyze, and test
@@ -101,7 +102,7 @@ jobs:
         with:
           name: web-build
           path: build/web/
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   # Build Android APK and App Bundle
   build-android:
@@ -145,14 +146,14 @@ jobs:
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
       - name: Upload App Bundle artifact
         uses: actions/upload-artifact@v7
         with:
           name: android-appbundle
           path: build/app/outputs/bundle/release/app-release.aab
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   # Build Windows desktop app
   build-windows:
@@ -191,7 +192,7 @@ jobs:
         with:
           name: windows-build
           path: build/windows/crubik-windows-x64.zip
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   # Build macOS desktop app
   build-macos:
@@ -231,7 +232,7 @@ jobs:
         with:
           name: macos-build
           path: build/crubik-macos-universal.zip
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   # Build Linux desktop app
   build-linux:
@@ -276,7 +277,7 @@ jobs:
         with:
           name: linux-build
           path: build/crubik-linux-x64.tar.gz
-          retention-days: 30
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   deploy-web-vercel:
     name: Deploy Web to Vercel
