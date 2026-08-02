@@ -297,10 +297,12 @@ jobs:
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v42
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
+          vercel-version: 58.4.4
+          vercel-args: '--prod --force'
           working-directory: ./web-build
 
   # Deploy web app to GitHub Pages (only on main branch or tags)
