@@ -285,7 +285,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       deployments: write
-      pull_requests: write
+      pull-requests: write
     
     steps:
       - name: Checkout repository # required by vercel-action
