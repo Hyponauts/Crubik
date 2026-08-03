@@ -1,5 +1,6 @@
 {
   "public": false,
+  "scope": "Hyponauts",
   "git": {
     "deploymentEnabled": false
   },
