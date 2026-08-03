@@ -1,4 +1,8 @@
 {
+  "public": false,
+  "git": {
+    "deploymentEnabled": false
+  },
   "rewrites": [
     {
       "source": "/(.*)",

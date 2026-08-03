@@ -283,6 +283,9 @@ jobs:
     name: Deploy Web to Vercel
     needs: build-web
     runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+      pull_requests: write
     
     steps:
       - name: Checkout repository # required by vercel-action
@@ -297,13 +300,17 @@ jobs:
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v42
         with:
+          github-deployment: true
+          github-deployment-environment: 'production'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-project-name: 'crubik'
           vercel-version: 58.4.4
           vercel-args: '--prod --force'
           working-directory: ./web-build
+          prebuilt: true
 
   # Deploy web app to GitHub Pages (only on main branch or tags)
   # Temporarily disabled - GitHub Pages requires paid subscription
