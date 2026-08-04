@@ -283,7 +283,7 @@ jobs:
     name: Deploy Web to Vercel
     needs: build-web
     runs-on: ubuntu-latest
-    # if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
       deployments: write
