@@ -1,0 +1,13 @@
+{
+  "public": false,
+  "scope": "Hyponauts",
+  "git": {
+    "deploymentEnabled": false
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # Crubik
 
+[![codecov](https://codecov.io/gh/Hyponauts/Crubik/graph/badge.svg?token=OUWHSOUDOH)](https://codecov.io/gh/Hyponauts/Crubik)
+
 Crubik is an offline-first Flutter companion for Bluetooth smart cubes. The MVP keeps the complete practice loop on-device: connect a cube, follow a scramble, watch turns update a live 3x3 model, time the solve, and retain the session without an account or network connection.
 
 ## MVP capabilities
@@ -58,6 +60,17 @@ When Drift changes, regenerate the worker. When sqlite3 changes, update
 `tool/sqlite3_wasm_asset.json` with the matching release URL and checksum. In
 both cases, build the web app and test database startup in a browser. Neither
 generated runtime file should be committed.
+
+## CI/CD
+
+GitHub Actions workflows automatically validate, build, and deploy Crubik:
+
+- **CI Pipeline**: Every pull request and push runs quality checks (format, analyze, test) and builds all supported platforms (Web, Android, Windows, macOS, Linux).
+- **Web Deployment**: Pushes to `main` and version tags automatically deploy to GitHub Pages.
+- **Release Automation**: Pushing a version tag (e.g., `v1.0.0`) creates a GitHub Release with downloadable artifacts for all platforms.
+- **Artifacts**: Build outputs are available for download from the Actions tab for 30 days.
+
+See [`.github/workflows/README.md`](.github/workflows/README.md) for complete CI/CD documentation, setup instructions, and troubleshooting.
 
 ## Product documentation
 
