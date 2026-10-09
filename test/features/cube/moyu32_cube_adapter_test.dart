@@ -1,3 +1,4 @@
+import 'package:crubik/core/time/monotonic_clock.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -29,6 +30,7 @@ void main() {
         _candidate(),
         onDiagnostic: (stage, detail) =>
             diagnostics.add(detail == null ? stage : '$stage $detail'),
+        monotonicClock: StopwatchMonotonicClock(),
       );
       final eventsFuture = session.events.take(2).toList();
       final batteryFuture = session.batteryLevels.first;
@@ -88,6 +90,7 @@ void main() {
       final session = await const Moyu32CubeAdapter().connect(
         central,
         _candidate(),
+        monotonicClock: StopwatchMonotonicClock(),
       );
       final events = <SmartCubeEvent>[];
       final errors = <Object>[];
@@ -114,6 +117,14 @@ void main() {
         CubeConnectionFailureCode.dataLoss,
       );
       expect(events.whereType<SmartCubeMoveEvent>(), hasLength(5));
+      final gapIndex = events.indexWhere(
+        (event) => event is SmartCubeDataGapEvent,
+      );
+      final firstMoveIndex = events.indexWhere(
+        (event) => event is SmartCubeMoveEvent,
+      );
+      expect(gapIndex, lessThan(firstMoveIndex));
+      expect((events[gapIndex] as SmartCubeDataGapEvent).missingMoveCount, 2);
       expect(events.whereType<SmartCubeStateEvent>(), hasLength(2));
       expect(central.decryptedWrites.map((packet) => packet[0]), [
         0xa1,
@@ -138,9 +149,14 @@ void main() {
         respondToState: false,
       );
 
-      final session = await const Moyu32CubeAdapter(
-        initialStateTimeout: Duration(milliseconds: 10),
-      ).connect(central, _candidate());
+      final session =
+          await const Moyu32CubeAdapter(
+            initialStateTimeout: Duration(milliseconds: 10),
+          ).connect(
+            central,
+            _candidate(),
+            monotonicClock: StopwatchMonotonicClock(),
+          );
 
       await expectLater(
         session.start(),
@@ -171,6 +187,7 @@ void main() {
       final session = await const Moyu32CubeAdapter().connect(
         central,
         _candidate(),
+        monotonicClock: StopwatchMonotonicClock(),
       );
       final linkLoss = session.connectionStates.first;
 
@@ -203,7 +220,11 @@ void main() {
     );
 
     await expectLater(
-      const Moyu32CubeAdapter().connect(central, candidate),
+      const Moyu32CubeAdapter().connect(
+        central,
+        candidate,
+        monotonicClock: StopwatchMonotonicClock(),
+      ),
       throwsA(
         isA<CubeConnectionFailure>().having(
           (error) => error.code,
@@ -221,7 +242,11 @@ void main() {
     final central = _FakeBleCentral(services: const ['unsupported']);
 
     await expectLater(
-      const Moyu32CubeAdapter().connect(central, _candidate()),
+      const Moyu32CubeAdapter().connect(
+        central,
+        _candidate(),
+        monotonicClock: StopwatchMonotonicClock(),
+      ),
       throwsA(
         isA<CubeConnectionFailure>().having(
           (error) => error.code,

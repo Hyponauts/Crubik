@@ -107,7 +107,7 @@ The MVP is releasable only when the outcome at the start of this document is dem
 
 ## Non-goals
 
-- mandatory accounts, analytics, telemetry, or cloud services;
+- mandatory accounts, analytics, remote telemetry, or cloud services;
 - a general social network, friend challenges, or leaderboards;
 - compatibility claims for every smart cube;
 - official WCA scramble or competition-system claims;

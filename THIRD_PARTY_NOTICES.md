@@ -3,8 +3,10 @@
 ## gan-web-bluetooth
 
 Crubik's GAN Gen2–4 and MoYu AI 2023 protocol constants, packet layouts,
-encryption scheme, cubie-to-facelet mapping, and recovery behavior are adapted
-from [`afedotov/gan-web-bluetooth`](https://github.com/afedotov/gan-web-bluetooth)
+encryption scheme, cubie-to-facelet mapping, recovery behavior, hardware
+information requests, gyroscope capability detection, and Gen2/Gen4
+quaternion and angular-velocity decoding are adapted from
+[`afedotov/gan-web-bluetooth`](https://github.com/afedotov/gan-web-bluetooth)
 at commit `65173e2cdd0fa38ef384f237f6da8d76c177ed1e`.
 
 MIT License

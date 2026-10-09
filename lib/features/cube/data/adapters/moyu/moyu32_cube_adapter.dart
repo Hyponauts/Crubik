@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../../../../core/time/monotonic_clock.dart';
 import '../../../application/cube_connection_gateway.dart';
 import '../../../domain/cube_connection_diagnostics.dart';
 import '../../../domain/smart_cube_device.dart';
@@ -48,6 +49,7 @@ final class Moyu32CubeAdapter implements SmartCubeAdapter {
   Future<SmartCubeSession> connect(
     BleCentral central,
     CubeDeviceCandidate device, {
+    required MonotonicClock monotonicClock,
     CubeDiagnosticSink? onDiagnostic,
   }) async {
     return connectAndSetUpBleDevice(
@@ -82,6 +84,7 @@ final class Moyu32CubeAdapter implements SmartCubeAdapter {
           deviceId: device.id,
           cipher: Moyu32CubeCipher(macSalt: cubeMacSalt(identity.value)),
           decoder: Moyu32PacketDecoder(),
+          monotonicClock: monotonicClock,
           initialStateTimeout: initialStateTimeout,
           onDiagnostic: onDiagnostic,
         );
@@ -96,6 +99,7 @@ final class _Moyu32CubeSession extends BleSmartCubeSession {
     required super.deviceId,
     required this.cipher,
     required this.decoder,
+    required super.monotonicClock,
     required super.initialStateTimeout,
     super.onDiagnostic,
   }) : super(
@@ -140,6 +144,8 @@ final class _Moyu32CubeSession extends BleSmartCubeSession {
   @override
   void handleEncryptedPacket(Uint8List encryptedPacket) {
     if (isClosed) return;
+    final receivedAt = DateTime.now().toUtc();
+    final hostTimestamp = monotonicClock.now;
     handshake.recordNotification();
     onDiagnostic?.call(
       'protocol.notification.received',
@@ -150,11 +156,25 @@ final class _Moyu32CubeSession extends BleSmartCubeSession {
       if (_isRecognizedOpcode(decrypted.first)) {
         handshake.recordRecognizedPacket();
       }
-      final decoded = decoder.decode(decrypted, DateTime.now().toUtc());
+      final decoded = decoder.decode(
+        decrypted,
+        receivedAt,
+        hostTimestamp: hostTimestamp,
+      );
       onDiagnostic?.call(
         'protocol.message.decoded',
         _diagnosticMessageType(decrypted.first),
       );
+      if (decoded.dataLoss) {
+        emitEvent(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.missedMoves,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+            missingMoveCount: decoded.missingMoveCount,
+          ),
+        );
+      }
       for (final event in decoded.events) {
         if (isClosed) return;
         emitEvent(event);
@@ -177,6 +197,15 @@ final class _Moyu32CubeSession extends BleSmartCubeSession {
         _requestResync();
       }
     } catch (error, stackTrace) {
+      if (isStarted) {
+        emitEvent(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.malformedPacket,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+          ),
+        );
+      }
       handshake.recordRejectedPacket();
       onDiagnostic?.call(
         'protocol.message.rejected',

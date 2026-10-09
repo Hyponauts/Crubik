@@ -94,7 +94,7 @@ void main() {
     practice.applyMove(
       firstMove,
       fromSmartCube: true,
-      occurredAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
     await tester.pump();
 

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
+import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -50,7 +51,11 @@ void main() {
     _setBits(facelets, 4, 8, 10);
     _setSolvedCubies(facelets, 12, 33, 47, 91);
 
-    final initial = decoder.decode(facelets, receivedAt);
+    final initial = decoder.decode(
+      facelets,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
     expect(initial.states.single.state.isSolved, isTrue);
 
     final move = Uint8List(20);
@@ -59,7 +64,11 @@ void main() {
     _setBits(move, 12, 4, 1);
     _setBits(move, 16, 1, 0);
     _setBits(move, 47, 16, 123);
-    final decoded = decoder.decode(move, receivedAt);
+    final decoded = decoder.decode(
+      move,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
 
     expect(decoded.moves.single.move.notation, 'R');
     expect(decoded.moves.single.serial, 11);
@@ -77,7 +86,7 @@ void main() {
     _setBits(facelets, 0, 4, 0x04);
     _setBits(facelets, 4, 8, 11);
     _setSolvedCubies(facelets, 12, 33, 47, 91);
-    decoder.decode(facelets, receivedAt);
+    decoder.decode(facelets, receivedAt, hostTimestamp: Duration.zero);
 
     final packet = Uint8List(20);
     _setBits(packet, 0, 4, 0x02);
@@ -89,10 +98,95 @@ void main() {
     _setBits(packet, 47, 16, 50);
     _setBits(packet, 63, 16, 40);
 
-    final decoded = decoder.decode(packet, receivedAt);
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: const Duration(milliseconds: 42),
+    );
 
     expect(decoded.moves.map((event) => event.move.notation), ["U'", 'F']);
     expect(decoded.moves.map((event) => event.recovered), [isTrue, isFalse]);
+    expect(decoded.moves.map((event) => event.hostTimestamp), const [
+      Duration(milliseconds: 42),
+      Duration(milliseconds: 42),
+    ]);
+  });
+
+  test('Gen2 reports history overflow and does not invent overflow timing', () {
+    final decoder = GanGen2PacketDecoder();
+    final receivedAt = DateTime.utc(2026);
+    final facelets = Uint8List(20);
+    _setBits(facelets, 0, 4, 0x04);
+    _setBits(facelets, 4, 8, 1);
+    _setSolvedCubies(facelets, 12, 33, 47, 91);
+    decoder.decode(facelets, receivedAt, hostTimestamp: Duration.zero);
+
+    final packet = Uint8List(20);
+    _setBits(packet, 0, 4, 0x02);
+    _setBits(packet, 4, 8, 10);
+    for (var index = 0; index < 7; index++) {
+      _setBits(packet, 12 + 5 * index, 4, index % 6);
+      _setBits(packet, 47 + 16 * index, 16, index == 0 ? 0 : 10);
+    }
+
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: const Duration(milliseconds: 50),
+    );
+    final gaps = decoded.events.whereType<SmartCubeDataGapEvent>().toList();
+
+    expect(gaps.first.reason, SmartCubeDataGapReason.missedMoves);
+    expect(gaps.first.missingMoveCount, 2);
+    expect(gaps.last.reason, SmartCubeDataGapReason.cubeClockDiscontinuity);
+    expect(decoded.moves.last.cubeTimestamp, isNull);
+    expect(decoded.events.map((event) => event.hostTimestamp).toSet(), {
+      const Duration(milliseconds: 50),
+    });
+  });
+
+  test('Gen2 decodes quaternion, sign, velocity, and host receipt time', () {
+    final packet = Uint8List(20);
+    _setBits(packet, 0, 4, 0x01);
+    _setBits(packet, 4, 16, 0x7fff);
+    _setBits(packet, 20, 16, 0xbfff);
+    _setBits(packet, 36, 16, 0x1fff);
+    _setBits(packet, 52, 16, 0);
+    _setBits(packet, 68, 4, 0x5);
+    _setBits(packet, 72, 4, 0xb);
+    _setBits(packet, 76, 4, 0);
+
+    final decoded = GanGen2PacketDecoder().decode(
+      packet,
+      DateTime.utc(2026),
+      hostTimestamp: const Duration(milliseconds: 17),
+    );
+    final orientation = decoded.events.single as SmartCubeOrientationEvent;
+
+    expect(decoded.kind, GanPacketKind.orientation);
+    expect(orientation.orientation.w, 1);
+    expect(orientation.orientation.x, closeTo(-0.5, 0.0001));
+    expect(orientation.orientation.y, closeTo(0.25, 0.0001));
+    expect(orientation.angularVelocity?.x, 5);
+    expect(orientation.angularVelocity?.y, -3);
+    expect(orientation.angularVelocity?.unit, 'gan_odr_step');
+    expect(orientation.hostTimestamp, const Duration(milliseconds: 17));
+  });
+
+  test('Gen2 hardware packet reports gyroscope support', () {
+    final packet = Uint8List(20);
+    _setBits(packet, 0, 4, 0x05);
+    _setBits(packet, 104, 1, 1);
+
+    final decoded = GanGen2PacketDecoder().decode(
+      packet,
+      DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
+    );
+    final capabilities = decoded.events.single as SmartCubeCapabilitiesEvent;
+
+    expect(decoded.kind, GanPacketKind.hardware);
+    expect(capabilities.capabilities.gyroscope, isTrue);
   });
 
   test('Gen3 decoder translates a packet into a standard cube move', () {
@@ -107,7 +201,12 @@ void main() {
       ..[3] = 10;
     _setSolvedCubies(facelets, 40, 61, 77, 121);
     expect(
-      decoder.decode(facelets, receivedAt).states.single.state.isSolved,
+      decoder
+          .decode(facelets, receivedAt, hostTimestamp: Duration.zero)
+          .states
+          .single
+          .state
+          .isSolved,
       isTrue,
     );
 
@@ -119,7 +218,11 @@ void main() {
       ..[4] = 0x03
       ..[7] = 11
       ..[9] = 32;
-    final decoded = decoder.decode(packet, receivedAt);
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
 
     expect(decoded.moves.single.move.notation, 'R');
     expect(decoded.moves.single.serial, 11);
@@ -144,7 +247,12 @@ void main() {
       ..[2] = 20;
     _setSolvedCubies(facelets, 32, 53, 69, 113);
     expect(
-      decoder.decode(facelets, receivedAt).states.single.state.isSolved,
+      decoder
+          .decode(facelets, receivedAt, hostTimestamp: Duration.zero)
+          .states
+          .single
+          .state
+          .isSolved,
       isTrue,
     );
 
@@ -155,11 +263,135 @@ void main() {
       ..[3] = 0x07
       ..[6] = 21
       ..[8] = 0x44;
-    final decoded = decoder.decode(packet, receivedAt);
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
 
     expect(decoded.moves.single.move.notation, "B'");
     expect(decoded.moves.single.serial, 21);
     expect(decoded.moves.single.cubeTimestamp, const Duration(seconds: 2));
+  });
+
+  test(
+    'Gen4 recovery preserves receipts when moves are emitted out of receipt order',
+    () {
+      final decoder = GanModernPacketDecoder.gen4();
+      final receivedAt = DateTime.utc(2026);
+      final state = Uint8List(20)
+        ..[0] = 0xed
+        ..[1] = 1
+        ..[2] = 20;
+      _setSolvedCubies(state, 32, 53, 69, 113);
+      decoder.decode(state, receivedAt, hostTimestamp: Duration.zero);
+      final live = Uint8List(20)
+        ..[0] = 1
+        ..[1] = 8
+        ..[6] = 22
+        ..[8] = 1;
+      final buffered = decoder.decode(
+        live,
+        receivedAt,
+        hostTimestamp: const Duration(seconds: 1),
+      );
+      expect(buffered.events, isEmpty);
+      expect(buffered.commands, isNotEmpty);
+
+      final history = Uint8List(20)
+        ..[0] = 0xd1
+        ..[1] = 2
+        ..[2] = 21
+        ..[3] = 0xa0;
+      final recovered = decoder.decode(
+        history,
+        receivedAt,
+        hostTimestamp: const Duration(seconds: 2),
+      );
+
+      expect(recovered.moves.map((event) => event.serial), [21, 22]);
+      expect(recovered.moves.map((event) => event.recovered), [true, false]);
+      expect(recovered.moves.map((event) => event.hostTimestamp), const [
+        Duration(seconds: 2),
+        Duration(seconds: 1),
+      ]);
+    },
+  );
+
+  test('Gen4 decodes gyro packets and hardware capability', () {
+    final decoder = GanModernPacketDecoder.gen4();
+    final gyro = Uint8List(20)..[0] = 0xec;
+    _setBits(gyro, 16, 16, 0x7fff);
+    _setBits(gyro, 32, 16, 0x3fff);
+    _setBits(gyro, 48, 16, 0);
+    _setBits(gyro, 64, 16, 0);
+    _setBits(gyro, 80, 4, 0x2);
+    _setBits(gyro, 84, 4, 0x9);
+    final orientation =
+        decoder
+                .decode(
+                  gyro,
+                  DateTime.utc(2026),
+                  hostTimestamp: const Duration(milliseconds: 25),
+                )
+                .events
+                .single
+            as SmartCubeOrientationEvent;
+
+    final hardware = Uint8List(20)
+      ..[0] = 0xfc
+      ..[1] = 9
+      ..setRange(3, 11, 'GAN12uiM'.codeUnits);
+    final capabilities =
+        decoder
+                .decode(
+                  hardware,
+                  DateTime.utc(2026),
+                  hostTimestamp: Duration.zero,
+                )
+                .events
+                .single
+            as SmartCubeCapabilitiesEvent;
+
+    expect(orientation.orientation.w, 1);
+    expect(orientation.orientation.x, closeTo(0.5, 0.0001));
+    expect(orientation.angularVelocity?.x, 2);
+    expect(orientation.angularVelocity?.y, -1);
+    expect(orientation.hostTimestamp, const Duration(milliseconds: 25));
+    expect(capabilities.capabilities.gyroscope, isTrue);
+  });
+
+  test('Gen3 does not invent orientation or gyro capability', () {
+    final decoder = GanModernPacketDecoder.gen3();
+    final gyroLikePacket = Uint8List(16)
+      ..[0] = 0x55
+      ..[1] = 0xec;
+    final hardware = Uint8List(16)
+      ..[0] = 0x55
+      ..[1] = 0x07
+      ..[2] = 1;
+
+    expect(
+      decoder
+          .decode(
+            gyroLikePacket,
+            DateTime.utc(2026),
+            hostTimestamp: Duration.zero,
+          )
+          .events,
+      isEmpty,
+    );
+    final capabilities =
+        decoder
+                .decode(
+                  hardware,
+                  DateTime.utc(2026),
+                  hostTimestamp: Duration.zero,
+                )
+                .events
+                .single
+            as SmartCubeCapabilitiesEvent;
+    expect(capabilities.capabilities.gyroscope, isFalse);
   });
 }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/time/monotonic_clock.dart';
 import '../application/cube_connection_gateway.dart';
 import '../domain/cube_connection_diagnostics.dart';
 import '../domain/smart_cube_device.dart';
@@ -7,9 +8,13 @@ import 'adapters/cube_adapter_registry.dart';
 import 'ble/ble_central.dart';
 
 final class BleCubeConnectionGateway implements CubeConnectionGateway {
-  BleCubeConnectionGateway({BleCentral? central, CubeAdapterRegistry? registry})
-    : _central = central ?? UniversalBleCentral(),
-      _registry = registry ?? CubeAdapterRegistry.defaults() {
+  BleCubeConnectionGateway({
+    BleCentral? central,
+    CubeAdapterRegistry? registry,
+    MonotonicClock? monotonicClock,
+  }) : _central = central ?? UniversalBleCentral(),
+       _registry = registry ?? CubeAdapterRegistry.defaults(),
+       _monotonicClock = monotonicClock ?? StopwatchMonotonicClock() {
     _advertisementSubscription = _central.advertisements.listen(
       (advertisement) => _scanController.add(_registry.identify(advertisement)),
       onError: _scanController.addError,
@@ -18,6 +23,7 @@ final class BleCubeConnectionGateway implements CubeConnectionGateway {
 
   final BleCentral _central;
   final CubeAdapterRegistry _registry;
+  final MonotonicClock _monotonicClock;
   final StreamController<CubeDeviceCandidate> _scanController =
       StreamController.broadcast();
   late final StreamSubscription<BleAdvertisement> _advertisementSubscription;
@@ -52,7 +58,12 @@ final class BleCubeConnectionGateway implements CubeConnectionGateway {
   }) {
     final adapter = _registry.adapterFor(device);
     onDiagnostic?.call('adapter.selected', adapter.id);
-    return adapter.connect(_central, device, onDiagnostic: onDiagnostic);
+    return adapter.connect(
+      _central,
+      device,
+      onDiagnostic: onDiagnostic,
+      monotonicClock: _monotonicClock,
+    );
   }
 
   @override
