@@ -1,3 +1,4 @@
+import 'package:crubik/core/time/monotonic_clock.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -27,6 +28,7 @@ void main() {
     final session = await const GanCubeAdapter().connect(
       central,
       _supportedGanCandidate(),
+      monotonicClock: StopwatchMonotonicClock(),
     );
     final eventFuture = session.events.first;
     await session.start();
@@ -36,7 +38,7 @@ void main() {
     expect(session.capabilities.initialState, isTrue);
     expect(session.capabilities.moveHistory, isTrue);
     expect(central.subscribed, isTrue);
-    expect(central.writes, hasLength(1));
+    expect(central.writes, hasLength(2));
 
     await session.close();
     expect(central.unsubscribed, isTrue);
@@ -93,7 +95,11 @@ void main() {
         protocolIdentity: match.protocolIdentity,
       );
 
-      final session = await adapter.connect(central, candidate);
+      final session = await adapter.connect(
+        central,
+        candidate,
+        monotonicClock: StopwatchMonotonicClock(),
+      );
       final stateFuture = session.events
           .where((event) => event is SmartCubeStateEvent)
           .cast<SmartCubeStateEvent>()
@@ -107,7 +113,7 @@ void main() {
         CubeProtocolIdentitySource.manufacturerData,
       );
       expect(state.state.isSolved, isTrue);
-      expect(central.writes, hasLength(1));
+      expect(central.writes, hasLength(2));
 
       await session.close();
       await central.close();
@@ -126,6 +132,7 @@ void main() {
           _supportedGanCandidate(),
           onDiagnostic: (stage, detail) =>
               diagnostics.add(detail == null ? stage : '$stage $detail'),
+          monotonicClock: StopwatchMonotonicClock(),
         );
 
     await expectLater(
@@ -164,13 +171,14 @@ void main() {
     final session = await const GanCubeAdapter().connect(
       central,
       _supportedGanCandidate(),
+      monotonicClock: StopwatchMonotonicClock(),
     );
     final stateFuture = session.events.first;
 
     await Future.wait([session.start(), session.start()]);
 
     expect(await stateFuture, isA<SmartCubeStateEvent>());
-    expect(central.writes, hasLength(1));
+    expect(central.writes, hasLength(2));
     await session.close();
     await central.close();
   });
@@ -182,6 +190,7 @@ void main() {
       final session = await const GanCubeAdapter().connect(
         central,
         _supportedGanCandidate(),
+        monotonicClock: StopwatchMonotonicClock(),
       );
       final linkLoss = session.connectionStates.first;
 
@@ -265,7 +274,7 @@ void main() {
       expect(received, hasLength(2));
       expect(received[0], isA<SmartCubeStateEvent>());
       expect((received[1] as SmartCubeMoveEvent).move.notation, "B'");
-      expect(central.writes, hasLength(1));
+      expect(central.writes, hasLength(2));
 
       await subscription.cancel();
       await controller.close();
@@ -296,6 +305,7 @@ void main() {
             _supportedGanCandidate(),
             onDiagnostic: (stage, detail) =>
                 diagnostics.add(detail == null ? stage : '$stage $detail'),
+            monotonicClock: StopwatchMonotonicClock(),
           );
 
       await expectLater(
@@ -323,7 +333,11 @@ void main() {
     final central = _FakeBleCentral(services: const ['unsupported']);
 
     await expectLater(
-      const GanCubeAdapter().connect(central, _supportedGanCandidate()),
+      const GanCubeAdapter().connect(
+        central,
+        _supportedGanCandidate(),
+        monotonicClock: StopwatchMonotonicClock(),
+      ),
       throwsA(isA<Exception>()),
     );
 
@@ -368,6 +382,7 @@ final class _FakeBleCentral implements BleCentral {
   bool unsubscribed = false;
   int disconnectCount = 0;
   int unsubscribeCount = 0;
+  bool _didRespond = false;
 
   @override
   Stream<BleAdvertisement> get advertisements => _advertisements.stream;
@@ -442,6 +457,8 @@ final class _FakeBleCentral implements BleCentral {
     Uint8List value,
   ) async {
     writes.add(Uint8List.fromList(value));
+    if (_didRespond) return;
+    _didRespond = true;
     final response = responsePacket;
     if (response != null) _values.add(response);
     for (final packet in responsePackets) {

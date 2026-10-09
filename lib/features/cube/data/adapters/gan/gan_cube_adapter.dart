@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../../../../core/time/monotonic_clock.dart';
 import '../../../application/cube_connection_gateway.dart';
 import '../../../domain/cube_connection_diagnostics.dart';
 import '../../../domain/smart_cube_device.dart';
@@ -55,6 +56,7 @@ final class GanCubeAdapter implements SmartCubeAdapter {
   Future<SmartCubeSession> connect(
     BleCentral central,
     CubeDeviceCandidate device, {
+    required MonotonicClock monotonicClock,
     CubeDiagnosticSink? onDiagnostic,
   }) async {
     return connectAndSetUpBleDevice(
@@ -93,6 +95,7 @@ final class GanCubeAdapter implements SmartCubeAdapter {
                 : GanEncryptionKey.gan,
           ),
           initialStateTimeout: initialStateTimeout,
+          monotonicClock: monotonicClock,
           onDiagnostic: onDiagnostic,
         );
       },
@@ -107,6 +110,7 @@ final class _GanCubeSession extends BleSmartCubeSession {
     required this.protocol,
     required this.decoder,
     required this.cipher,
+    required super.monotonicClock,
     required super.initialStateTimeout,
     super.onDiagnostic,
   }) : super(
@@ -120,24 +124,37 @@ final class _GanCubeSession extends BleSmartCubeSession {
   final GanProtocolDefinition protocol;
   final GanPacketDecoder decoder;
   final GanCubeCipher cipher;
-
-  @override
-  CubeCapabilities get capabilities => const CubeCapabilities(
+  CubeCapabilities _capabilities = const CubeCapabilities(
     initialState: true,
     moveHistory: true,
     cubeTimestamps: true,
   );
 
   @override
+  CubeCapabilities get capabilities => _capabilities;
+
+  @override
   Future<void> sendInitialRequests() async {
     onDiagnostic?.call('protocol.request.started', 'message=state');
     await _sendProtocolCommand(decoder.requestFaceletsCommand);
     onDiagnostic?.call('protocol.request.completed', 'message=state');
+    onDiagnostic?.call('protocol.request.started', 'message=hardware');
+    try {
+      await _sendProtocolCommand(decoder.requestHardwareCommand);
+      onDiagnostic?.call('protocol.request.completed', 'message=hardware');
+    } catch (error) {
+      onDiagnostic?.call(
+        'protocol.request.optional-failed',
+        'message=hardware type=${error.runtimeType}',
+      );
+    }
   }
 
   @override
   void handleEncryptedPacket(Uint8List encryptedPacket) {
     if (isClosed) return;
+    final receivedAt = DateTime.now().toUtc();
+    final hostTimestamp = monotonicClock.now;
     handshake.recordNotification();
     onDiagnostic?.call(
       'protocol.notification.received',
@@ -145,7 +162,11 @@ final class _GanCubeSession extends BleSmartCubeSession {
     );
     try {
       final decrypted = cipher.decrypt(encryptedPacket);
-      final packet = decoder.decode(decrypted, DateTime.now().toUtc());
+      final packet = decoder.decode(
+        decrypted,
+        receivedAt,
+        hostTimestamp: hostTimestamp,
+      );
       if (packet.kind != GanPacketKind.ignored) {
         handshake.recordRecognizedPacket();
       }
@@ -156,6 +177,9 @@ final class _GanCubeSession extends BleSmartCubeSession {
       );
       for (final event in packet.events) {
         if (isClosed) return;
+        if (event case SmartCubeCapabilitiesEvent(:final capabilities)) {
+          _capabilities = capabilities;
+        }
         emitEvent(event);
         if (event is SmartCubeStateEvent) handshake.completeState();
       }
@@ -163,6 +187,13 @@ final class _GanCubeSession extends BleSmartCubeSession {
         unawaited(
           _sendProtocolCommand(command).onError((error, stackTrace) {
             if (isClosed) return;
+            emitEvent(
+              SmartCubeDataGapEvent(
+                reason: SmartCubeDataGapReason.missedMoves,
+                receivedAt: receivedAt,
+                hostTimestamp: hostTimestamp,
+              ),
+            );
             emitError(
               CubeConnectionFailure(
                 CubeConnectionFailureCode.connectionFailed,
@@ -174,6 +205,15 @@ final class _GanCubeSession extends BleSmartCubeSession {
         );
       }
     } catch (error, stackTrace) {
+      if (isStarted) {
+        emitEvent(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.malformedPacket,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+          ),
+        );
+      }
       handshake.recordRejectedPacket();
       onDiagnostic?.call(
         'protocol.message.rejected',

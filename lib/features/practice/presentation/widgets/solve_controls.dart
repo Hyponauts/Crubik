@@ -449,7 +449,9 @@ final class _SolveReviewData {
   });
 
   factory _SolveReviewData(SolveRecord solve) {
-    final elapsed = formatPracticeDuration(solve.elapsed);
+    final elapsed = solve.isTimingReliable
+        ? formatPracticeDuration(solve.elapsed)
+        : 'Timing unavailable';
     final inspection = solve.inspectionElapsed == null
         ? '—'
         : formatPracticeDuration(solve.inspectionElapsed!);

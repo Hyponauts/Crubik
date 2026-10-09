@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/practice_test_clock.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -26,10 +28,11 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     final practice = PracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
     );
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
@@ -171,7 +174,10 @@ void main() {
     addTearDown(tester.view.reset);
 
     var now = DateTime.utc(2026);
-    final practice = PracticeController(now: () => now)..activateDemoInput();
+    final practice = PracticeController(
+      now: () => now,
+      monotonicClock: PracticeTestClock(wallTime: () => now),
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -405,12 +411,13 @@ void main() {
       addTearDown(tester.view.reset);
 
       final now = DateTime.utc(2026);
-      final clock = _FakeSolveClock();
+      final clock = PracticeTestClock();
       final practice = PracticeController(
         clock: clock,
         now: () => now,
         preInspectionDelay: Duration.zero,
         scrambleGenerator: ScrambleGenerator(random: Random(7)),
+        monotonicClock: clock,
       );
       final gateway = _SilentCubeConnectionGateway();
       final connection = CubeConnectionController(gateway: gateway);
@@ -429,6 +436,7 @@ void main() {
           state: CubeState.solved(),
           serial: 0,
           receivedAt: now,
+          hostTimestamp: now.difference(DateTime.utc(2026)),
         ),
       );
       await tester.pump();
@@ -436,7 +444,12 @@ void main() {
       var serial = 1;
       for (final move in [...practice.scrambleGuidance]) {
         gateway.addEvent(
-          SmartCubeMoveEvent(move: move, serial: serial++, receivedAt: now),
+          SmartCubeMoveEvent(
+            move: move,
+            serial: serial++,
+            receivedAt: now,
+            hostTimestamp: now.difference(DateTime.utc(2026)),
+          ),
         );
         await tester.pump();
       }
@@ -454,13 +467,19 @@ void main() {
           move: solution.first,
           serial: serial++,
           receivedAt: now,
+          hostTimestamp: now.difference(DateTime.utc(2026)),
         ),
       );
       await tester.pump();
       clock.value = const Duration(seconds: 8);
       for (final move in solution.skip(1)) {
         gateway.addEvent(
-          SmartCubeMoveEvent(move: move, serial: serial++, receivedAt: now),
+          SmartCubeMoveEvent(
+            move: move,
+            serial: serial++,
+            receivedAt: now,
+            hostTimestamp: now.difference(DateTime.utc(2026)),
+          ),
         );
         await tester.pump();
       }
@@ -499,7 +518,12 @@ void main() {
 
       for (final move in [...practice.scrambleGuidance]) {
         gateway.addEvent(
-          SmartCubeMoveEvent(move: move, serial: serial++, receivedAt: now),
+          SmartCubeMoveEvent(
+            move: move,
+            serial: serial++,
+            receivedAt: now,
+            hostTimestamp: now.difference(DateTime.utc(2026)),
+          ),
         );
         await tester.pump();
       }
@@ -681,12 +705,13 @@ void main() {
     tester.view.physicalSize = const Size(360, 640);
     addTearDown(tester.view.reset);
 
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     var timestamp = DateTime.utc(2026);
     final practice = PracticeController(
       clock: clock,
       now: () => timestamp = timestamp.add(const Duration(seconds: 1)),
       preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
     );
     practice.activateDemoInput();
     for (var index = 0; index < 8; index++) {
@@ -811,6 +836,7 @@ void main() {
         move: CubeMove.parse('R'),
         serial: 1,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -821,6 +847,7 @@ void main() {
         state: CubeState.solved(),
         serial: 1,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -841,6 +868,7 @@ void main() {
         state: physicalState,
         serial: 0,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     final connection = CubeConnectionController(gateway: gateway);
@@ -866,6 +894,7 @@ void main() {
       state: physicalState,
       serial: 4,
       receivedAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
     final practice = PracticeController();
     final gateway = _SilentCubeConnectionGateway(initialEvent: stateEvent);
@@ -982,6 +1011,7 @@ void main() {
     final practice = PracticeController(
       scrambleGenerator: ScrambleGenerator(random: _DoubleTurnRandom()),
       now: () => now,
+      monotonicClock: PracticeTestClock(wallTime: () => now),
     );
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
@@ -997,6 +1027,7 @@ void main() {
         state: CubeState.solved(),
         serial: 0,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1026,6 +1057,7 @@ void main() {
         move: CubeMove(first.face, turns: 3),
         serial: 1,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1072,6 +1104,7 @@ void main() {
         move: CubeMove(first.face, turns: 3),
         serial: 2,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1097,6 +1130,7 @@ void main() {
         move: wrong,
         serial: 3,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1114,6 +1148,7 @@ void main() {
         move: secondWrong,
         serial: 4,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1174,6 +1209,7 @@ void main() {
         move: secondWrong.inverse,
         serial: serial++,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1196,6 +1232,7 @@ void main() {
         move: wrong.inverse,
         serial: serial++,
         receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       ),
     );
     await tester.pump();
@@ -1212,6 +1249,7 @@ void main() {
           move: move,
           serial: serial++,
           receivedAt: DateTime.utc(2026),
+          hostTimestamp: Duration.zero,
         ),
       );
       await tester.pump();
@@ -1261,6 +1299,7 @@ void main() {
         move: CubeMove.parse('R'),
         serial: serial,
         receivedAt: now,
+        hostTimestamp: now.difference(DateTime.utc(2026)),
       ),
     );
     await tester.pump();
@@ -1769,24 +1808,6 @@ List<String> _scrambleCaptions(WidgetTester tester) => tester
     .map((text) => text.data)
     .whereType<String>()
     .toList();
-
-final class _FakeSolveClock implements SolveClock {
-  Duration value = Duration.zero;
-
-  @override
-  Duration get elapsed => value;
-
-  @override
-  void reset() => value = Duration.zero;
-
-  @override
-  void start({Duration initialElapsed = Duration.zero}) {
-    value = initialElapsed;
-  }
-
-  @override
-  void stop() {}
-}
 
 final class _DoubleTurnRandom implements Random {
   int _faceIndex = 0;

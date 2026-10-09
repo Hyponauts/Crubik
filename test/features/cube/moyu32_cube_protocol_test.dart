@@ -48,11 +48,27 @@ void main() {
   test('decoder keeps undocumented opcode A2 unknown', () {
     final packet = Uint8List(20)..first = 0xa2;
 
-    final decoded = Moyu32PacketDecoder().decode(packet, DateTime.utc(2026));
+    final decoded = Moyu32PacketDecoder().decode(
+      packet,
+      DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
+    );
 
     expect(decoded.events, isEmpty);
     expect(decoded.batteryLevel, isNull);
     expect(decoded.dataLoss, isFalse);
+  });
+
+  test('decoder does not invent orientation events', () {
+    final packet = Uint8List(20)..first = 0xec;
+
+    final decoded = Moyu32PacketDecoder().decode(
+      packet,
+      DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
+    );
+
+    expect(decoded.events, isEmpty);
   });
 
   test('decoder maps solved and scrambled facelets into URFDLB state', () {
@@ -61,6 +77,7 @@ void main() {
     final solved = solvedDecoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 7),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     expect(solved.states.single.state.isSolved, isTrue);
@@ -71,6 +88,7 @@ void main() {
     final scrambled = Moyu32PacketDecoder().decode(
       _statePacket(expected.facelets, serial: 31),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     expect(scrambled.states.single.state.facelets, expected.facelets);
@@ -83,6 +101,7 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 0),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     var serial = 0;
@@ -104,6 +123,7 @@ void main() {
       final decoded = decoder.decode(
         _movePacket(serial: serial, moves: [notation], offsets: [10]),
         receivedAt,
+        hostTimestamp: Duration.zero,
       );
       expect(decoded.moves.single.move.notation, notation);
       expect(decoded.moves.single.serial, serial);
@@ -116,11 +136,13 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 10),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     final decoded = decoder.decode(
       _movePacket(serial: 13, moves: ['F', "U'", 'R'], offsets: [30, 20, 10]),
       receivedAt,
+      hostTimestamp: const Duration(milliseconds: 42),
     );
 
     expect(decoded.moves.map((event) => event.move.notation), ['R', "U'", 'F']);
@@ -131,6 +153,11 @@ void main() {
       Duration(milliseconds: 30),
       Duration(milliseconds: 60),
     ]);
+    expect(decoded.moves.map((event) => event.hostTimestamp), const [
+      Duration(milliseconds: 42),
+      Duration(milliseconds: 42),
+      Duration(milliseconds: 42),
+    ]);
   });
 
   test('decoder ignores duplicates and handles serial wraparound', () {
@@ -139,11 +166,22 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 255),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
     final packet = _movePacket(serial: 0, moves: ['R'], offsets: [8]);
 
-    expect(decoder.decode(packet, receivedAt).moves.single.serial, 0);
-    expect(decoder.decode(packet, receivedAt).events, isEmpty);
+    expect(
+      decoder
+          .decode(packet, receivedAt, hostTimestamp: Duration.zero)
+          .moves
+          .single
+          .serial,
+      0,
+    );
+    expect(
+      decoder.decode(packet, receivedAt, hostTimestamp: Duration.zero).events,
+      isEmpty,
+    );
   });
 
   test('decoder retains five moves and requests resync after a larger gap', () {
@@ -152,6 +190,7 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 1),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     final decoded = decoder.decode(
@@ -161,9 +200,11 @@ void main() {
         offsets: [5, 5, 5, 5, 5],
       ),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
 
     expect(decoded.dataLoss, isTrue);
+    expect(decoded.missingMoveCount, 2);
     expect(decoded.moves, hasLength(5));
     expect(decoded.moves.map((event) => event.serial), [4, 5, 6, 7, 8]);
     expect(
@@ -171,6 +212,7 @@ void main() {
           .decode(
             _movePacket(serial: 9, moves: ['D'], offsets: [5]),
             receivedAt,
+            hostTimestamp: Duration.zero,
           )
           .events,
       isEmpty,
@@ -179,12 +221,14 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 9),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
     expect(
       decoder
           .decode(
             _movePacket(serial: 10, moves: ['D'], offsets: [5]),
             receivedAt,
+            hostTimestamp: Duration.zero,
           )
           .moves
           .single
@@ -200,11 +244,16 @@ void main() {
     decoder.decode(
       _statePacket(CubeState.solved().facelets, serial: 20),
       receivedAt,
+      hostTimestamp: Duration.zero,
     );
     final packet = _movePacket(serial: 22, moves: ['F', 'R'], offsets: [5, 5]);
     _setBits(packet, 96, 5, 31);
 
-    final decoded = decoder.decode(packet, receivedAt);
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
 
     expect(decoded.dataLoss, isTrue);
     expect(decoded.moves.single.move.notation, 'R');
@@ -216,14 +265,22 @@ void main() {
     final receivedAt = DateTime.utc(2026);
 
     expect(
-      () => decoder.decode(Uint8List(19), receivedAt),
+      () => decoder.decode(
+        Uint8List(19),
+        receivedAt,
+        hostTimestamp: Duration.zero,
+      ),
       throwsFormatException,
     );
 
     final invalidState = _statePacket(CubeState.solved().facelets, serial: 1);
     _setBits(invalidState, 8, 3, 7);
     expect(
-      () => decoder.decode(invalidState, receivedAt),
+      () => decoder.decode(
+        invalidState,
+        receivedAt,
+        hostTimestamp: Duration.zero,
+      ),
       throwsFormatException,
     );
 
@@ -231,7 +288,11 @@ void main() {
       ..[0] = 0xa4
       ..[1] = 101;
     expect(
-      () => decoder.decode(invalidBattery, receivedAt),
+      () => decoder.decode(
+        invalidBattery,
+        receivedAt,
+        hostTimestamp: Duration.zero,
+      ),
       throwsFormatException,
     );
   });
@@ -243,8 +304,18 @@ void main() {
       ..[0] = 0xa4
       ..[1] = 83;
 
-    expect(decoder.decode(battery, receivedAt).batteryLevel, 83);
-    expect(decoder.decode(Uint8List(20), receivedAt).events, isEmpty);
+    expect(
+      decoder
+          .decode(battery, receivedAt, hostTimestamp: Duration.zero)
+          .batteryLevel,
+      83,
+    );
+    expect(
+      decoder
+          .decode(Uint8List(20), receivedAt, hostTimestamp: Duration.zero)
+          .events,
+      isEmpty,
+    );
   });
 }
 

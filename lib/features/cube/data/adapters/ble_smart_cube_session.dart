@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/time/monotonic_clock.dart';
 import '../../application/cube_connection_gateway.dart';
 import '../../domain/cube_connection_diagnostics.dart';
 import '../../domain/smart_cube_event.dart';
@@ -17,6 +18,7 @@ abstract base class BleSmartCubeSession implements SmartCubeSession {
     required Duration initialStateTimeout,
     required String handshakeFailureMessage,
     required this.sessionLabel,
+    required this.monotonicClock,
     this.onDiagnostic,
   }) : handshake = InitialStateHandshake(
          timeout: initialStateTimeout,
@@ -34,6 +36,8 @@ abstract base class BleSmartCubeSession implements SmartCubeSession {
   final String readCharacteristic;
   @protected
   final String sessionLabel;
+  @protected
+  final MonotonicClock monotonicClock;
   @protected
   final CubeDiagnosticSink? onDiagnostic;
   @protected
