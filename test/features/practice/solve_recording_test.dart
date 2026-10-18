@@ -253,22 +253,118 @@ void main() {
     },
   );
 
+  for (final (completion, completesFromState) in [
+    ('live moves finish the solve', false),
+    ('the same state report finishes the solve', true),
+  ]) {
+    test('state-derived start excludes timing when $completion', () async {
+      final repository = MemorySolveHistoryRepository();
+      for (var index = 0; index < 4; index++) {
+        await repository.add(
+          SolveRecord(
+            id: 'baseline-$index',
+            scramble: 'R U',
+            elapsed: const Duration(seconds: 10),
+            moveCount: 2,
+            createdAt: DateTime.utc(2025, 12, 31),
+          ),
+        );
+      }
+      final clock = _MonotonicClock();
+      final controller = _preparedController(repository, clock);
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      final solution = controller.scramble.inverse.moves;
+      clock.now = const Duration(seconds: 1);
+
+      if (completesFromState) {
+        controller.syncCubeState(CubeState.solved());
+      } else {
+        controller.syncCubeState(
+          controller.cubeState.copy()..apply(solution.first),
+        );
+        for (final move in solution.skip(1)) {
+          clock.now += const Duration(milliseconds: 100);
+          controller.applyMove(move, fromSmartCube: true);
+        }
+      }
+      final solve = controller.pendingSolveReview!;
+      final payload =
+          jsonDecode(await controller.exportJson()) as Map<String, Object?>;
+      final exportedSolve =
+          (payload['solves']! as List<Object?>).first! as Map<String, Object?>;
+      final recording = (await repository.loadRecording(solve.id))!;
+
+      expect(solve.isTimingReliable, isFalse);
+      expect(solve.turnsPerSecond, isNull);
+      expect(exportedSolve['timing_reliable'], isFalse);
+      expect(exportedSolve['elapsed_ms'], isNull);
+      expect(controller.bestTime, const Duration(seconds: 10));
+      expect(controller.sessionAverage, const Duration(seconds: 10));
+      expect(controller.averageOfFive, isNull);
+      expect(recording.events.whereType<RecordedState>(), hasLength(1));
+      expect(
+        recording.events.whereType<RecordedDataGap>().single.reason,
+        RecordingGapReason.stateTransition,
+      );
+    });
+  }
+
+  test('a state correction inside a solve preserves boundary timing', () async {
+    final repository = MemorySolveHistoryRepository();
+    final clock = _MonotonicClock();
+    final controller = _preparedController(repository, clock);
+    addTearDown(controller.dispose);
+    final solution = controller.scramble.inverse.moves;
+    clock.now = const Duration(seconds: 1);
+    controller.applyMove(solution.first, fromSmartCube: true);
+
+    clock.now = const Duration(seconds: 2);
+    controller.syncCubeState(controller.cubeState.copy()..apply(solution[1]));
+    for (final move in solution.skip(2)) {
+      clock.now += const Duration(milliseconds: 100);
+      controller.applyMove(move, fromSmartCube: true);
+    }
+    final solve = controller.pendingSolveReview!;
+    await controller.flushPersistence();
+    final recording = (await repository.loadRecording(solve.id))!;
+
+    expect(solve.isTimingReliable, isTrue);
+    expect(solve.elapsed, clock.now - const Duration(seconds: 1));
+    expect(controller.bestTime, solve.elapsed);
+    expect(controller.sessionAverage, solve.elapsed);
+    expect(
+      recording.events.whereType<RecordedDataGap>().single.reason,
+      RecordingGapReason.stateTransition,
+    );
+  });
+
   test('state completion retains gaps and abort discards an attempt', () async {
     final repository = MemorySolveHistoryRepository();
     final clock = _MonotonicClock();
     final controller = _preparedController(repository, clock);
     addTearDown(controller.dispose);
+    clock.now = const Duration(seconds: 1);
     controller.applyMove(
       controller.scramble.moves.last.inverse,
       fromSmartCube: true,
     );
+    clock.now = const Duration(seconds: 2);
     controller.markSmartCubeDisconnected();
+    clock.now = const Duration(seconds: 10);
     controller.syncCubeState(CubeState.solved(), serial: 25);
     await controller.flushPersistence();
     final recording = (await repository.loadRecording(
       controller.solves.single.id,
     ))!;
 
+    final solve = controller.solves.single;
+    expect(solve.elapsed, const Duration(seconds: 9));
+    expect(solve.isTimingReliable, isFalse);
+    expect(solve.toJson()['elapsed_ms'], isNull);
+    expect(solve.turnsPerSecond, isNull);
+    expect(controller.bestTime, isNull);
+    expect(controller.sessionAverage, isNull);
     expect(recording.events.last, isA<RecordedState>());
     expect(
       recording.events.whereType<RecordedDataGap>().map(

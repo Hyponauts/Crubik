@@ -85,7 +85,7 @@ final class SolveRecord {
   final Duration? inspectionElapsed;
   final SolveStartTrigger? startTrigger;
 
-  /// False when recovery leaves the solve's start or finish time unknown.
+  /// False when recovery or a state report leaves a solve boundary unobserved.
   final bool isTimingReliable;
 
   double? get turnsPerSecond => !isTimingReliable || elapsed.inMilliseconds == 0

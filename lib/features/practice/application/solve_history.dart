@@ -21,9 +21,11 @@ final class SolveHistory {
   final DateTime Function() _now;
   final List<SolveRecord> _records = [];
   Future<void> _persistenceQueue = Future.value();
-  final List<Future<void> Function()> _pendingWrites = [];
-  Future<void>? _initializationFuture;
+  final List<({int sequence, Future<void> Function() operation})>
+  _pendingWrites = [];
+  Future<List<SolveRecord>>? _initializationFuture;
   final Set<String> _deletedDuringInitialization = {};
+  int _lastWriteSequence = 0;
   bool _initializing = false;
   bool _mutatedDuringInitialization = false;
   Object? _persistenceError;
@@ -71,12 +73,25 @@ final class SolveHistory {
     return output.toString();
   }
 
-  Future<void> writeExportJson(StringSink output) async {
-    await initialize();
-    await _serialize(() async {
-      final records = List<SolveRecord>.of(_records);
-      final exportedAt = _now().toUtc().toIso8601String();
-      await _persistPending();
+  /// Exports the history visible at this call, including initial persisted data.
+  ///
+  /// Earlier writes finish before recordings are read; later mutations wait
+  /// outside this export even while initialization or persistence is pending.
+  Future<void> writeExportJson(StringSink output) {
+    final recordsAtRequest = List<SolveRecord>.of(_records);
+    final deletedAtRequest = Set<String>.of(_deletedDuringInitialization);
+    final needsPersistedHistory =
+        _initializationFuture == null || _initializing;
+    final exportedAt = _now().toUtc().toIso8601String();
+    final writeSequence = _lastWriteSequence;
+    final initialization = _loadInitialHistory();
+
+    return _serialize(() async {
+      final persisted = await initialization;
+      final records = needsPersistedHistory
+          ? _mergeRecords(recordsAtRequest, persisted, deletedAtRequest)
+          : recordsAtRequest;
+      await _persistPending(writeSequence);
       if (_persistenceError case final error?) throw error;
 
       output
@@ -99,30 +114,32 @@ final class SolveHistory {
     });
   }
 
-  Future<void> initialize() =>
+  Future<void> initialize() => _loadInitialHistory();
+
+  Future<List<SolveRecord>> _loadInitialHistory() =>
       _initializationFuture ??= _initialize(_persistenceQueue);
 
-  Future<void> _initialize(Future<void> pendingPersistence) async {
+  Future<List<SolveRecord>> _initialize(Future<void> pendingPersistence) async {
     _initializing = true;
     try {
       await pendingPersistence;
       final persisted = [...await _repository.load()]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       if (_mutatedDuringInitialization) {
-        final localIds = _records.map((solve) => solve.id).toSet();
-        _records.addAll(
-          persisted.where(
-            (solve) =>
-                !localIds.contains(solve.id) &&
-                !_deletedDuringInitialization.contains(solve.id),
-          ),
+        final merged = _mergeRecords(
+          _records,
+          persisted,
+          _deletedDuringInitialization,
         );
-        _records.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _records
+          ..clear()
+          ..addAll(merged);
       } else {
         _records
           ..clear()
           ..addAll(persisted);
       }
+      return persisted;
     } finally {
       _initializing = false;
       _mutatedDuringInitialization = false;
@@ -148,32 +165,37 @@ final class SolveHistory {
     _schedulePersistence(() => _repository.delete(id));
   }
 
-  /// Attempts pending writes again; failures remain available in [persistenceError].
-  Future<void> flush() async {
+  /// Attempts writes queued before this call; failures stay in [persistenceError].
+  Future<void> flush() {
+    final writeSequence = _lastWriteSequence;
     final initialization = _initializationFuture;
-    if (initialization != null) await initialization;
-    await _serialize(_persistPending);
+
+    return _serialize(() async {
+      if (initialization != null) await initialization;
+      await _persistPending(writeSequence);
+    });
   }
 
   void _schedulePersistence(Future<void> Function() operation) {
-    _pendingWrites.add(operation);
+    final sequence = ++_lastWriteSequence;
+    _pendingWrites.add((sequence: sequence, operation: operation));
     final initialization = _initializationFuture;
     unawaited(
       _serialize<void>(() async {
         if (initialization != null) await initialization;
-        await _persistPending();
+        await _persistPending(sequence);
       }).onError((error, _) {
         _persistenceError = error;
       }),
     );
   }
 
-  Future<void> _persistPending() async {
-    // Bound the batch so mutations made during export wait for its snapshot.
-    final writeCount = _pendingWrites.length;
+  Future<void> _persistPending(int throughSequence) async {
+    // Retries keep their original boundary so later writes cannot pass an export.
     try {
-      for (var index = 0; index < writeCount; index++) {
-        await _pendingWrites.first();
+      while (_pendingWrites.isNotEmpty &&
+          _pendingWrites.first.sequence <= throughSequence) {
+        await _pendingWrites.first.operation();
         _pendingWrites.removeAt(0);
       }
       _persistenceError = null;
@@ -190,6 +212,20 @@ final class SolveHistory {
     );
     return scheduled;
   }
+}
+
+List<SolveRecord> _mergeRecords(
+  List<SolveRecord> local,
+  List<SolveRecord> persisted,
+  Set<String> deletedIds,
+) {
+  final localIds = local.map((solve) => solve.id).toSet();
+  return [
+    ...local,
+    ...persisted.where(
+      (solve) => !localIds.contains(solve.id) && !deletedIds.contains(solve.id),
+    ),
+  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
 void _writeIndentedJson(

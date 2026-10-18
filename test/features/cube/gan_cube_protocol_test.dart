@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:crubik/features/cube/data/gan_cube_protocol.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
+import 'package:crubik/features/practice/application/solve_recording_builder.dart';
+import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -143,6 +145,82 @@ void main() {
     expect(decoded.events.map((event) => event.hostTimestamp).toSet(), {
       const Duration(milliseconds: 50),
     });
+  });
+
+  test('Gen2 marks invalid moves without losing their clock delta', () {
+    final decoder = GanGen2PacketDecoder();
+    final receivedAt = DateTime.utc(2026);
+    final facelets = Uint8List(20);
+    _setBits(facelets, 0, 4, 0x04);
+    _setBits(facelets, 4, 8, 10);
+    _setSolvedCubies(facelets, 12, 33, 47, 91);
+    decoder.decode(facelets, receivedAt, hostTimestamp: Duration.zero);
+    final packet = Uint8List(20);
+    _setBits(packet, 0, 4, 0x02);
+    _setBits(packet, 4, 8, 13);
+    for (final (index, face, elapsed) in [
+      (2, 1, 50),
+      (1, 15, 100),
+      (0, 2, 150),
+    ]) {
+      _setBits(packet, 12 + 5 * index, 4, face);
+      _setBits(packet, 47 + 16 * index, 16, elapsed);
+    }
+
+    final decoded = decoder.decode(
+      packet,
+      receivedAt,
+      hostTimestamp: const Duration(milliseconds: 300),
+    );
+    final nextPacket = Uint8List(20);
+    _setBits(nextPacket, 0, 4, 0x02);
+    _setBits(nextPacket, 4, 8, 14);
+    _setBits(nextPacket, 12, 4, 0);
+    _setBits(nextPacket, 47, 16, 200);
+    final next = decoder.decode(
+      nextPacket,
+      receivedAt,
+      hostTimestamp: const Duration(milliseconds: 500),
+    );
+    final builder = SolveRecordingBuilder()..start(Duration.zero);
+    for (final event in [...decoded.events, ...next.events]) {
+      switch (event) {
+        case SmartCubeMoveEvent():
+          builder.recordMove(event);
+        case SmartCubeDataGapEvent():
+          builder.recordSmartCubeGap(event);
+        case _:
+          fail('Unexpected Gen2 event: ${event.runtimeType}');
+      }
+    }
+    final recording = builder.finish()!;
+
+    expect(decoded.events, [
+      isA<SmartCubeMoveEvent>(),
+      isA<SmartCubeDataGapEvent>(),
+      isA<SmartCubeMoveEvent>(),
+    ]);
+    final gap = decoded.events.whereType<SmartCubeDataGapEvent>().single;
+    expect(gap.reason, SmartCubeDataGapReason.malformedPacket);
+    expect(gap.missingMoveCount, 1);
+    expect(decoded.moves.map((move) => move.serial), [11, 13]);
+    expect(decoded.moves.map((move) => move.cubeTimestamp), const [
+      Duration(milliseconds: 50),
+      Duration(milliseconds: 300),
+    ]);
+    expect(recording.intervalForMove(1).duration, isNull);
+    expect(
+      recording.intervalForMove(1).source,
+      RecordingTimingSource.unavailable,
+    );
+    expect(
+      recording.intervalForMove(2).duration,
+      const Duration(milliseconds: 200),
+    );
+    expect(
+      recording.intervalForMove(2).source,
+      RecordingTimingSource.cubeClock,
+    );
   });
 
   test('Gen2 decodes quaternion, sign, velocity, and host receipt time', () {

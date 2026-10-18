@@ -315,7 +315,6 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
     for (var index = difference - 1; index >= 0; index--) {
       final face = message.getBitWord(12 + 5 * index, 4);
       final direction = message.getBitWord(16 + 5 * index, 1);
-      if (face >= _faceNames.length) continue;
       final elapsed = message.getBitWord(47 + 16 * index, 16);
       Duration? cubeTimestamp;
       if (elapsed == 0) {
@@ -330,6 +329,17 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
       } else {
         _cubeTimestampMs += elapsed;
         cubeTimestamp = Duration(milliseconds: _cubeTimestampMs);
+      }
+      if (face >= _faceNames.length) {
+        events.add(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.malformedPacket,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+            missingMoveCount: 1,
+          ),
+        );
+        continue;
       }
       events.add(
         SmartCubeMoveEvent(
