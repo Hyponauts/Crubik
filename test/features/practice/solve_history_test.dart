@@ -1,7 +1,8 @@
-import 'dart:math' as math;
-import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 
+import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/practice/application/solve_history.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
@@ -123,7 +124,104 @@ void main() {
       expect(await repository.loadRecording('one'), isNull);
     },
   );
+
+  test('queued exports retain their own records and recordings', () async {
+    final repository = _ControlledRepository();
+    var now = DateTime.utc(2026);
+    final history = SolveHistory(repository: repository, now: () => now);
+    await history.initialize();
+    repository.writeGate = Completer<void>();
+    history.add(_solve('one', 1), recording: _recording());
+    history.add(_solve('two', 2), recording: _recording());
+    await repository.writeStarted.future;
+
+    final firstExport = history.exportJson();
+    history.delete('one');
+    history.add(_solve('three', 3));
+    now = now.add(const Duration(seconds: 1));
+    final secondExport = history.exportJson();
+    history.delete('two');
+    history.add(_solve('four', 4));
+    now = now.add(const Duration(seconds: 1));
+    repository.writeGate!.complete();
+
+    final firstPayload = jsonDecode(await firstExport) as Map<String, Object?>;
+    final firstSolves = (firstPayload['solves']! as List<Object?>)
+        .cast<Map<String, Object?>>();
+    final secondPayload =
+        jsonDecode(await secondExport) as Map<String, Object?>;
+    final secondSolves = (secondPayload['solves']! as List<Object?>)
+        .cast<Map<String, Object?>>();
+    await history.flush();
+
+    expect(firstPayload['exported_at'], DateTime.utc(2026).toIso8601String());
+    expect(firstSolves.map((solve) => solve['id']), ['two', 'one']);
+    expect(firstSolves.every((solve) => solve['recording'] != null), isTrue);
+    expect(
+      secondPayload['exported_at'],
+      DateTime.utc(2026, 1, 1, 0, 0, 1).toIso8601String(),
+    );
+    expect(secondSolves.map((solve) => solve['id']), ['three', 'two']);
+    expect(secondSolves.last['recording'], isNotNull);
+    expect(history.records.map((solve) => solve.id), ['four', 'three']);
+    expect((await repository.load()).map((solve) => solve.id), [
+      'three',
+      'four',
+    ]);
+    expect(await repository.loadRecording('one'), isNull);
+    expect(await repository.loadRecording('two'), isNull);
+    expect(repository.maximumConcurrentWrites, 1);
+  });
+
+  for (final initializesFirst in [false, true]) {
+    test(
+      'export freezes changes ${initializesFirst ? 'during' : 'before'} initialization',
+      () async {
+        final repository = _DelayedSolveHistoryRepository([
+          _solve('persisted', 1),
+          _solve('deleted-before-export', 2),
+        ]);
+        repository.recordingsBySolveId['persisted'] = _recording();
+        final history = SolveHistory(
+          repository: repository,
+          now: () => DateTime.utc(2026),
+        );
+        if (initializesFirst) {
+          history.initialize();
+          await repository.loadStarted.future;
+        }
+        history.add(_solve('before-export', 3));
+        history.delete('deleted-before-export');
+
+        final export = history.exportJson();
+        history.delete('persisted');
+        history.delete('before-export');
+        history.add(_solve('after-export', 4));
+        repository.completeLoad();
+
+        final payload = jsonDecode(await export) as Map<String, Object?>;
+        final solves = (payload['solves']! as List<Object?>)
+            .cast<Map<String, Object?>>();
+        await history.flush();
+
+        expect(solves.map((solve) => solve['id']), [
+          'before-export',
+          'persisted',
+        ]);
+        expect(solves.last['recording'], isNotNull);
+        expect(history.records.single.id, 'after-export');
+        expect(repository.stored.single.id, 'after-export');
+      },
+    );
+  }
 }
+
+SolveRecording _recording() => SolveRecording(
+  protocolFamily: CubeProtocolFamily.gan,
+  cubeTimestampsAvailable: false,
+  orientationAvailable: false,
+  events: const [],
+);
 
 SolveRecord _solve(String id, int second) => SolveRecord(
   id: id,
@@ -178,6 +276,8 @@ final class _ControlledRepository implements SolveHistoryRepository {
   final List<String> addedIds = [];
   final readStarted = Completer<void>();
   Completer<void>? readGate;
+  final writeStarted = Completer<void>();
+  Completer<void>? writeGate;
 
   @override
   Future<List<SolveRecord>> load() => _memory.load();
@@ -196,6 +296,10 @@ final class _ControlledRepository implements SolveHistoryRepository {
     _activeWrites++;
     maximumConcurrentWrites = math.max(maximumConcurrentWrites, _activeWrites);
     try {
+      if (writeGate case final gate?) {
+        if (!writeStarted.isCompleted) writeStarted.complete();
+        await gate.future;
+      }
       await Future<void>.delayed(Duration.zero);
       if (failWrites) throw StateError('temporary write failure');
       await _memory.add(solve, recording: recording);

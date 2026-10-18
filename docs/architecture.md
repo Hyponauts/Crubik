@@ -186,7 +186,7 @@ Receipt times can go backwards in the event timeline when GAN returns recovered 
 
 `PracticeController` decides when a recording starts, finishes, or is discarded. It also checks whether a cube-reported state change proves that some moves were missed. The controller records the solved state before finishing the recording and classifies disconnects according to the practice phase. Aborting an attempt discards its unfinished timeline.
 
-`SolveRecordingBuilder` puts retained observations in sequence, translates protocol data-gap events, and detects cube-clock resets. MoYu sessions send gap events before the affected recovered moves, so a move that completes the solve cannot cause the gap to be lost.
+`SolveRecordingBuilder` puts retained observations in sequence, translates protocol data-gap events, and detects cube-clock resets. MoYu sessions send gap events before the affected recovered moves, so a move that completes the solve cannot cause the gap to be lost. GAN Gen2 decoding marks an invalid face as a missing observation while retaining its reported clock delta. The gap makes the interval across that omitted move unavailable; later consecutive moves can still use the cube clock.
 
 The builder keeps orientation samples using these rules:
 
@@ -257,7 +257,7 @@ flowchart LR
 ### Saving and loading
 
 - Local data is the source of truth. Recording and review work without a network connection.
-- `SolveHistory` runs writes and exports in order. Failed writes stay queued and are retried on later changes, an explicit save of pending changes (flush), or export. Export fails if an earlier write still has not been saved. It includes only changes made before export began.
+- `SolveHistory` runs writes and exports in order. Failed writes stay queued and are retried on later changes, an explicit save of pending changes (flush), or export. Each operation captures its write sequence boundary when requested, so an earlier retry cannot save mutations queued after an export. Export captures its summaries and timestamp immediately, merges history still loading with the local changes captured at that point, and keeps later writes behind its recording reads. Export fails if an earlier write still has not been saved.
 - A smart-cube summary and its versioned raw recording JSON are saved in one transaction. Each solve has at most one recording row, with explicit event sequence numbers. Deleting the solve also deletes its recording. Times between moves are calculated during export, not stored in the recording.
 - Startup loads solve summaries only. Detailed event timelines load when needed, including during asynchronous export, so long sessions do not load every move and orientation sample into memory.
 - Solves added or deleted while history loads are merged with the loaded data.
@@ -273,7 +273,7 @@ Schema version 4 adds JSON recording storage and solve timing reliability in one
 
 ### Export and timing reliability
 
-Crubik JSON version 3 includes a nested recording only when one exists. Summary timing is unavailable if the first or final move was recovered, or if the finish receipt time is earlier than solve start. The export then uses `timing_reliable: false` and `elapsed_ms: null`.
+Crubik JSON version 3 includes a nested recording only when one exists. Summary timing is unavailable if the first or final move was recovered, a state report establishes an unobserved start or finish, or the finish receipt time is earlier than solve start. State-based completion still saves the solve and its recording, including after reconnect, but does not substitute the report's receipt time for an unknown physical boundary. A gap or state correction in the middle of a solve does not invalidate otherwise observed boundaries. Unavailable timing exports as `timing_reliable: false` and `elapsed_ms: null`.
 
 Review and history display “Timing unavailable” for these solves. Best and mean exclude them. Ao5 is unavailable if any of the latest five solves has unavailable timing.
 

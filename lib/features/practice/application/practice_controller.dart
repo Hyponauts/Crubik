@@ -431,7 +431,8 @@ final class PracticeController extends ChangeNotifier {
       case SmartCubeMoveEvent(:final move):
         _currentMoves.add(move);
     }
-    if (update case SmartCubeMoveEvent(recovered: true)) {
+    if (update
+        case SmartCubeStateEvent() || SmartCubeMoveEvent(recovered: true)) {
       _isTimingReliable = false;
     }
     _startSolvingFromInspection(update.hostTimestamp);
@@ -516,7 +517,8 @@ final class PracticeController extends ChangeNotifier {
 
   bool _completeSmartCubeSolveIfSolved(SmartCubeUpdate update) {
     if (!_cubeState.isSolved) return false;
-    if (update case SmartCubeMoveEvent(recovered: true)) {
+    if (update
+        case SmartCubeStateEvent() || SmartCubeMoveEvent(recovered: true)) {
       _isTimingReliable = false;
     }
     _completeSolve(
