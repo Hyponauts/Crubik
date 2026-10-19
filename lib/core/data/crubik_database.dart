@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
 import '../../features/cube/application/remembered_cube_store.dart';
 import '../../features/practice/domain/solve_record.dart';
+import '../../features/practice/domain/solve_recording.dart';
 
 part 'crubik_database.g.dart';
 
@@ -14,6 +17,9 @@ class SolveEntries extends Table {
   IntColumn get elapsedMs => integer()();
 
   IntColumn get moveCount => integer()();
+
+  BoolColumn get timingReliable =>
+      boolean().withDefault(const Constant(true))();
 
   DateTimeColumn get createdAt => dateTime()();
 
@@ -36,7 +42,18 @@ class AppSettings extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [SolveEntries, AppSettings])
+@DataClassName('SolveRecordingRow')
+class SolveRecordings extends Table {
+  TextColumn get solveId =>
+      text().references(SolveEntries, #id, onDelete: KeyAction.cascade)();
+
+  TextColumn get payload => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {solveId};
+}
+
+@DriftDatabase(tables: [SolveEntries, AppSettings, SolveRecordings])
 final class CrubikDatabase extends _$CrubikDatabase {
   CrubikDatabase([QueryExecutor? executor])
     : super(
@@ -51,7 +68,7 @@ final class CrubikDatabase extends _$CrubikDatabase {
       );
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -66,6 +83,13 @@ final class CrubikDatabase extends _$CrubikDatabase {
       if (from < 3) {
         await migrator.createTable(appSettings);
       }
+      if (from < 4) {
+        await migrator.createTable(solveRecordings);
+        await migrator.addColumn(solveEntries, solveEntries.timingReliable);
+      }
+    },
+    beforeOpen: (_) async {
+      await customStatement('PRAGMA foreign_keys = ON');
     },
   );
 }
@@ -127,6 +151,7 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
             id: row.id,
             scramble: row.scramble,
             elapsed: Duration(milliseconds: row.elapsedMs),
+            isTimingReliable: row.timingReliable,
             moveCount: row.moveCount,
             createdAt: row.createdAt.toUtc(),
             inputSource: SolveInputSource.fromSerializedValue(row.inputSource),
@@ -142,30 +167,56 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
   }
 
   @override
-  Future<void> replaceAll(List<SolveRecord> solves) async {
-    await _database.transaction(() async {
-      await _database.delete(_database.solveEntries).go();
-      await _database.batch((batch) {
-        batch.insertAll(
-          _database.solveEntries,
-          solves
-              .map(
-                (solve) => SolveEntriesCompanion.insert(
-                  id: solve.id,
-                  scramble: solve.scramble,
-                  elapsedMs: solve.elapsed.inMilliseconds,
-                  moveCount: solve.moveCount,
-                  createdAt: solve.createdAt,
-                  inputSource: solve.inputSource.serializedValue,
-                  inspectionElapsedMs: Value(
-                    solve.inspectionElapsed?.inMilliseconds,
-                  ),
-                  startTrigger: Value(solve.startTrigger?.serializedValue),
-                ),
-              )
-              .toList(growable: false),
+  Future<SolveRecording?> loadRecording(String solveId) async {
+    final query = _database.select(_database.solveRecordings)
+      ..where((entry) => entry.solveId.equals(solveId));
+    final row = await query.getSingleOrNull();
+    return row == null
+        ? null
+        : SolveRecording.fromJson(
+            jsonDecode(row.payload) as Map<String, Object?>,
+          );
+  }
+
+  @override
+  Future<void> add(
+    SolveRecord solve, {
+    SolveRecording? recording,
+  }) => _database.transaction(() async {
+    await _database
+        .into(_database.solveEntries)
+        .insertOnConflictUpdate(
+          SolveEntriesCompanion.insert(
+            id: solve.id,
+            scramble: solve.scramble,
+            elapsedMs: solve.elapsed.inMilliseconds,
+            moveCount: solve.moveCount,
+            createdAt: solve.createdAt,
+            inputSource: solve.inputSource.serializedValue,
+            timingReliable: Value(solve.isTimingReliable),
+            inspectionElapsedMs: Value(solve.inspectionElapsed?.inMilliseconds),
+            startTrigger: Value(solve.startTrigger?.serializedValue),
+          ),
         );
-      });
-    });
+    await (_database.delete(
+      _database.solveRecordings,
+    )..where((entry) => entry.solveId.equals(solve.id))).go();
+    if (recording == null) return;
+
+    await _database
+        .into(_database.solveRecordings)
+        .insert(
+          SolveRecordingsCompanion.insert(
+            solveId: solve.id,
+            payload: jsonEncode(recording.toJson(includeDerivedTiming: false)),
+          ),
+        );
+  });
+
+  @override
+  Future<void> delete(String id) async {
+    await (_database.delete(
+      _database.solveEntries,
+    )..where((entry) => entry.id.equals(id))).go();
   }
 }

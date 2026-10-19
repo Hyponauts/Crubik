@@ -1,3 +1,5 @@
+import 'solve_recording.dart';
+
 enum SolveStartTrigger {
   manual('manual'),
   firstMove('first_move'),
@@ -69,10 +71,13 @@ final class SolveRecord {
     this.inputSource = SolveInputSource.manual,
     this.inspectionElapsed,
     this.startTrigger,
+    this.isTimingReliable = true,
   });
 
   final String id;
   final String scramble;
+
+  /// The host timer reading; meaningful only when [isTimingReliable] is true.
   final Duration elapsed;
   final int moveCount;
   final DateTime createdAt;
@@ -80,14 +85,18 @@ final class SolveRecord {
   final Duration? inspectionElapsed;
   final SolveStartTrigger? startTrigger;
 
-  double? get turnsPerSecond => elapsed.inMilliseconds == 0
+  /// False when recovery or a state report leaves a solve boundary unobserved.
+  final bool isTimingReliable;
+
+  double? get turnsPerSecond => !isTimingReliable || elapsed.inMilliseconds == 0
       ? null
       : moveCount / (elapsed.inMilliseconds / 1000);
 
   Map<String, Object?> toJson() => {
     'id': id,
     'scramble': scramble,
-    'elapsed_ms': elapsed.inMilliseconds,
+    'elapsed_ms': isTimingReliable ? elapsed.inMilliseconds : null,
+    'timing_reliable': isTimingReliable,
     'move_count': moveCount,
     'created_at': createdAt.toIso8601String(),
     'input_source': inputSource.serializedValue,
@@ -98,7 +107,9 @@ final class SolveRecord {
   factory SolveRecord.fromJson(Map<String, Object?> json) => SolveRecord(
     id: json['id']! as String,
     scramble: json['scramble']! as String,
-    elapsed: Duration(milliseconds: json['elapsed_ms']! as int),
+    elapsed: Duration(milliseconds: (json['elapsed_ms'] as int?) ?? 0),
+    isTimingReliable:
+        (json['timing_reliable'] as bool?) ?? json['elapsed_ms'] != null,
     moveCount: json['move_count']! as int,
     createdAt: DateTime.parse(json['created_at']! as String),
     inputSource: SolveInputSource.fromSerializedValue(
@@ -118,19 +129,38 @@ final class SolveRecord {
 abstract interface class SolveHistoryRepository {
   Future<List<SolveRecord>> load();
 
-  Future<void> replaceAll(List<SolveRecord> solves);
+  Future<SolveRecording?> loadRecording(String solveId);
+
+  Future<void> add(SolveRecord solve, {SolveRecording? recording});
+
+  Future<void> delete(String id);
 }
 
 final class MemorySolveHistoryRepository implements SolveHistoryRepository {
   final List<SolveRecord> _solves = [];
+  final Map<String, SolveRecording> _recordingsBySolveId = {};
 
   @override
   Future<List<SolveRecord>> load() async => List.unmodifiable(_solves);
 
   @override
-  Future<void> replaceAll(List<SolveRecord> solves) async {
-    _solves
-      ..clear()
-      ..addAll(solves);
+  Future<SolveRecording?> loadRecording(String solveId) async =>
+      _recordingsBySolveId[solveId];
+
+  @override
+  Future<void> add(SolveRecord solve, {SolveRecording? recording}) async {
+    _solves.removeWhere((stored) => stored.id == solve.id);
+    _solves.add(solve);
+    if (recording == null) {
+      _recordingsBySolveId.remove(solve.id);
+    } else {
+      _recordingsBySolveId[solve.id] = recording;
+    }
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    _solves.removeWhere((solve) => solve.id == id);
+    _recordingsBySolveId.remove(id);
   }
 }

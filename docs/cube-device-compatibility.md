@@ -1,55 +1,56 @@
 # Crubik cube device compatibility
 
-This document is the source of truth for smart-cube protocol coverage, compatibility evidence, physical-device compatibility validation, and release support status. It is independent of any particular product stage.
+This document describes which smart-cube protocols Crubik implements, how compatibility has been tested, and which devices are supported for release. It applies across all product stages. The [shared glossary](glossary.md) explains recurring technical terms.
 
-## Compatibility evidence levels
+## Compatibility test levels
 
-- **Packet-tested:** Protocol parsing, encryption, state conversion, and recovery behavior pass deterministic fixtures. This does not establish compatibility with a marketed cube on real hardware.
-- **Hardware-validated:** A specific marketed cube model, firmware version, operating-system platform, and Crubik version pass the physical-device compatibility checks in this document.
-- **Supported for release:** Crubik may assign this status only to hardware-validated combinations explicitly listed as supported in the compatibility matrix.
+- **Packet-tested:** Automated tests with fixed sample packets pass for decoding, encryption, cube-state conversion, and recovery. These tests alone do not prove that a real cube model works with Crubik.
+- **Hardware-validated:** A real cube passes the checks below. The result applies to the tested model, firmware, operating system, and Crubik version.
+- **Supported for release:** A hardware-validated combination is explicitly listed as supported in the compatibility table and meets the release requirements below.
 
-Physical-device compatibility validation is an internal Crubik release process. It is not legal, safety, regulatory, manufacturer, Bluetooth SIG, or other third-party certification.
+Hardware validation is Crubik's own release check. It is not certification by a manufacturer, Bluetooth SIG, regulator, safety body, or other outside organization.
 
-Discovery, successful pairing, a shared service, or packet-tested protocol code does not by itself move a device beyond packet-tested status.
+Finding a cube, pairing with it, or recognizing its Bluetooth service does not prove hardware compatibility. Passing packet tests is also not enough. A validated practice workflow does not mean orientation capture has been validated; the test record must explicitly include that feature.
 
-## Current compatibility matrix
+## Current compatibility table
 
-| Vendor/family | Intended protocol coverage | Current evidence | Release support |
+| Vendor/family | Protocols implemented for | Tests and results so far | Release support |
 | --- | --- | --- | --- |
-| GAN Gen2 | GAN Mini ui FreePlay, GAN12 ui/ui FreePlay, GAN356 i Carry/Carry S/i 3, and hardware exposing the same protocol service | Packet-tested fixtures for state, moves, packet sequence recovery, malformed input, and encryption | No hardware-validated combination documented |
-| GAN Gen3 | GAN356 i Carry 2 protocol | Packet decoding and adapter tests | No hardware-validated combination documented |
-| GAN Gen4 | GAN12 ui Maglev and GAN14 ui FreePlay protocols | Packet decoding and adapter tests; GAN12 ui Maglev manually hardware-validated | GAN12 ui Maglev: Supported for release |
-| MoYu AI 2023 | GAN Gen2-compatible packet format with MoYu key material | Encryption and adapter fixtures | No hardware-validated combination documented |
-| MoYu32 | `WCU_MY32` service, including initial state, five-move recovery, cube timestamps, and battery | Packet and adapter fixtures; MoYu32 manually hardware-validated | MoYu32 (`WCU_MY32`): Supported for release |
+| GAN Gen2 | GAN Mini ui FreePlay, GAN12 ui/ui FreePlay, GAN356 i Carry/Carry S/i 3, and hardware using the same protocol service | Packet tests cover state, moves, packet sequence recovery, invalid-face gaps with preserved clock deltas, other invalid input, encryption, gyro availability, and `0x01` orientation and ODR-step rotation-speed decoding. Orientation capture has not been hardware-validated. | No hardware-validated combination documented |
+| GAN Gen3 | GAN356 i Carry 2 protocol | Packet decoding and adapter tests. Hardware information explicitly reports that orientation is unavailable. | No hardware-validated combination documented |
+| GAN Gen4 | GAN12 ui Maglev and GAN14 ui FreePlay protocols | Packet decoding, adapter, hardware-feature, and `0xEC` orientation and ODR-step rotation-speed tests. GAN12 ui Maglev practice was manually hardware-validated; orientation capture has not been separately hardware-validated. | GAN12 ui Maglev: Supported for release |
+| MoYu AI 2023 | GAN Gen2-compatible packet format with MoYu encryption keys | Encryption and adapter tests. Orientation is available only if the cube reports the Gen2 hardware feature; the protocol family alone is not enough. | No hardware-validated combination documented |
+| MoYu32 | `WCU_MY32` service: initial state, recovery of up to five moves, cube timestamps, and battery | Packet and adapter tests. Orientation is unavailable. MoYu32 practice was manually hardware-validated. | MoYu32 (`WCU_MY32`): Supported for release |
 
-The matrix describes implemented protocol intent and available evidence. Model names in the protocol-coverage column do not establish supported-for-release status.
+The table lists the models targeted by the implemented protocols and the tests completed so far. A model name in the protocol column does not mean the model is supported for release.
 
-## Physical-device compatibility validation
+## Testing with a real cube
 
-Each validation record must identify:
+Each hardware-validation record must include:
 
-- marketed cube model and hardware revision where distinguishable;
+- cube model and hardware revision, if these can be distinguished;
 - firmware version;
 - operating system, platform, and version;
-- Crubik version or build identifier;
+- Crubik version or build ID;
 - test date;
 - observed results and known limitations.
 
-A combination becomes hardware-validated only when recorded evidence covers:
+A combination is hardware-validated only when its test record covers:
 
 - discovery and first connection;
-- remembered reconnect;
-- link loss and clean disconnect;
-- initial and solved-state handling;
+- reconnecting to a remembered cube;
+- losing the connection and disconnecting normally;
+- handling the initial cube state and a solved cube;
 - every supported face and turn direction;
-- state mapping and orientation;
-- packet ordering, sequence-counter rollover from its maximum value back to zero, timestamps, and fast turns;
-- missed-move recovery and state resynchronization;
-- sleep/wake and background/foreground behavior;
+- mapping the reported state to the correct faces and cube orientation;
+- packet order, sequence counters wrapping from their maximum value to zero, timestamps, and fast turns;
+- recovering missed moves and correcting the app's state from a fresh cube-state report;
+- cube sleep/wake and app background/foreground behavior;
 - battery reporting where available;
-- a representative long practice session.
+- orientation capture, where available: stable quaternions, correct axes, consistent quaternion signs, feature detection, and continuous sample delivery;
+- a long practice session representative of normal use.
 
-Failures, intermittent results, and platform-specific limitations remain part of the validation record. Passing on one firmware or operating system must not be generalized to untested combinations.
+Record failures, occasional problems, and platform-specific limits too. A pass on one firmware or operating system does not count as a pass on an untested combination.
 
 ## Release support status
 
@@ -57,27 +58,27 @@ A device combination may be marked **supported for release** only when:
 
 1. Its exact model, firmware, platform, and Crubik version are hardware-validated.
 2. No known limitation breaks the documented core practice workflow.
-3. The supported-device documentation names the validated combination and any limitations.
-4. Automated protocol and connection tests remain green.
-5. Required protocol attribution and licensing are current in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+3. The supported-device documentation lists the tested combination and any limitations.
+4. Automated protocol and connection tests still pass.
+5. [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) has up-to-date license information and credits for adapted protocol code.
 
-Support documentation must use the evidence labels exactly. Packet-tested families must not be presented as hardware-validated or supported for release.
+Use the three status labels above exactly in support documentation. Do not describe packet-tested families as hardware-validated or supported for release.
 
 ## Adding or expanding device coverage
 
-A new vendor, protocol family, marketed model, firmware, or platform requires evidence appropriate to the claim:
+When adding a vendor, protocol family, model, firmware, or platform, test it to the level of support being claimed:
 
-1. Review protocol sources and license compatibility.
-2. Add deterministic fixtures for initial state, live moves, encryption, malformed input, packet sequence counters and rollover, recovery, and resynchronization.
-3. Keep vendor packets behind the adapter boundary and publish normalized smart-cube events.
-4. Complete physical-device compatibility validation for each combination intended to be marked supported for release.
-5. Update the compatibility matrix, architecture overview, tests, supported-device statements, and third-party notices together where affected.
+1. Review protocol sources and check that their licenses allow use in Crubik.
+2. Add tests with fixed sample packets for initial state, live moves, encryption, invalid input, sequence counters and wrapping, missed-move recovery, state resynchronization, optional features, and any orientation or timing fields.
+3. Decode vendor packets inside adapters and send common smart-cube events to the rest of the app.
+4. Complete hardware validation for each combination that will be marked supported for release.
+5. Update the compatibility table, architecture overview, tests, supported-device statements, and third-party notices wherever the change affects them.
 
-Protocol similarity does not implicitly schedule or support another device.
+A similar protocol does not mean another device is supported or planned for support.
 
 ## Reference material
 
 - [Universal BLE](https://pub.dev/packages/universal_ble)
 - [afedotov/gan-web-bluetooth](https://github.com/afedotov/gan-web-bluetooth)
 
-Protocol code adapted from third-party work retains its license and attribution requirements in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+Keep licenses and credits for adapted protocol code in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

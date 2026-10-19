@@ -2,10 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/time/monotonic_clock.dart';
 import '../../cube/domain/cube_model.dart';
 import '../../cube/domain/scramble_generator.dart';
+import '../../cube/domain/smart_cube_device.dart';
+import '../../cube/domain/smart_cube_event.dart';
 import '../domain/solve_record.dart';
+import '../domain/solve_recording.dart';
 import 'solve_history.dart';
+import 'solve_recording_builder.dart';
 
 enum PracticePhase {
   manualReady,
@@ -40,60 +45,45 @@ abstract interface class SolveClock {
 
   void reset();
 
-  void start({Duration initialElapsed = Duration.zero});
+  void startAt(Duration hostTimestamp);
 
-  void stop();
+  void stopAt(Duration hostTimestamp);
 }
 
-final class StopwatchSolveClock implements SolveClock {
-  final Stopwatch _stopwatch = Stopwatch();
-  Duration _initialElapsed = Duration.zero;
+final class MonotonicSolveClock implements SolveClock {
+  MonotonicSolveClock(this._monotonicClock);
+
+  final MonotonicClock _monotonicClock;
+  Duration? _startedAt;
+  Duration? _stoppedAt;
 
   @override
-  Duration get elapsed => _initialElapsed + _stopwatch.elapsed;
+  Duration get elapsed {
+    final startedAt = _startedAt;
+    if (startedAt == null) return Duration.zero;
+    final end = _stoppedAt ?? _monotonicClock.now;
+    if (end < startedAt) return Duration.zero;
+    return end - startedAt;
+  }
 
   @override
   void reset() {
-    _stopwatch
-      ..stop()
-      ..reset();
-    _initialElapsed = Duration.zero;
+    _startedAt = null;
+    _stoppedAt = null;
   }
 
   @override
-  void start({Duration initialElapsed = Duration.zero}) {
-    _stopwatch
-      ..stop()
-      ..reset()
-      ..start();
-    _initialElapsed = initialElapsed;
+  void startAt(Duration hostTimestamp) {
+    _startedAt = hostTimestamp;
+    _stoppedAt = null;
   }
 
   @override
-  void stop() => _stopwatch.stop();
-}
-
-sealed class _SmartCubeUpdate {
-  const _SmartCubeUpdate(this.occurredAt);
-
-  final DateTime occurredAt;
-
-  SolveInputSource get completionSource => switch (this) {
-    _SmartCubeMoveUpdate() => SolveInputSource.smartCube,
-    _SmartCubeStateUpdate() => SolveInputSource.smartCubeState,
-  };
-}
-
-final class _SmartCubeMoveUpdate extends _SmartCubeUpdate {
-  const _SmartCubeMoveUpdate(this.move, super.occurredAt);
-
-  final CubeMove move;
-}
-
-final class _SmartCubeStateUpdate extends _SmartCubeUpdate {
-  const _SmartCubeStateUpdate(this.state, super.occurredAt);
-
-  final CubeState state;
+  void stopAt(Duration hostTimestamp) {
+    final startedAt = _startedAt;
+    if (startedAt == null) return;
+    _stoppedAt = hostTimestamp < startedAt ? startedAt : hostTimestamp;
+  }
 }
 
 final class PracticeController extends ChangeNotifier {
@@ -104,12 +94,14 @@ final class PracticeController extends ChangeNotifier {
     ScrambleGenerator? scrambleGenerator,
     SolveHistoryRepository? repository,
     SolveClock? clock,
+    MonotonicClock? monotonicClock,
     DateTime Function()? now,
     this.preInspectionDelay = defaultPreInspectionDelay,
     this.inspectionDuration = defaultInspectionDuration,
   }) : _scrambleGenerator = scrambleGenerator ?? ScrambleGenerator(),
-       _clock = clock ?? StopwatchSolveClock(),
        _now = now ?? DateTime.now {
+    _monotonicClock = monotonicClock ?? StopwatchMonotonicClock();
+    _clock = clock ?? MonotonicSolveClock(_monotonicClock);
     _history = SolveHistory(
       repository: repository ?? MemorySolveHistoryRepository(),
       now: _now,
@@ -120,7 +112,8 @@ final class PracticeController extends ChangeNotifier {
   }
 
   final ScrambleGenerator _scrambleGenerator;
-  final SolveClock _clock;
+  late final SolveClock _clock;
+  late final MonotonicClock _monotonicClock;
   final DateTime Function() _now;
   late final SolveHistory _history;
   final Duration preInspectionDelay;
@@ -132,15 +125,18 @@ final class PracticeController extends ChangeNotifier {
   late CubeState _cubeState;
   final List<CubeMove> _preparationMoves = [];
   final List<CubeMove> _currentMoves = [];
+  final SolveRecordingBuilder _recordingBuilder = SolveRecordingBuilder();
   PracticePhase _phase = PracticePhase.manualReady;
   PracticeInputMode _inputMode = PracticeInputMode.unselected;
   Timer? _ticker;
   bool _hasAuthoritativeCubeState = false;
   PracticeInputMode? _attemptInputMode;
-  DateTime? _preInspectionDeadline;
-  DateTime? _inspectionStartedAt;
-  DateTime? _inspectionDeadline;
+  Duration? _preInspectionDeadline;
+  Duration? _inspectionStartedAt;
+  Duration? _inspectionDeadline;
   Duration? _inspectionElapsed;
+  Duration? _solveStartedAt;
+  bool _isTimingReliable = true;
   SolveStartTrigger? _startTrigger;
   CubeMove? _lastAppliedMove;
   int _cubeMoveRevision = 0;
@@ -168,7 +164,7 @@ final class PracticeController extends ChangeNotifier {
     if (_phase != PracticePhase.inspectionDelay) return Duration.zero;
     final deadline = _preInspectionDeadline;
     if (deadline == null) return Duration.zero;
-    final remaining = deadline.difference(_now());
+    final remaining = deadline - _monotonicClock.now;
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
@@ -176,7 +172,7 @@ final class PracticeController extends ChangeNotifier {
     if (_phase != PracticePhase.inspection) return Duration.zero;
     final deadline = _inspectionDeadline;
     if (deadline == null) return Duration.zero;
-    final remaining = deadline.difference(_now());
+    final remaining = deadline - _monotonicClock.now;
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
@@ -273,7 +269,7 @@ final class PracticeController extends ChangeNotifier {
 
   Duration? get averageOfFive => _history.averageOfFive;
 
-  String exportJson() => _history.exportJson();
+  Future<String> exportJson() => _history.exportJson();
 
   Future<void> flushPersistence() => _history.flush();
 
@@ -292,6 +288,7 @@ final class PracticeController extends ChangeNotifier {
     if (_inputMode == PracticeInputMode.demo) return;
     _cancelAttemptForModeChange();
     _inputMode = PracticeInputMode.demo;
+    _recordingBuilder.resetSource();
     _hasAuthoritativeCubeState = false;
     _cubeState = _scrambleTarget.copy();
     _phase = PracticePhase.manualReady;
@@ -302,13 +299,21 @@ final class PracticeController extends ChangeNotifier {
     if (_inputMode != PracticeInputMode.demo) return;
     _cancelAttemptForModeChange();
     _inputMode = PracticeInputMode.unselected;
+    _recordingBuilder.resetSource();
     _hasAuthoritativeCubeState = false;
     _cubeState = _scrambleTarget.copy();
     _phase = PracticePhase.manualReady;
     notifyListeners();
   }
 
-  void activateSmartCubeInput() {
+  void activateSmartCubeInput({
+    CubeProtocolFamily? protocolFamily,
+    CubeCapabilities? capabilities,
+  }) {
+    _recordingBuilder.configureSource(
+      protocolFamily: protocolFamily,
+      capabilities: capabilities,
+    );
     if (smartCubeWorkflowActive) return;
     _cancelAttemptForModeChange();
     _inputMode = PracticeInputMode.smartCube;
@@ -319,6 +324,19 @@ final class PracticeController extends ChangeNotifier {
 
   void markSmartCubeDisconnected() {
     if (!smartCubeWorkflowActive) return;
+    if (_phase == PracticePhase.solving) {
+      _recordingBuilder.recordGap(
+        RecordingGapReason.connectionDiscontinuity,
+        _monotonicClock.now,
+      );
+    } else if (_phase == PracticePhase.inspectionDelay ||
+        _phase == PracticePhase.inspection) {
+      _recordingBuilder.queueGap(
+        RecordingGapReason.connectionDiscontinuity,
+        _monotonicClock.now,
+      );
+    }
+    _recordingBuilder.clearPose();
     _hasAuthoritativeCubeState = false;
     if (!attemptInProgress) {
       _phase = PracticePhase.awaitingCubeState;
@@ -326,19 +344,49 @@ final class PracticeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void syncCubeState(CubeState state, {DateTime? occurredAt}) {
+  void handleSmartCubeEvent(SmartCubeEvent event) {
     if (!smartCubeWorkflowActive) return;
-    _processSmartCubeUpdate(_SmartCubeStateUpdate(state, occurredAt ?? _now()));
+    switch (event) {
+      case SmartCubeUpdate():
+        _processSmartCubeUpdate(event);
+      case SmartCubeOrientationEvent():
+        _recordingBuilder.observeOrientation(event);
+      case SmartCubeCapabilitiesEvent(:final capabilities):
+        _recordingBuilder.configureSource(capabilities: capabilities);
+      case SmartCubeDataGapEvent():
+        if (_phase == PracticePhase.solving) {
+          _recordingBuilder.recordSmartCubeGap(event);
+        } else if (_phase == PracticePhase.inspectionDelay ||
+            _phase == PracticePhase.inspection) {
+          _recordingBuilder.queueSmartCubeGap(event);
+        }
+    }
   }
 
-  void _processSmartCubeUpdate(_SmartCubeUpdate update) {
+  void syncCubeState(
+    CubeState state, {
+    Duration? hostTimestamp,
+    int serial = 0,
+  }) {
+    if (!smartCubeWorkflowActive) return;
+    _processSmartCubeUpdate(
+      SmartCubeStateEvent(
+        state: state,
+        serial: serial,
+        receivedAt: _now(),
+        hostTimestamp: hostTimestamp ?? _monotonicClock.now,
+      ),
+    );
+  }
+
+  void _processSmartCubeUpdate(SmartCubeUpdate update) {
     final previousFacelets = _cubeState.facelets;
     switch (update) {
-      case _SmartCubeMoveUpdate(:final move):
+      case SmartCubeMoveEvent(:final move):
         _lastAppliedMove = move;
         _cubeMoveRevision++;
         _cubeState.apply(move);
-      case _SmartCubeStateUpdate(:final state):
+      case SmartCubeStateEvent(:final state):
         _cubeState = state.copy();
         _hasAuthoritativeCubeState = true;
     }
@@ -346,7 +394,7 @@ final class PracticeController extends ChangeNotifier {
     final completedInternally = switch (_phase) {
       PracticePhase.inspectionDelay => _handleReadinessUpdate(update),
       PracticePhase.inspection => _handleInspectionUpdate(update),
-      PracticePhase.solving => _handleSolvingUpdate(update),
+      PracticePhase.solving => _handleSolvingUpdate(update, previousFacelets),
       PracticePhase.awaitingCubeState ||
       PracticePhase.needsSolvedCube ||
       PracticePhase.scrambling => _handlePreparationUpdate(
@@ -358,16 +406,16 @@ final class PracticeController extends ChangeNotifier {
     if (!completedInternally) notifyListeners();
   }
 
-  bool _handleReadinessUpdate(_SmartCubeUpdate update) {
+  bool _handleReadinessUpdate(SmartCubeUpdate update) {
     switch (update) {
-      case _SmartCubeStateUpdate():
+      case SmartCubeStateEvent():
         if (_cubeState.facelets == _scrambleTarget.facelets) return false;
         _cancelPreInspectionDelay();
         _preparationMoves.clear();
         _phase = _cubeState.isSolved
             ? PracticePhase.scrambling
             : PracticePhase.needsSolvedCube;
-      case _SmartCubeMoveUpdate(:final move):
+      case SmartCubeMoveEvent(:final move):
         _cancelPreInspectionDelay();
         _recordPreparationMove(move);
         if (_cubeState.isSolved) _preparationMoves.clear();
@@ -376,30 +424,50 @@ final class PracticeController extends ChangeNotifier {
     return false;
   }
 
-  bool _handleInspectionUpdate(_SmartCubeUpdate update) {
+  bool _handleInspectionUpdate(SmartCubeUpdate update) {
     switch (update) {
-      case _SmartCubeStateUpdate():
+      case SmartCubeStateEvent():
         if (_cubeState.facelets == _scrambleTarget.facelets) return false;
-      case _SmartCubeMoveUpdate(:final move):
+      case SmartCubeMoveEvent(:final move):
         _currentMoves.add(move);
     }
-    _startSolvingFromInspection(update.occurredAt);
+    if (update
+        case SmartCubeStateEvent() || SmartCubeMoveEvent(recovered: true)) {
+      _isTimingReliable = false;
+    }
+    _startSolvingFromInspection(update.hostTimestamp);
+    if (update is SmartCubeStateEvent) {
+      _recordingBuilder.recordGap(
+        RecordingGapReason.stateTransition,
+        update.hostTimestamp,
+      );
+    }
+    _recordSmartCubeUpdate(update);
     return _completeSmartCubeSolveIfSolved(update);
   }
 
-  bool _handleSolvingUpdate(_SmartCubeUpdate update) {
-    if (update case _SmartCubeMoveUpdate(:final move)) {
+  bool _handleSolvingUpdate(SmartCubeUpdate update, String previousFacelets) {
+    if (update case SmartCubeMoveEvent(:final move)) {
       _currentMoves.add(move);
     }
+    if (update case SmartCubeStateEvent(
+      :final state,
+    ) when state.facelets != previousFacelets) {
+      _recordingBuilder.recordGap(
+        RecordingGapReason.stateTransition,
+        update.hostTimestamp,
+      );
+    }
+    _recordSmartCubeUpdate(update);
     return _completeSmartCubeSolveIfSolved(update);
   }
 
   bool _handlePreparationUpdate(
-    _SmartCubeUpdate update,
+    SmartCubeUpdate update,
     String previousFacelets,
   ) {
     switch (update) {
-      case _SmartCubeMoveUpdate(:final move):
+      case SmartCubeMoveEvent(:final move):
         if (_phase == PracticePhase.scrambling) {
           _recordPreparationMove(move);
           if (_cubeState.facelets == _scrambleTarget.facelets) {
@@ -411,7 +479,7 @@ final class PracticeController extends ChangeNotifier {
           _preparationMoves.clear();
           _phase = PracticePhase.scrambling;
         }
-      case _SmartCubeStateUpdate():
+      case SmartCubeStateEvent():
         if (_cubeState.facelets == _scrambleTarget.facelets) {
           _beginPreInspectionDelay();
           return true;
@@ -447,9 +515,18 @@ final class PracticeController extends ChangeNotifier {
     return false;
   }
 
-  bool _completeSmartCubeSolveIfSolved(_SmartCubeUpdate update) {
+  bool _completeSmartCubeSolveIfSolved(SmartCubeUpdate update) {
     if (!_cubeState.isSolved) return false;
-    _completeSolve(inputSource: update.completionSource);
+    if (update
+        case SmartCubeStateEvent() || SmartCubeMoveEvent(recovered: true)) {
+      _isTimingReliable = false;
+    }
+    _completeSolve(
+      inputSource: update is SmartCubeMoveEvent
+          ? SolveInputSource.smartCube
+          : SolveInputSource.smartCubeState,
+      completedAtHostTimestamp: update.hostTimestamp,
+    );
     return true;
   }
 
@@ -491,7 +568,10 @@ final class PracticeController extends ChangeNotifier {
         _attemptInputMode != PracticeInputMode.demo) {
       return;
     }
-    _completeSolve(inputSource: inputSource);
+    _completeSolve(
+      inputSource: inputSource,
+      completedAtHostTimestamp: _monotonicClock.now,
+    );
   }
 
   void continueAfterSolve() {
@@ -523,9 +603,15 @@ final class PracticeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _completeSolve({required SolveInputSource inputSource}) {
+  void _completeSolve({
+    required SolveInputSource inputSource,
+    required Duration completedAtHostTimestamp,
+  }) {
     if (_phase != PracticePhase.solving) return;
-    _clock.stop();
+    if (completedAtHostTimestamp < _solveStartedAt!) {
+      _isTimingReliable = false;
+    }
+    _clock.stopAt(completedAtHostTimestamp);
     _ticker?.cancel();
     _ticker = null;
 
@@ -539,8 +625,10 @@ final class PracticeController extends ChangeNotifier {
       inputSource: inputSource,
       inspectionElapsed: _inspectionElapsed,
       startTrigger: _startTrigger,
+      isTimingReliable: _isTimingReliable,
     );
-    _history.add(solve);
+    final recording = _recordingBuilder.finish();
+    _history.add(solve, recording: recording);
     _pendingSolveReview = solve;
     _generateNextScramble();
     notifyListeners();
@@ -549,11 +637,23 @@ final class PracticeController extends ChangeNotifier {
   void applyMove(
     CubeMove move, {
     bool fromSmartCube = false,
-    DateTime? occurredAt,
+    Duration? hostTimestamp,
+    int serial = 0,
+    Duration? cubeTimestamp,
+    bool recovered = false,
   }) {
     if (fromSmartCube) {
       if (!smartCubeWorkflowActive) return;
-      _processSmartCubeUpdate(_SmartCubeMoveUpdate(move, occurredAt ?? _now()));
+      _processSmartCubeUpdate(
+        SmartCubeMoveEvent(
+          move: move,
+          serial: serial,
+          receivedAt: _now(),
+          recovered: recovered,
+          hostTimestamp: hostTimestamp ?? _monotonicClock.now,
+          cubeTimestamp: cubeTimestamp,
+        ),
+      );
       return;
     }
     if (_inputMode != PracticeInputMode.demo ||
@@ -566,12 +666,15 @@ final class PracticeController extends ChangeNotifier {
     _cubeMoveRevision++;
 
     if (_phase == PracticePhase.inspection) {
-      _startSolvingFromInspection(occurredAt ?? _now());
+      _startSolvingFromInspection(hostTimestamp ?? _monotonicClock.now);
     }
     _cubeState.apply(move);
     _currentMoves.add(move);
     if (_cubeState.isSolved) {
-      _completeSolve(inputSource: SolveInputSource.manualMoves);
+      _completeSolve(
+        inputSource: SolveInputSource.manualMoves,
+        completedAtHostTimestamp: hostTimestamp ?? _monotonicClock.now,
+      );
       return;
     }
     notifyListeners();
@@ -583,28 +686,28 @@ final class PracticeController extends ChangeNotifier {
     _clock.reset();
     _clearAttemptTiming();
     _attemptInputMode = _inputMode;
-    final startedAt = _now();
+    final startedAt = _monotonicClock.now;
     if (preInspectionDelay == Duration.zero) {
       _beginInspection(startedAt: startedAt);
       return;
     }
-    _preInspectionDeadline = startedAt.add(preInspectionDelay);
+    _preInspectionDeadline = startedAt + preInspectionDelay;
     _phase = PracticePhase.inspectionDelay;
     _startTicker();
     notifyListeners();
   }
 
-  void _beginInspection({DateTime? startedAt}) {
+  void _beginInspection({Duration? startedAt}) {
     _currentMoves.clear();
     _clock.reset();
     _preInspectionDeadline = null;
-    _inspectionStartedAt = startedAt ?? _now();
-    _inspectionDeadline = _inspectionStartedAt!.add(inspectionDuration);
+    _inspectionStartedAt = startedAt ?? _monotonicClock.now;
+    _inspectionDeadline = _inspectionStartedAt! + inspectionDuration;
     _inspectionElapsed = null;
     _startTrigger = null;
     _phase = PracticePhase.inspection;
-    final now = _now();
-    if (!now.isBefore(_inspectionDeadline!)) {
+    final now = _monotonicClock.now;
+    if (now >= _inspectionDeadline!) {
       _startSolvingFromInspection(now);
       notifyListeners();
       return;
@@ -613,23 +716,27 @@ final class PracticeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _startSolvingFromInspection(DateTime occurredAt) {
+  void _startSolvingFromInspection(Duration hostTimestamp) {
     if (_phase != PracticePhase.inspection) return;
     final startedAt = _inspectionStartedAt!;
     final deadline = _inspectionDeadline!;
-    if (!occurredAt.isBefore(deadline)) {
+    final solveStartedAt = hostTimestamp >= deadline ? deadline : hostTimestamp;
+    if (hostTimestamp >= deadline) {
       _inspectionElapsed = inspectionDuration;
       _startTrigger = SolveStartTrigger.inspectionTimeout;
-      _clock.start(initialElapsed: occurredAt.difference(deadline));
     } else {
-      final inspectedFor = occurredAt.difference(startedAt);
+      final inspectedFor = hostTimestamp - startedAt;
       _inspectionElapsed = inspectedFor.isNegative
           ? Duration.zero
           : inspectedFor;
       _startTrigger = SolveStartTrigger.firstMove;
-      _clock.start();
     }
+    _solveStartedAt = solveStartedAt;
+    _clock.startAt(solveStartedAt);
     _phase = PracticePhase.solving;
+    if (_attemptInputMode == PracticeInputMode.smartCube) {
+      _recordingBuilder.start(solveStartedAt);
+    }
     _startTicker();
   }
 
@@ -637,16 +744,16 @@ final class PracticeController extends ChangeNotifier {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 31), (_) {
       if (_phase == PracticePhase.inspectionDelay) {
-        final now = _now();
+        final now = _monotonicClock.now;
         final deadline = _preInspectionDeadline!;
-        if (!now.isBefore(deadline)) {
+        if (now >= deadline) {
           _beginInspection(startedAt: deadline);
           return;
         }
       } else if (_phase == PracticePhase.inspection) {
-        final now = _now();
+        final now = _monotonicClock.now;
         final deadline = _inspectionDeadline!;
-        if (!now.isBefore(deadline)) {
+        if (now >= deadline) {
           _startSolvingFromInspection(now);
           notifyListeners();
           return;
@@ -720,15 +827,27 @@ final class PracticeController extends ChangeNotifier {
     return reduced;
   }
 
+  void _recordSmartCubeUpdate(SmartCubeUpdate update) {
+    switch (update) {
+      case SmartCubeMoveEvent():
+        _recordingBuilder.recordMove(update);
+      case SmartCubeStateEvent():
+        _recordingBuilder.recordState(update);
+    }
+  }
+
   static CubeState _stateForScramble(Scramble scramble) =>
       CubeState.solved()..applyAll(scramble.moves);
 
   void _clearAttemptTiming() {
+    _recordingBuilder.discardAttempt();
     _preInspectionDeadline = null;
     _inspectionStartedAt = null;
     _inspectionDeadline = null;
     _inspectionElapsed = null;
     _startTrigger = null;
+    _solveStartedAt = null;
+    _isTimingReliable = true;
     _attemptInputMode = null;
   }
 
@@ -737,6 +856,7 @@ final class PracticeController extends ChangeNotifier {
     _ticker = null;
     _preInspectionDeadline = null;
     _attemptInputMode = null;
+    _recordingBuilder.discardAttempt();
   }
 
   void deleteSolve(String id) {

@@ -76,14 +76,6 @@ class SessionsView extends StatelessWidget {
   final PracticeController practice;
   final bool mobile;
 
-  Future<void> _copyExport(BuildContext context) async {
-    await Clipboard.setData(ClipboardData(text: practice.exportJson()));
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Solve history copied as Crubik JSON')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (mobile) {
@@ -100,13 +92,10 @@ class SessionsView extends StatelessWidget {
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                   ),
-                  OutlinedButton.icon(
+                  _SolveExportButton(
                     key: const Key('export-solves-button'),
-                    onPressed: practice.hasSolves
-                        ? () => _copyExport(context)
-                        : null,
-                    icon: const Icon(Icons.copy_all_outlined, size: 18),
-                    label: const Text('Export'),
+                    practice: practice,
+                    label: 'Export',
                   ),
                 ],
               ),
@@ -134,13 +123,10 @@ class SessionsView extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
-              OutlinedButton.icon(
+              _SolveExportButton(
                 key: const Key('export-solves-button'),
-                onPressed: practice.hasSolves
-                    ? () => _copyExport(context)
-                    : null,
-                icon: const Icon(Icons.copy_all_outlined, size: 18),
-                label: const Text('Copy export'),
+                practice: practice,
+                label: 'Copy export',
               ),
             ],
           ),
@@ -154,6 +140,68 @@ class SessionsView extends StatelessWidget {
           const SizedBox(height: 16),
           _RecentSolves(practice: practice),
         ],
+      ),
+    );
+  }
+}
+
+class _SolveExportButton extends StatefulWidget {
+  const _SolveExportButton({
+    required this.practice,
+    required this.label,
+    super.key,
+  });
+
+  final PracticeController practice;
+  final String label;
+
+  @override
+  State<_SolveExportButton> createState() => _SolveExportButtonState();
+}
+
+class _SolveExportButtonState extends State<_SolveExportButton> {
+  bool _isExporting = false;
+
+  Future<void> _copyExport() async {
+    if (_isExporting || !widget.practice.hasSolves) return;
+    setState(() => _isExporting = true);
+    try {
+      final export = await widget.practice.exportJson();
+      await Clipboard.setData(ClipboardData(text: export));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Solve history copied as Crubik JSON')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not export solve history. Your local history was not changed.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: _isExporting,
+      label: _isExporting ? 'Exporting solve history' : null,
+      child: OutlinedButton.icon(
+        onPressed: widget.practice.hasSolves && !_isExporting
+            ? _copyExport
+            : null,
+        icon: _isExporting
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.copy_all_outlined, size: 18),
+        label: Text(_isExporting ? 'Exporting…' : widget.label),
       ),
     );
   }
@@ -346,14 +394,18 @@ class _SolveRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  formatPracticeDuration(solve.elapsed),
+                  solve.isTimingReliable
+                      ? formatPracticeDuration(solve.elapsed)
+                      : 'Timing unavailable',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  solve.moveCount == 0
+                  !solve.isTimingReliable
+                      ? '${solve.moveCount} moves · ${solve.inputSource.displayLabel}'
+                      : solve.moveCount == 0
                       ? solve.inputSource.displayLabel
                       : '${solve.moveCount} moves · ${solve.turnsPerSecond?.toStringAsFixed(1)} TPS',
                   style: Theme.of(context).textTheme.bodySmall,

@@ -39,11 +39,13 @@ final class Moyu32DecodedPacket {
     this.events = const [],
     this.batteryLevel,
     this.dataLoss = false,
+    this.missingMoveCount,
   });
 
   final List<SmartCubeEvent> events;
   final int? batteryLevel;
   final bool dataLoss;
+  final int? missingMoveCount;
 
   Iterable<SmartCubeMoveEvent> get moves => events.whereType();
 
@@ -62,15 +64,29 @@ final class Moyu32PacketDecoder {
   Uint8List get requestBatteryCommand =>
       Uint8List(20)..[0] = moyu32BatteryOpcode;
 
-  Moyu32DecodedPacket decode(Uint8List packet, DateTime receivedAt) {
+  Moyu32DecodedPacket decode(
+    Uint8List packet,
+    DateTime receivedAt, {
+    required Duration hostTimestamp,
+  }) {
     if (packet.length != 20) {
       throw const FormatException('MoYu32 packets must contain 20 bytes.');
     }
     final bits = PacketBitView(packet, protocolName: 'MoYu32');
     return switch (packet[0]) {
-      moyu32StateOpcode => _decodeState(packet, bits, receivedAt),
+      moyu32StateOpcode => _decodeState(
+        packet,
+        bits,
+        receivedAt,
+        hostTimestamp,
+      ),
       moyu32BatteryOpcode => _decodeBattery(packet),
-      moyu32MovesOpcode => _decodeMoves(packet, bits, receivedAt),
+      moyu32MovesOpcode => _decodeMoves(
+        packet,
+        bits,
+        receivedAt,
+        hostTimestamp,
+      ),
       _ => const Moyu32DecodedPacket(),
     };
   }
@@ -79,6 +95,7 @@ final class Moyu32PacketDecoder {
     Uint8List packet,
     PacketBitView bits,
     DateTime receivedAt,
+    Duration hostTimestamp,
   ) {
     const protocolFaces = 'FBUDLR';
     const faceOrder = [2, 5, 0, 3, 4, 1];
@@ -103,6 +120,7 @@ final class Moyu32PacketDecoder {
           state: CubeState.fromFacelets(facelets.toString()),
           serial: serial,
           receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
         ),
       ],
     );
@@ -120,6 +138,7 @@ final class Moyu32PacketDecoder {
     Uint8List packet,
     PacketBitView bits,
     DateTime receivedAt,
+    Duration hostTimestamp,
   ) {
     if (_lastSerial == -1 || _awaitingResync) {
       return const Moyu32DecodedPacket();
@@ -131,6 +150,8 @@ final class Moyu32PacketDecoder {
     final count = math.min(difference, 5);
     final moves = <SmartCubeMoveEvent>[];
     var dataLoss = difference > 5;
+    final missingMoveCount = dataLoss ? difference - 5 : null;
+    if (dataLoss) _cubeTimestampMs = 0;
     for (var index = count - 1; index >= 0; index--) {
       final moveCode = bits.read(96 + index * 5, 5);
       if (moveCode >= 12) {
@@ -146,6 +167,7 @@ final class Moyu32PacketDecoder {
           move: move,
           serial: moveSerial,
           receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
           cubeTimestamp: Duration(milliseconds: _cubeTimestampMs),
           recovered: index != 0,
         ),
@@ -153,7 +175,11 @@ final class Moyu32PacketDecoder {
       _lastSerial = moveSerial;
     }
     if (dataLoss) _awaitingResync = true;
-    return Moyu32DecodedPacket(events: moves, dataLoss: dataLoss);
+    return Moyu32DecodedPacket(
+      events: moves,
+      dataLoss: dataLoss,
+      missingMoveCount: missingMoveCount,
+    );
   }
 }
 

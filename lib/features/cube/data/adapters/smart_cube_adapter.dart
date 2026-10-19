@@ -1,3 +1,4 @@
+import '../../../../core/time/monotonic_clock.dart';
 import '../../application/cube_connection_gateway.dart';
 import '../../domain/cube_connection_diagnostics.dart';
 import '../../domain/smart_cube_device.dart';
@@ -33,6 +34,7 @@ abstract interface class SmartCubeAdapter implements CubeDeviceRecognizer {
   Future<SmartCubeSession> connect(
     BleCentral central,
     CubeDeviceCandidate device, {
+    required MonotonicClock monotonicClock,
     CubeDiagnosticSink? onDiagnostic,
   });
 }

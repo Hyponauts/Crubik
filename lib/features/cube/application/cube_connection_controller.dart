@@ -344,6 +344,18 @@ final class CubeConnectionController extends ChangeNotifier {
       if (_closed || !identical(_session, session)) return;
       if (event case final SmartCubeStateEvent stateEvent) {
         _latestStateEvent = stateEvent;
+      } else if (event case SmartCubeCapabilitiesEvent(:final capabilities)) {
+        final connectedCube = _connectedCube;
+        if (connectedCube != null) {
+          _connectedCube = ConnectedCube(
+            id: connectedCube.id,
+            name: connectedCube.name,
+            vendor: connectedCube.vendor,
+            protocolFamily: connectedCube.protocolFamily,
+            capabilities: capabilities,
+          );
+          notifyListeners();
+        }
       }
       _eventController.add(event);
     }, onError: _onProtocolError);

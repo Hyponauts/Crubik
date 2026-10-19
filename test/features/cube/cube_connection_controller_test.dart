@@ -401,6 +401,43 @@ void main() {
   });
 
   test(
+    'updates connected capabilities from normalized hardware evidence',
+    () async {
+      final gateway = _FakeCubeConnectionGateway();
+      final controller = CubeConnectionController(gateway: gateway);
+      const device = CubeDeviceCandidate(
+        id: 'gan-capabilities',
+        name: 'GAN12ui',
+        vendor: CubeVendor.gan,
+        protocolFamily: CubeProtocolFamily.gan,
+        supportStatus: CubeSupportStatus.supported,
+        adapterId: 'gan-family',
+      );
+      await controller.connect(device);
+
+      gateway
+          .sessionFor(device.id)
+          .addEvent(
+            SmartCubeCapabilitiesEvent(
+              hostTimestamp: Duration.zero,
+              capabilities: const CubeCapabilities(
+                initialState: true,
+                moveHistory: true,
+                cubeTimestamps: true,
+                gyroscope: true,
+              ),
+              receivedAt: DateTime.utc(2026),
+            ),
+          );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.connectedCube?.capabilities.gyroscope, isTrue);
+      await controller.close();
+      controller.dispose();
+    },
+  );
+
+  test(
     'groups cubes ahead of other devices and blocks other connections',
     () async {
       final gateway = _FakeCubeConnectionGateway();
@@ -509,11 +546,13 @@ void main() {
       state: CubeState.solved()..apply(CubeMove.parse('F')),
       serial: 0,
       receivedAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
     final moveEvent = SmartCubeMoveEvent(
       move: CubeMove.parse("R'"),
       serial: 1,
       receivedAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
     final received = <SmartCubeEvent>[];
     final subscription = controller.events.listen(received.add);
