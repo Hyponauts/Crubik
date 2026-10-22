@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
@@ -41,35 +43,63 @@ class PracticeScramblePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canChangeScramble = practice.canChangeScramble;
-    final scramble = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ScrambleProgressText(practice: practice, density: density),
-        if (practice.smartCubeWorkflowActive) ...[
-          SizedBox(height: density.layoutSize(dense: 1, compact: 5, full: 14)),
-          _ScrambleGuidance(practice: practice, density: density),
-        ],
-      ],
+    final hasScramble = practice.hasScramble;
+    final displayedScramble = practice.displayedScramble;
+    final preparationFailed = practice.scramblePreparationError != null;
+    final preparedBody = displayedScramble != null
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ScrambleProgressText(
+                practice: practice,
+                scramble: displayedScramble,
+                density: density,
+              ),
+              if (practice.smartCubeWorkflowActive) ...[
+                SizedBox(
+                  height: density.layoutSize(dense: 1, compact: 5, full: 14),
+                ),
+                _ScrambleGuidance(practice: practice, density: density),
+              ],
+              SizedBox(
+                height: density.layoutSize(dense: 3, compact: 7, full: 16),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const Key('new-scramble'),
+                      onPressed: canChangeScramble
+                          ? practice.newScramble
+                          : null,
+                      style: density.isCompact
+                          ? OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            )
+                          : null,
+                      icon: const Icon(Icons.shuffle_rounded, size: 18),
+                      label: Text(density.isCompact ? 'New' : 'New scramble'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          )
+        : null;
+    final preparationStatus = _ScramblePreparationStatus(
+      practice: practice,
+      failed: preparationFailed,
     );
-    final actions = Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            key: const Key('new-scramble'),
-            onPressed: canChangeScramble ? practice.newScramble : null,
-            style: density.isCompact
-                ? OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  )
-                : null,
-            icon: const Icon(Icons.shuffle_rounded, size: 18),
-            label: Text(density.isCompact ? 'New' : 'New scramble'),
-          ),
-        ),
-      ],
-    );
+    final scrambleBody = preparedBody == null
+        ? preparationStatus
+        : _DelayedScramblePreparationOverlay(
+            active: !hasScramble,
+            delay: practice.isPreparingScramble,
+            status: preparationStatus,
+            child: preparedBody,
+          );
 
     final content = Column(
       mainAxisAlignment: fillHeight
@@ -83,9 +113,7 @@ class PracticeScramblePanel extends StatelessWidget {
               : 'NEXT PRACTICE SCRAMBLE',
         ),
         SizedBox(height: density.layoutSize(dense: 3, compact: 7, full: 14)),
-        scramble,
-        SizedBox(height: density.layoutSize(dense: 3, compact: 7, full: 16)),
-        actions,
+        scrambleBody,
       ],
     );
 
@@ -104,10 +132,159 @@ class PracticeScramblePanel extends StatelessWidget {
   }
 }
 
-class _ScrambleProgressText extends StatelessWidget {
-  const _ScrambleProgressText({required this.practice, required this.density});
+class _DelayedScramblePreparationOverlay extends StatefulWidget {
+  const _DelayedScramblePreparationOverlay({
+    required this.active,
+    required this.delay,
+    required this.status,
+    required this.child,
+  });
+
+  static const delayDuration = Duration(milliseconds: 150);
+
+  final bool active;
+  final bool delay;
+  final Widget status;
+  final Widget child;
+
+  @override
+  State<_DelayedScramblePreparationOverlay> createState() =>
+      _DelayedScramblePreparationOverlayState();
+}
+
+class _DelayedScramblePreparationOverlayState
+    extends State<_DelayedScramblePreparationOverlay> {
+  Timer? _timer;
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncVisibility();
+  }
+
+  @override
+  void didUpdateWidget(_DelayedScramblePreparationOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active != oldWidget.active || widget.delay != oldWidget.delay) {
+      _syncVisibility();
+    }
+  }
+
+  void _syncVisibility() {
+    _timer?.cancel();
+    if (!widget.active) {
+      _visible = false;
+      return;
+    }
+    if (!widget.delay) {
+      _visible = true;
+      return;
+    }
+    _visible = false;
+    _timer = Timer(_DelayedScramblePreparationOverlay.delayDuration, () {
+      if (mounted && widget.active && widget.delay) {
+        setState(() => _visible = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        IgnorePointer(
+          ignoring: widget.active,
+          child: ExcludeSemantics(
+            excluding: widget.active,
+            child: _visible
+                ? Opacity(opacity: 0.28, child: widget.child)
+                : widget.child,
+          ),
+        ),
+        if (_visible) Positioned.fill(child: widget.status),
+      ],
+    );
+  }
+}
+
+class _ScramblePreparationStatus extends StatelessWidget {
+  const _ScramblePreparationStatus({
+    required this.practice,
+    required this.failed,
+  });
 
   final PracticeController practice;
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      key: Key(failed ? 'scramble-error' : 'scramble-loading'),
+      liveRegion: true,
+      label: failed ? 'Unable to prepare a scramble.' : 'Preparing a scramble.',
+      child: ColoredBox(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (failed)
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: CrubikColors.warning,
+                    )
+                  else
+                    const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      failed
+                          ? 'Unable to prepare scramble.'
+                          : 'Preparing scramble…',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              if (failed) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const Key('retry-scramble'),
+                  onPressed: practice.retryScramble,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScrambleProgressText extends StatelessWidget {
+  const _ScrambleProgressText({
+    required this.practice,
+    required this.scramble,
+    required this.density,
+  });
+
+  final PracticeController practice;
+  final CubeScramble scramble;
   final ScramblePanelDensity density;
 
   @override
@@ -118,7 +295,7 @@ class _ScrambleProgressText extends StatelessWidget {
     final correction =
         practice.guidanceIsCorrection && recoveryMoves.isNotEmpty;
     final showNext = practice.phase == PracticePhase.scrambling && !correction;
-    final moves = practice.scramble.moves;
+    final moves = scramble.moves;
     final recoveryNotation = recoveryMoves
         .map((move) => move.notation)
         .join(' ');
@@ -133,7 +310,7 @@ class _ScrambleProgressText extends StatelessWidget {
           'Scramble. $completed of ${moves.length} moves completed. '
           '${partialTurns > 0 ? 'The next move is partially completed. ' : ''}'
           '$recoveryDescription'
-          '${practice.scramble}',
+          '$scramble',
       child: Wrap(
         key: const Key('scramble-text'),
         spacing: density.layoutSize(dense: 2, compact: 3, full: 5),

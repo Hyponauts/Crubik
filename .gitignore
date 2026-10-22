@@ -39,6 +39,7 @@ coverage/
 # after pub get.
 **/*.g.dart
 web/drift_worker.dart.js
+web/cube_solver_worker.dart.js
 web/sqlite3.wasm
 
 # FVM installs and links SDKs here. Keep .fvmrc in version control so every
