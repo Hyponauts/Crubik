@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crubik/features/cube/domain/cube_model.dart';
-import 'package:crubik/features/cube/domain/scramble_generator.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/practice_controller_factory.dart';
 
 void main() {
   test('round trips every solve input source through JSON', () {
@@ -36,7 +37,7 @@ void main() {
 
   test('can be disposed while solve history is still loading', () async {
     final repository = _DelayedSolveHistoryRepository();
-    final controller = PracticeController(repository: repository);
+    final controller = createTestPracticeController(repository: repository);
 
     final initialization = controller.initialize();
     await repository.loadStarted.future;
@@ -47,7 +48,7 @@ void main() {
   });
 
   test('starts unselected and ignores manual practice actions', () {
-    final controller = PracticeController();
+    final controller = createTestPracticeController();
     final scramble = controller.scramble.toString();
     final facelets = controller.cubeState.facelets;
 
@@ -69,10 +70,10 @@ void main() {
 
   test('demo mode enables manual timing and virtual moves', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
 
     controller.activateDemoInput();
@@ -114,7 +115,10 @@ void main() {
     () async {
       final clock = _FakeSolveClock();
       var now = DateTime.utc(2026);
-      final controller = PracticeController(clock: clock, now: () => now);
+      final controller = createTestPracticeController(
+        clock: clock,
+        now: () => now,
+      );
       controller.activateDemoInput();
       final scrambledFacelets = controller.cubeState.facelets;
 
@@ -159,7 +163,7 @@ void main() {
   );
 
   test('demo readiness can be aborted from the primary action', () {
-    final controller = PracticeController()..activateDemoInput();
+    final controller = createTestPracticeController()..activateDemoInput();
     final scrambledFacelets = controller.cubeState.facelets;
     controller.startSolve();
 
@@ -174,7 +178,7 @@ void main() {
   test(
     'demo inspection timeout starts solving with timeout metadata',
     () async {
-      final controller = PracticeController(
+      final controller = createTestPracticeController(
         preInspectionDelay: Duration.zero,
         inspectionDuration: const Duration(milliseconds: 20),
       );
@@ -198,7 +202,9 @@ void main() {
   );
 
   test('aborting a demo attempt restores the current scramble', () {
-    final controller = PracticeController(preInspectionDelay: Duration.zero);
+    final controller = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     controller.activateDemoInput();
     final scrambledFacelets = controller.cubeState.facelets;
     controller.startSolve();
@@ -215,7 +221,7 @@ void main() {
   });
 
   test('timer ticks do not emit structural practice changes', () async {
-    final controller = PracticeController();
+    final controller = createTestPracticeController();
     controller.activateDemoInput();
     var structuralChanges = 0;
     var clockTicks = 0;
@@ -240,7 +246,7 @@ void main() {
 
   test('leaving demo cancels an unsaved attempt and returns unselected', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(clock: clock);
+    final controller = createTestPracticeController(clock: clock);
     controller.activateDemoInput();
     controller.startSolve();
     clock.value = const Duration(seconds: 5);
@@ -260,7 +266,7 @@ void main() {
   test('records a manual solve and calculates basic statistics', () {
     final clock = _FakeSolveClock();
     var timestamp = DateTime.utc(2026, 1, 1);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       now: () => timestamp,
       preInspectionDelay: Duration.zero,
@@ -288,10 +294,10 @@ void main() {
 
   test('new scramble preserves a pending solve review', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     controller.activateDemoInput();
     controller.startSolve();
@@ -315,7 +321,9 @@ void main() {
   });
 
   test('deleting the reviewed solve clears the finish review', () {
-    final controller = PracticeController(preInspectionDelay: Duration.zero);
+    final controller = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     controller.activateDemoInput();
     controller.startSolve();
     controller.applyMove(CubeMove.parse('R'));
@@ -330,7 +338,9 @@ void main() {
   });
 
   test('publishes monotonic move metadata only for applied moves', () {
-    final controller = PracticeController(preInspectionDelay: Duration.zero);
+    final controller = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     controller.activateDemoInput();
 
     expect(controller.lastAppliedMove, isNull);
@@ -358,7 +368,7 @@ void main() {
   test('exports version 2 solve history while retaining manual metadata', () {
     final clock = _FakeSolveClock();
     final exportedAt = DateTime.utc(2026, 1, 1, 12);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       now: () => exportedAt,
       preInspectionDelay: Duration.zero,
@@ -389,7 +399,7 @@ void main() {
   test(
     'preserves the physical state when a smart cube gets a new scramble',
     () {
-      final controller = PracticeController();
+      final controller = createTestPracticeController();
       final physicalState = CubeState.solved()..apply(CubeMove.parse('R'));
       controller.activateSmartCubeInput();
       controller.syncCubeState(physicalState);
@@ -403,7 +413,7 @@ void main() {
   );
 
   test('connected cube waits for state and requires a solved baseline', () {
-    final controller = PracticeController();
+    final controller = createTestPracticeController();
 
     controller.activateSmartCubeInput();
     expect(controller.phase, PracticePhase.awaitingCubeState);
@@ -420,8 +430,8 @@ void main() {
   });
 
   test('wrong turns create a corrective route to the exact target', () {
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
@@ -459,8 +469,8 @@ void main() {
   });
 
   test('recovery moves stay ahead of the original suffix and replan live', () {
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     final occurredAt = DateTime.utc(2026);
     controller.activateSmartCubeInput();
@@ -539,8 +549,8 @@ void main() {
   });
 
   test('same-face recovery does not merge with the original next move', () {
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     final occurredAt = DateTime.utc(2026);
     controller.activateSmartCubeInput();
@@ -572,8 +582,8 @@ void main() {
 
   test('either turn direction satisfies a double-turn scramble move', () {
     for (final quarterTurns in [1, 3]) {
-      final controller = PracticeController(
-        scrambleGenerator: ScrambleGenerator(random: Random(7)),
+      final controller = createTestPracticeController(
+        scrambleGenerator: TestScrambleGenerator(random: Random(7)),
       );
       controller.activateSmartCubeInput();
       controller.syncCubeState(CubeState.solved());
@@ -625,8 +635,8 @@ void main() {
   test('double turns accept either direction on every cube face', () {
     for (final face in CubeFace.values) {
       for (final quarterTurns in [1, 3]) {
-        final controller = PracticeController(
-          scrambleGenerator: ScrambleGenerator(
+        final controller = createTestPracticeController(
+          scrambleGenerator: TestScrambleGenerator(
             random: _FaceFirstDoubleTurnRandom(face),
           ),
         );
@@ -667,8 +677,8 @@ void main() {
 
   test('verified scramble waits three seconds before inspection', () {
     var now = DateTime.utc(2026);
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
       now: () => now,
     );
 
@@ -702,8 +712,8 @@ void main() {
   });
 
   test('pre-inspection delay automatically enters inspection', () async {
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
       preInspectionDelay: const Duration(milliseconds: 20),
       inspectionDuration: const Duration(days: 1),
     );
@@ -716,8 +726,8 @@ void main() {
   });
 
   test('mismatching authoritative resync requires a solved cube', () {
-    final controller = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+    final controller = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     controller.activateSmartCubeInput();
     controller.syncCubeState(CubeState.solved());
@@ -739,11 +749,11 @@ void main() {
   test('first inspection move starts timing and is captured', () {
     final clock = _FakeSolveClock();
     var now = DateTime.utc(2026);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     _prepareConnectedCube(controller, now);
     final completedScramble = controller.scramble.toString();
@@ -783,7 +793,7 @@ void main() {
   test('an overdue inspection starts at the deadline', () {
     final clock = _FakeSolveClock();
     var now = DateTime.utc(2026);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
@@ -813,7 +823,7 @@ void main() {
 
   test('inspection timeout automatically enters solving', () async {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
       inspectionDuration: const Duration(milliseconds: 20),
@@ -833,7 +843,7 @@ void main() {
 
   test('changed state packet during inspection starts the solve', () {
     var now = DateTime.utc(2026);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       now: () => now,
       preInspectionDelay: Duration.zero,
     );
@@ -860,11 +870,11 @@ void main() {
   test('smart cube move completion immediately prepares the next scramble', () {
     final clock = _FakeSolveClock();
     final now = DateTime.utc(2026);
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
-      scrambleGenerator: ScrambleGenerator(random: Random(7)),
+      scrambleGenerator: TestScrambleGenerator(random: Random(7)),
     );
     _prepareConnectedCube(controller, now);
     final completedScramble = controller.scramble.toString();
@@ -895,7 +905,9 @@ void main() {
   });
 
   test('aborting a connected attempt does not save a solve', () {
-    final controller = PracticeController(preInspectionDelay: Duration.zero);
+    final controller = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     _prepareConnectedCube(controller, DateTime.now());
 
     controller.abortAttempt();
@@ -908,7 +920,7 @@ void main() {
 
   test('disconnect preserves an active attempt for state-based completion', () {
     final clock = _FakeSolveClock();
-    final controller = PracticeController(
+    final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
     );
@@ -934,6 +946,47 @@ void main() {
     );
     expect(controller.pendingSolveReview, same(controller.solves.single));
     controller.dispose();
+  });
+
+  test('exposes async scramble preparation without a fallback', () async {
+    final next = Completer<CubeScramble>();
+    final controller = PracticeController(nextScramble: () => next.future);
+    addTearDown(controller.dispose);
+
+    expect(controller.hasScramble, isFalse);
+    expect(controller.isPreparingScramble, isTrue);
+    expect(controller.primaryActionEnabled, isFalse);
+
+    next.complete(CubeScramble.parse('R U'));
+    await next.future;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.hasScramble, isTrue);
+    expect(controller.scramble.toString(), 'R U');
+    expect(controller.isPreparingScramble, isFalse);
+  });
+
+  test('retries scramble preparation after a solver error', () async {
+    var attempts = 0;
+    final controller = PracticeController(
+      nextScramble: () {
+        if (attempts++ == 0) {
+          return Future<CubeScramble>.error(StateError('solver failed'));
+        }
+        return CubeScramble.parse('R U');
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.hasScramble, isFalse);
+    expect(controller.scramblePreparationError, isA<StateError>());
+
+    controller.retryScramble();
+
+    expect(controller.hasScramble, isTrue);
+    expect(controller.scramble.toString(), 'R U');
+    expect(controller.scramblePreparationError, isNull);
   });
 }
 

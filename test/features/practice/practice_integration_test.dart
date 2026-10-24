@@ -6,15 +6,16 @@ import 'package:crubik/core/theme/app_theme.dart';
 import 'package:crubik/features/cube/application/cube_connection_controller.dart';
 import 'package:crubik/features/cube/application/cube_connection_gateway.dart';
 import 'package:crubik/features/cube/application/remembered_cube_store.dart';
-import 'package:crubik/features/cube/domain/cube_model.dart';
-import 'package:crubik/features/cube/domain/scramble_generator.dart';
 import 'package:crubik/features/cube/domain/cube_connection_diagnostics.dart';
+import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/practice_controller_factory.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +28,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final clock = _FakeSolveClock();
-    final practice = PracticeController(
+    final practice = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
     );
@@ -171,7 +172,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     var now = DateTime.utc(2026);
-    final practice = PracticeController(now: () => now)..activateDemoInput();
+    final practice = createTestPracticeController(now: () => now)
+      ..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -215,7 +217,9 @@ void main() {
     tester.view.physicalSize = const Size(640, 360);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero);
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -281,8 +285,9 @@ void main() {
     tester.view.physicalSize = const Size(568, 320);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -339,8 +344,9 @@ void main() {
     tester.view.physicalSize = const Size(480, 270);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -376,8 +382,9 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     practice.startSolve();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
@@ -406,11 +413,11 @@ void main() {
 
       final now = DateTime.utc(2026);
       final clock = _FakeSolveClock();
-      final practice = PracticeController(
+      final practice = createTestPracticeController(
         clock: clock,
         now: () => now,
         preInspectionDelay: Duration.zero,
-        scrambleGenerator: ScrambleGenerator(random: Random(7)),
+        scrambleGenerator: TestScrambleGenerator(random: Random(7)),
       );
       final gateway = _SilentCubeConnectionGateway();
       final connection = CubeConnectionController(gateway: gateway);
@@ -522,7 +529,9 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero);
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -576,8 +585,9 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -644,8 +654,9 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -683,7 +694,7 @@ void main() {
 
     final clock = _FakeSolveClock();
     var timestamp = DateTime.utc(2026);
-    final practice = PracticeController(
+    final practice = createTestPracticeController(
       clock: clock,
       now: () => timestamp = timestamp.add(const Duration(seconds: 1)),
       preInspectionDelay: Duration.zero,
@@ -731,8 +742,9 @@ void main() {
     tester.view.physicalSize = const Size(900, 600);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero)
-      ..activateDemoInput();
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -777,7 +789,7 @@ void main() {
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -835,7 +847,7 @@ void main() {
     tester,
   ) async {
     final physicalState = CubeState.solved()..apply(CubeMove.parse('R'));
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(
       initialEvent: SmartCubeStateEvent(
         state: physicalState,
@@ -867,7 +879,7 @@ void main() {
       serial: 4,
       receivedAt: DateTime.utc(2026),
     );
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(initialEvent: stateEvent);
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -895,7 +907,9 @@ void main() {
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController(preInspectionDelay: Duration.zero);
+    final practice = createTestPracticeController(
+      preInspectionDelay: Duration.zero,
+    );
     final connection = CubeConnectionController(
       gateway: _SilentCubeConnectionGateway(),
     );
@@ -979,8 +993,8 @@ void main() {
     addTearDown(tester.view.reset);
 
     var now = DateTime.utc(2026);
-    final practice = PracticeController(
-      scrambleGenerator: ScrambleGenerator(random: _DoubleTurnRandom()),
+    final practice = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: _DoubleTurnRandom()),
       now: () => now,
     );
     final gateway = _SilentCubeConnectionGateway();
@@ -1285,7 +1299,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(
       supportedProtocolDisplayNames: const [
         'Test protocol A',
@@ -1334,7 +1348,7 @@ void main() {
         tester.view.physicalSize = size;
         addTearDown(tester.view.reset);
 
-        final practice = PracticeController();
+        final practice = createTestPracticeController();
         final gateway = _SilentCubeConnectionGateway();
         final connection = CubeConnectionController(
           gateway: gateway,
@@ -1395,7 +1409,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final connectGate = Completer<void>();
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(connectGate: connectGate);
     final connection = CubeConnectionController(
       gateway: gateway,
@@ -1441,7 +1455,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -1511,7 +1525,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final connectGate = Completer<void>();
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(connectGate: connectGate);
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -1569,7 +1583,7 @@ void main() {
         tester.view.physicalSize = size;
         addTearDown(tester.view.reset);
 
-        final practice = PracticeController();
+        final practice = createTestPracticeController();
         final gateway = _SilentCubeConnectionGateway();
         final connection = CubeConnectionController(gateway: gateway);
         addTearDown(practice.dispose);
@@ -1601,7 +1615,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -1646,7 +1660,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway();
     final connection = CubeConnectionController(gateway: gateway);
     addTearDown(practice.dispose);
@@ -1690,7 +1704,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
 
-    final practice = PracticeController();
+    final practice = createTestPracticeController();
     final gateway = _SilentCubeConnectionGateway(
       connectError: const CubeConnectionFailure(
         CubeConnectionFailureCode.handshakeFailed,

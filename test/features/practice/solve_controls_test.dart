@@ -5,10 +5,12 @@ import 'package:crubik/features/practice/presentation/widgets/solve_controls.dar
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/practice_controller_factory.dart';
+
 void main() {
   testWidgets('renders ready and finish states in isolation', (tester) async {
     final clock = _FakeSolveClock();
-    final practice = PracticeController(
+    final practice = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
     )..activateDemoInput();

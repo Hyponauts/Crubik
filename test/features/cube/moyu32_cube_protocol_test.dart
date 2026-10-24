@@ -67,7 +67,7 @@ void main() {
     expect(solved.states.single.serial, 7);
 
     final expected = CubeState.solved()
-      ..applyAll(Scramble.parse("R U F' L2 D B").moves);
+      ..applyAll(CubeScramble.parse("R U F' L2 D B").moves);
     final scrambled = Moyu32PacketDecoder().decode(
       _statePacket(expected.facelets, serial: 31),
       receivedAt,

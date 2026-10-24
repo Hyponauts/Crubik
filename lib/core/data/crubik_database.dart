@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import '../../features/cube/application/scramble_cache.dart';
+import '../../features/cube/domain/cube_model.dart';
 import '../../features/cube/application/remembered_cube_store.dart';
 import '../../features/practice/domain/solve_record.dart';
 
@@ -109,6 +113,47 @@ final class DriftRememberedCubeStore implements RememberedCubeStore {
       )..where((setting) => setting.key.equals(_deviceNameKey))).go();
     }
   });
+}
+
+final class DriftScrambleCacheStore implements ScrambleCacheStore {
+  const DriftScrambleCacheStore(this._database);
+
+  static const _cacheKey = 'wca_scramble_cache_v1';
+
+  final CrubikDatabase _database;
+
+  @override
+  Future<List<CubeScramble>> load() async {
+    final query = _database.select(_database.appSettings)
+      ..where((setting) => setting.key.equals(_cacheKey));
+    final value = (await query.getSingleOrNull())?.value;
+    if (value == null) return const [];
+
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<String>()
+          .map(CubeScramble.parse)
+          .toList(growable: false);
+    } on FormatException {
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> save(List<CubeScramble> scrambles) async {
+    await _database
+        .into(_database.appSettings)
+        .insertOnConflictUpdate(
+          AppSettingsCompanion.insert(
+            key: _cacheKey,
+            value: jsonEncode(
+              scrambles.map((scramble) => scramble.toString()).toList(),
+            ),
+          ),
+        );
+  }
 }
 
 final class DriftSolveHistoryRepository implements SolveHistoryRepository {

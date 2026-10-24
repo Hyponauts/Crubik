@@ -15,19 +15,20 @@ Protocol constants and behavior are adapted from the MIT-licensed `afedotov/gan-
 
 ## Generated artifacts
 
-Generated Dart source and the web database runtime files are local build output
+Generated Dart source and the web runtime files are local build output
 and must not be committed. After `flutter pub get`, after changing Drift tables,
-migrations, DAOs, or the worker entrypoint, and after changing locked web
+migrations, DAOs, or either worker entrypoint, and after changing locked web
 database dependencies, run:
 
 ```sh
 dart run build_runner build
 ```
 
-Platform plugin registrants, `*.g.dart` files, `web/drift_worker.dart.js`, and
-`web/sqlite3.wasm` are generated; do not hand edit or commit them.
-`build_runner` compiles the worker from `web/drift_worker_entrypoint.dart` and
-materializes it under `web/` for Flutter's web tooling. It also downloads the
+Platform plugin registrants, `*.g.dart` files, `web/drift_worker.dart.js`,
+`web/cube_solver_worker.dart.js`, and `web/sqlite3.wasm` are generated; do not
+hand edit or commit them. `build_runner` compiles the database and cube-solver
+worker entrypoints and materializes them under `web/` for Flutter's web tooling.
+It also downloads the
 pinned, version-matched `web/sqlite3.wasm` payload and verifies its checksum. A
 clean build therefore requires network access; the resulting static deployment
 remains self-contained.
@@ -64,5 +65,5 @@ Native builds have additional local prerequisites: Android requires a configured
 - Follow the maintenance criteria in `docs/architecture.md` and update its explanations, tables, and diagrams in the same change whenever they are affected.
 - Keep the product vision aligned whenever an approved decision changes product direction.
 - Keep the cube device compatibility document aligned whenever protocol coverage, validation evidence, or release support changes.
-- Do not commit generated build output such as `build/`, `*.g.dart`, `web/drift_worker.dart.js`, or `web/sqlite3.wasm`.
+- Do not commit generated build output such as `build/`, `*.g.dart`, `web/drift_worker.dart.js`, `web/cube_solver_worker.dart.js`, or `web/sqlite3.wasm`.
 - For dependency or protocol code copied or adapted from another project, confirm license compatibility and update third-party notices in the same change.
