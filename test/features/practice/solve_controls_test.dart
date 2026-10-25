@@ -7,12 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/practice_controller_factory.dart';
 import '../../support/practice_test_clock.dart';
 
 void main() {
   testWidgets('renders ready and finish states in isolation', (tester) async {
     final clock = PracticeTestClock();
-    final practice = PracticeController(
+    final practice = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
       monotonicClock: clock,
@@ -44,7 +45,7 @@ void main() {
     'unavailable timing stays readable in compact and wide review and history',
     (tester) async {
       final clock = PracticeTestClock(wallTime: () => DateTime.utc(2026));
-      final practice = PracticeController(
+      final practice = createTestPracticeController(
         monotonicClock: clock,
         preInspectionDelay: Duration.zero,
       );

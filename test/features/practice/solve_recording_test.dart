@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -10,6 +11,8 @@ import 'package:crubik/features/practice/application/solve_recording_builder.dar
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../support/practice_controller_factory.dart';
 
 void main() {
   test(
@@ -253,6 +256,61 @@ void main() {
     },
   );
 
+  test('retains a completed recording while the next scramble loads', () async {
+    final repository = MemorySolveHistoryRepository();
+    final clock = _MonotonicClock();
+    final nextScramble = Completer<CubeScramble>();
+    var requests = 0;
+    final controller = PracticeController(
+      nextScramble: () =>
+          requests++ == 0 ? CubeScramble.parse('R U') : nextScramble.future,
+      repository: repository,
+      monotonicClock: clock,
+      now: () => DateTime.utc(2026),
+      preInspectionDelay: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+    controller.activateSmartCubeInput(protocolFamily: CubeProtocolFamily.gan);
+    controller.syncCubeState(CubeState.solved());
+    for (final move in controller.scramble.moves) {
+      controller.applyMove(move, fromSmartCube: true);
+    }
+
+    clock.now = const Duration(seconds: 1);
+    controller.applyMove(CubeMove.parse("U'"), fromSmartCube: true);
+    clock.now = const Duration(milliseconds: 1200);
+    controller.applyMove(CubeMove.parse("R'"), fromSmartCube: true);
+    final solve = controller.pendingSolveReview!;
+    await controller.flushPersistence();
+    final recording = (await repository.loadRecording(solve.id))!;
+
+    expect(controller.isPreparingScramble, isTrue);
+    expect(controller.hasScramble, isFalse);
+    expect(controller.primaryActionEnabled, isFalse);
+    expect(solve.scramble, 'R U');
+    expect(solve.elapsed, const Duration(milliseconds: 200));
+    expect(solve.isTimingReliable, isTrue);
+    expect(recording.protocolFamily, CubeProtocolFamily.gan);
+    expect(recording.moves.map((event) => event.move.toString()), ["U'", "R'"]);
+
+    final physicalState = CubeState.solved()..apply(CubeMove.parse('L'));
+    controller.syncCubeState(physicalState);
+    nextScramble.complete(CubeScramble.parse('F D'));
+    await nextScramble.future;
+    final payload =
+        jsonDecode(await controller.exportJson()) as Map<String, Object?>;
+    final exportedSolve =
+        (payload['solves']! as List<Object?>).single! as Map<String, Object?>;
+
+    expect(controller.hasScramble, isTrue);
+    expect(controller.scramble.toString(), 'F D');
+    expect(controller.cubeState.facelets, physicalState.facelets);
+    expect(controller.phase, PracticePhase.needsSolvedCube);
+    expect(controller.pendingSolveReview, same(solve));
+    expect(exportedSolve['scramble'], 'R U');
+    expect(exportedSolve['recording'], recording.toJson());
+  });
+
   for (final (completion, completesFromState) in [
     ('live moves finish the solve', false),
     ('the same state report finishes the solve', true),
@@ -392,7 +450,7 @@ PracticeController _preparedController(
   MemorySolveHistoryRepository repository,
   MonotonicClock clock,
 ) {
-  final controller = PracticeController(
+  final controller = createTestPracticeController(
     repository: repository,
     monotonicClock: clock,
     now: () => DateTime.utc(2026),

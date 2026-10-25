@@ -16,7 +16,7 @@ The MVP must provide:
 
 - immediate local startup with no login, account, backend, or network gate;
 - a hardware-free demo/manual workflow and a Bluetooth smart-cube workflow;
-- locally generated 20-move practice scrambles;
+- locally generated WCA-style random-state 3×3 scrambles;
 - inspection, touch and spacebar timing, move capture, and automatic completion when a connected cube reports a solved state;
 - a Flutter-native interactive 3D cube visualization;
 - responsive, intentionally distinct mobile and desktop layouts;
@@ -54,7 +54,8 @@ The app must render the local practice workspace without waiting for network, au
 - Solve writes are serialized in completion order.
 - Solves completed or deleted while history is loading are merged correctly.
 - Pending writes are flushed before the owned database closes.
-- Web persistence uses the version-matched Drift worker and SQLite Wasm artifacts committed to the repository.
+- Web persistence uses locally generated, version-matched Drift worker and SQLite Wasm artifacts. Generated runtime files are not committed.
+- A small FIFO pool of solved scrambles is persisted locally so later launches can display a ready scramble without network access.
 
 ## Hardware requirement
 
@@ -64,9 +65,16 @@ The MVP hardware scope is limited to selected GAN and MoYu protocol families. Cu
 
 The MVP supports the 3×3×3 practice workflow. The cube model must provide a 54-sticker representation, URFDLB notation, transformations, and Kociemba facelet interchange.
 
-The local generator produces a 20-move **practice scramble** while avoiding immediate repeated faces and three consecutive moves on the same axis. It must not be described as competition-grade.
+The local generator samples uniformly distributed reachable cubie states,
+rejects only states solvable in zero or one move (TNoodle's default 3×3
+minimum-distance rule), and inverts a local two-phase solution to obtain the
+scramble. The solver uses the same 21-move search bound that TNoodle configures
+for 3×3. This is a maximum accepted solution length, not a minimum scramble
+length; shorter sequences remain valid.
 
-A future random-state generator requires an explicit implementation and licensing decision plus conformance testing against mainstream references such as TNoodle and cubing.js.
+This is **WCA-style** random-state generation, not an official WCA scramble
+program or competition-system claim. It must retain deterministic property and
+reference tests against TNoodle's state constraints.
 
 Other puzzles, WCA disciplines, Bluetooth timers, camera recognition, and competition workflows are outside the MVP.
 
@@ -93,6 +101,7 @@ Any future synchronization must use a durable, idempotent outbox over the local 
 Automated verification must cover:
 
 - cube transformations and notation round trips;
+- reachable-state sampling, cubie constraints, solver inversion, and scramble-cache ordering;
 - timer and practice-phase transitions;
 - solve-history initialization, ordered writes, deletion, and migrations;
 - responsive compact-phone and wide-desktop layouts;

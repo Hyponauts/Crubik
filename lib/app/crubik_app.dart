@@ -6,7 +6,10 @@ import '../core/data/crubik_database.dart';
 import '../core/theme/app_theme.dart';
 import '../core/time/monotonic_clock.dart';
 import '../features/cube/application/cube_connection_controller.dart';
+import '../features/cube/application/scramble_cache.dart';
 import '../features/cube/data/ble_cube_connection_gateway.dart';
+import '../features/cube/data/solver/cuber_cube_solver.dart';
+import '../features/cube/domain/scramble_generator.dart';
 import '../features/practice/application/practice_controller.dart';
 import '../features/practice/application/practice_input_coordinator.dart';
 import '../features/practice/presentation/practice_page.dart';
@@ -30,6 +33,8 @@ class _CrubikAppState extends State<CrubikApp> {
   late final CubeConnectionController _connectionController;
   late final PracticeInputCoordinator _inputCoordinator;
   CrubikDatabase? _database;
+  ScrambleCache? _scrambleCache;
+  CuberCubeSolver? _cubeSolver;
   late final bool _ownsPracticeController;
   late final bool _ownsConnectionController;
 
@@ -41,7 +46,14 @@ class _CrubikAppState extends State<CrubikApp> {
     _ownsConnectionController = widget.connectionController == null;
     if (_ownsPracticeController) {
       _database = CrubikDatabase();
+      _cubeSolver = CuberCubeSolver();
+      final generator = WcaScrambleGenerator(solver: _cubeSolver!);
+      _scrambleCache = ScrambleCache(
+        generate: generator.generate,
+        store: DriftScrambleCacheStore(_database!),
+      );
       _practiceController = PracticeController(
+        nextScramble: _scrambleCache!.take,
         repository: DriftSolveHistoryRepository(_database!),
         monotonicClock: monotonicClock,
       );
@@ -69,7 +81,15 @@ class _CrubikAppState extends State<CrubikApp> {
     _inputCoordinator.dispose();
     if (_ownsPracticeController) {
       final database = _database;
-      final flush = _practiceController.flushPersistence();
+      final scrambleCache = _scrambleCache;
+      scrambleCache?.dispose();
+      _cubeSolver?.dispose();
+      final flush = () async {
+        await Future.wait([
+          _practiceController.flushPersistence(),
+          if (scrambleCache != null) scrambleCache.flush(),
+        ]);
+      }();
       _practiceController.dispose();
       if (database != null) {
         unawaited(flush.whenComplete(database.close));

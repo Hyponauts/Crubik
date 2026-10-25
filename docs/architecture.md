@@ -33,14 +33,17 @@ flowchart TB
         Coordinator["PracticeInputCoordinator"]
         Practice["PracticeController"]
         History["SolveHistory"]
+        ScramblePool["ScrambleCache"]
         Connection["CubeConnectionController"]
         GatewayContract["CubeConnectionGateway / SmartCubeSession"]
         HistoryContract["SolveHistoryRepository"]
         RememberedContract["RememberedCubeStore"]
+        ScrambleStoreContract["ScrambleCacheStore"]
     end
 
     subgraph Domain["Pure Dart domain"]
-        Cube["CubeMove / Scramble / CubeState"]
+        Cube["CubeMove / CubeAlgorithm / CubeState"]
+        Scrambling["WcaScrambleGenerator / CubeSolver"]
         Device["CubeDeviceCandidate / Capabilities"]
         Events["Move / state / orientation / capability / gap events"]
         Solve["SolveRecord / SolveRecording"]
@@ -54,6 +57,8 @@ flowchart TB
         Central["BleCentral / UniversalBleCentral"]
         Repositories["Drift repositories"]
         Database["CrubikDatabase"]
+        Cuber["CuberCubeSolver"]
+        SolverRuntime["Native isolate / browser Worker"]
     end
 
     Page --> Layouts --> Widgets
@@ -67,6 +72,10 @@ flowchart TB
     Coordinator --> Practice
     Coordinator --> Connection
     Practice --> History
+    Practice -. nextScramble callback .-> ScramblePool
+    ScramblePool --> ScrambleStoreContract
+    ScramblePool --> Scrambling
+    Scrambling --> Cube
     History --> HistoryContract
     Practice --> Cube
     HistoryContract --> Solve
@@ -82,7 +91,10 @@ flowchart TB
     Events --> Coordinator
     HistoryContract -. implemented by .-> Repositories
     RememberedContract -. implemented by .-> Repositories
+    ScrambleStoreContract -. implemented by .-> Repositories
     Repositories --> Database
+    Scrambling -. implemented by .-> Cuber
+    Cuber --> SolverRuntime
 ```
 
 The main source areas are:
@@ -102,11 +114,12 @@ The main source areas are:
 
 | Class or contract | Responsibility |
 | --- | --- |
-| `CrubikApp` | Creates and owns the controllers, shared database, monotonic clock, and input coordinator. Starts history loading and reconnects to the remembered cube. Saves pending changes before closing its database. |
+| `CrubikApp` | Creates and owns the controllers, shared database, monotonic clock, scramble cache and solver, and input coordinator. Starts history loading and reconnects to the remembered cube. Saves pending changes before closing its database. |
 | `PracticePage` | Handles top-level navigation and chooses the layout for the screen width. Reads both controllers directly and uses the coordinator for actions involving both. Enables keyboard timing only on the active practice screen. |
 | `DesktopPracticeLayout` / `MobilePracticeLayout` | Separate wide and compact layouts for preparation, attempts, solve review, and session history. |
 | `PracticeInputCoordinator` | Coordinates demo selection, connection changes, disconnect handling, and forwarding common cube events. These operations involve both controllers. UI code does not read state from the coordinator. |
 | `PracticeController` | Controls the scramble, current cube state, inspection, timer, when to start or stop recording, solve completion, review data, and preparation of the next scramble. |
+| `ScrambleCache` / `ScrambleCacheStore` | Maintains a sequential FIFO pool of ready scrambles behind a feature-owned persistence contract. Taking an item removes it before returning and then starts background refill; ready items remain available while the next item is generated, and an empty pool never substitutes a move-list fallback. |
 | `SolveRecordingBuilder` | Builds an ordered event timeline with times relative to solve start. Keeps relevant pre-start observations, selects orientation samples to retain, detects clock jumps, and finishes the recording. Does not depend on practice phases, timers, or storage. |
 | `SolveHistory` | Calculates best, mean, and Ao5. Merges changes made while history loads. Runs writes and export in order, keeps failed writes for retry, loads detailed recordings only when needed for export, and produces versioned JSON. |
 | `SolveRecord` | Saved solve summary: timing availability, move count, input source, inspection duration, and what started the solve. |
@@ -122,11 +135,14 @@ The main source areas are:
 | `InitialStateHandshake` | Waits for an actual cube-state report before marking a connection ready. Records failure diagnostics with private data removed. |
 | GAN adapters and protocol classes | Handle GAN Gen2–4 and MoYu AI 2023: service selection, AES encryption using the MAC address as salt, state and move decoding, missed-move recovery, optional hardware-feature requests, and Gen2/Gen4 orientation decoding. |
 | MoYu32 adapters and protocol classes | Handle device identity, encryption, state, moves, battery, recovery of up to five moves, timestamps, and state resynchronization. |
-| `CubeMove`, `Scramble`, and `CubeState` | 3×3 notation and cube transformations shared by protocols, practice logic, and visualization, independent of Flutter and device APIs. |
-| `ScrambleGenerator` | Generates local 20-move practice scrambles while avoiding repeated faces and three consecutive moves on one axis. Its output is not a WCA random-state scramble. |
+| `CubeMove`, `CubeAlgorithm`, `CubeScramble`, and `CubeState` | Pure 3×3 notation and transformation model shared by protocols, practice logic, scrambling, and visualization. `CubeAlgorithm` owns the common immutable move sequence and notation; `CubeScramble` gives it solved-to-target semantics. `CubeState.fromCubieCoordinates` is the common validation and conversion boundary for generated and device-reported cubie states. |
+| `CubeSolver` / `CubeSolution` | Solver abstraction returning a target-to-solved `CubeAlgorithm`. `CubeSolution.toScramble()` reverses and inverts that sequence for scramble generation. The abstraction is independent of the two-phase implementation so later training solvers can provide different strategies without changing consumers. |
+| `WcaScrambleGenerator` | Uniformly samples reachable 3×3 cubie states, applies TNoodle's default distance filter, solves target-to-solved, and inverts the solution into a scramble. |
+| `CuberCubeSolver` | Adapts the local `cuber` two-phase solver with the same 21-move search bound configured by TNoodle for 3×3, a 60-second attempt timeout, and one retry against the same target. The bound is a maximum accepted solution length, not a minimum scramble length. Search runs in an isolate on native platforms and a generated dedicated Worker on web. |
 | `CrubikDatabase` | Shared Drift database structure and migrations for solve summaries, versioned raw recording JSON, and app settings. |
 | `DriftSolveHistoryRepository` | Saves a solve summary and optional recording together in one transaction. Loads summaries separately and recording JSON on demand. Deleting a solve also deletes its recording. |
 | `DriftRememberedCubeStore` | Saves the most recently connected device ID and display name. |
+| `DriftScrambleCacheStore` | Stores the expendable versioned scramble pool as an application setting without adding a schema table. |
 | `Cube3DView` | Draws the 3D cube in Flutter, handles interaction and move animation, and respects reduced-motion settings. |
 
 ## Smart-cube connection and event flow
@@ -207,13 +223,15 @@ The adapter registry currently selects packet-tested adapters for GAN Gen2–4, 
 
 ## Practice lifecycle
 
-`PracticeController` alone controls the timer and practice phases. Manual/demo mode starts ready, with the on-screen cube already set to the target scramble. Smart-cube mode waits for the physical cube to report its state. Generating a new scramble never replaces that reported state.
+`PracticeController` is the single owner of the timer and practice state machine. Scramble acquisition may be asynchronous: while the initial or next item is being prepared, timing actions remain disabled and presentation shows progress; a generation error can be retried. When replacing an existing scramble, the previous move sequence remains visually stable and non-actionable; the progress overlay appears only when preparation outlasts a brief cache-hit grace period. Manual/demo input becomes ready with the rendered cube initialized to the completed scramble target. Smart-cube input preserves authoritative physical state while a scramble is being prepared and never overwrites that state merely because a new scramble was generated.
 
-The diagram shows the user flow. `InputSelection` and `Review` are steps in that flow, not values in the `PracticePhase` enum. Review uses `pendingSolveReview`; by the time a solve finishes, the next scramble and practice phase are already prepared.
+The diagram is a user-flow view. `PreparingScramble`, `InputSelection`, and `Review` are conceptual states rather than `PracticePhase` enum values. Review is represented by `pendingSolveReview`; after completion, preparation of the next scramble begins immediately and the review can remain visible while that asynchronous work completes.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> InputSelection
+    [*] --> PreparingScramble
+    PreparingScramble --> InputSelection: scramble ready
+    PreparingScramble --> PreparingScramble: retry after failure
     InputSelection --> ManualReady: choose demo
     InputSelection --> AwaitingCubeState: connect smart cube
     AwaitingCubeState --> Scrambling: authoritative solved state
@@ -223,10 +241,10 @@ stateDiagram-v2
     ManualReady --> InspectionDelay: start
     InspectionDelay --> Inspection: readiness delay expires
     Inspection --> Solving: first move or inspection timeout
-    Solving --> Review: manual stop or solved cube
-    Review --> ManualReady: continue in demo mode
-    Review --> Scrambling: continue with solved smart cube
-    Review --> NeedsSolvedCube: continue with unsolved smart cube
+    Solving --> Review: complete and request next scramble
+    Review --> ManualReady: next ready in demo mode
+    Review --> Scrambling: next ready with solved smart cube
+    Review --> NeedsSolvedCube: next ready with unsolved smart cube
     Review --> AwaitingCubeState: smart cube disconnects
     InspectionDelay --> ManualReady: abort demo attempt
     Inspection --> ManualReady: abort demo attempt
@@ -237,17 +255,19 @@ For smart-cube attempts, aborting or dismissing review returns to `AwaitingCubeS
 
 ## Persistence and offline behavior
 
-The database and both storage adapters live under `lib/core/data` because they serve both practice history and the remembered cube. Each feature defines the repository or store interface it needs; its logic depends on that interface.
+The shared database and concrete persistence adapters live under `lib/core/data` because the database serves practice history, remembered cube state, and the ready-scramble pool. Feature code continues to depend on feature-owned repository and store contracts.
 
 ```mermaid
 flowchart LR
     Practice["PracticeController"] --> History["SolveHistory"]
     History -->|serialized add / delete| SolveRepo["DriftSolveHistoryRepository"]
     Connection["CubeConnectionController"] --> Remembered["DriftRememberedCubeStore"]
+    Cache["ScrambleCache"] --> ScrambleStore["DriftScrambleCacheStore"]
     SolveRepo --> DB["CrubikDatabase"]
     Remembered --> DB
     DB --> Summaries["solve_entries"]
     DB --> Recordings["solve_recordings: versioned raw JSON"]
+    ScrambleStore --> DB
     DB --> Native["SQLite on native platforms"]
     DB --> Web["SQLite Wasm + IndexedDB on web"]
     History -->|lazy loadRecording| SolveRepo
@@ -262,12 +282,13 @@ flowchart LR
 - Startup loads solve summaries only. Detailed event timelines load when needed, including during asynchronous export, so long sessions do not load every move and orientation sample into memory.
 - Solves added or deleted while history loads are merged with the loaded data.
 - `CrubikApp` saves pending history changes before closing its database.
+- The scramble pool is expendable, contains at most fifteen plain scramble strings, and is refilled one item at a time without blocking access to ready entries or waiting for persistence on the cache-hit path. Corrupt or unavailable cache data is ignored; failure to generate when the pool is empty is surfaced to practice UI.
 
 ### Database and generated files
 
 Native platforms use Drift with SQLite. Web uses SQLite WebAssembly (`sqlite3.wasm`) and a Drift worker (`drift_worker.dart.js`), with data saved in IndexedDB. `build_runner` generates these ignored, version-matched files. The asset downloader fetches the pinned WASM release and verifies it before saving the file. A clean build needs network access; the deployed app includes everything it needs.
 
-When the Drift schema changes, regenerate ignored `*.g.dart` files locally with `build_runner`. Add a migration and migration tests when `schemaVersion` increases. Before Flutter web builds, `build_runner` also downloads SQLite WASM and compiles the Drift worker. Never commit generated Dart files or web runtime output.
+When the Drift schema changes, regenerate ignored `*.g.dart` files locally with `build_runner`. Add a migration and migration tests when `schemaVersion` increases. Before Flutter web builds, `build_runner` also downloads SQLite WASM and compiles the Drift and cube-solver workers. Never commit generated Dart files or web runtime output.
 
 Schema version 4 adds JSON recording storage and solve timing reliability in one migration. Upgrading from older schemas preserves solve summaries, inspection metadata, and remembered-cube settings. It does not invent recordings for older solves. Older summaries keep reliable timing by default.
 
@@ -297,6 +318,8 @@ When adding a smart-cube protocol:
 6. Add repeatable tests for packets, encryption, startup, recovery, invalid input, features, and the connection controller. Validate real hardware separately.
 
 When changing the practice flow, put phase transitions and timing rules in `PracticeController`. UI code handles layout and interaction. Use `PracticeInputCoordinator` only for behavior involving both practice and the physical connection.
+
+When changing scramble generation, keep reachable-state sampling in `WcaScrambleGenerator`, solver strategy behind `CubeSolver`, platform execution behind the Cuber backend, and prefetch/persistence policy in `ScrambleCache`. WCA-style output is not an official WCA competition-system claim.
 
 When changing saved data, update the feature's record and storage interface first. Then update Drift and the versioned export format. Preserve original recorded data and keep older data readable.
 

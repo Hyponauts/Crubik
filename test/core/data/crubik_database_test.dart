@@ -279,6 +279,19 @@ void main() {
     expect(rememberedCube?.name, isNull);
   });
 
+  test('persists the expendable scramble pool in app settings', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final store = DriftScrambleCacheStore(database);
+
+    await store.save([CubeScramble.parse('R U'), CubeScramble.parse("F2 D'")]);
+
+    expect((await store.load()).map((scramble) => scramble.toString()), [
+      'R U',
+      "F2 D'",
+    ]);
+  });
+
   for (final version in [1, 2, 3]) {
     test('migrates version $version without losing legacy evidence', () async {
       final directory = await Directory.systemTemp.createTemp(
