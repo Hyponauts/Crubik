@@ -48,7 +48,11 @@ final class PracticeInputCoordinator {
     if (_disposed) return;
     switch (_connection.status) {
       case CubeConnectionStatus.connected:
-        _practice.activateSmartCubeInput();
+        final connectedCube = _connection.connectedCube;
+        _practice.activateSmartCubeInput(
+          protocolFamily: connectedCube?.protocolFamily,
+          capabilities: connectedCube?.capabilities,
+        );
         final latestState = _connection.latestStateEvent;
         if (latestState != null) _applyCubeEvent(latestState);
       case CubeConnectionStatus.disconnected || CubeConnectionStatus.error:
@@ -76,15 +80,15 @@ final class PracticeInputCoordinator {
 
   void _applyCubeEvent(SmartCubeEvent event) {
     switch (event) {
-      case SmartCubeMoveEvent(:final move, :final receivedAt):
-        _practice.applyMove(move, fromSmartCube: true, occurredAt: receivedAt);
+      case SmartCubeMoveEvent() ||
+          SmartCubeOrientationEvent() ||
+          SmartCubeCapabilitiesEvent() ||
+          SmartCubeDataGapEvent():
+        _practice.handleSmartCubeEvent(event);
       case final SmartCubeStateEvent stateEvent:
         if (identical(stateEvent, _lastAppliedStateEvent)) return;
         _lastAppliedStateEvent = stateEvent;
-        _practice.syncCubeState(
-          stateEvent.state,
-          occurredAt: stateEvent.receivedAt,
-        );
+        _practice.handleSmartCubeEvent(stateEvent);
     }
   }
 

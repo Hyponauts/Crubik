@@ -38,6 +38,7 @@ dependencies:
   universal_ble: 1.2.0
   drift: ^2.31.0
   drift_flutter: 0.2.8
+  archive: 4.0.9
   pointycastle: 4.0.0
   wakelock_plus: 1.3.3
   cuber: 0.4.0

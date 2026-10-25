@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../domain/cube_model.dart';
+import '../domain/smart_cube_device.dart';
 import '../domain/smart_cube_event.dart';
 import 'cube_packet_cipher.dart';
 import 'packet_bit_view.dart';
@@ -66,7 +67,7 @@ GanProtocolDefinition? ganProtocolForServices(Iterable<String> services) {
   return null;
 }
 
-enum GanPacketKind { state, move, moveHistory, ignored }
+enum GanPacketKind { state, move, moveHistory, orientation, hardware, ignored }
 
 final class GanDecodedPacket {
   const GanDecodedPacket({
@@ -87,7 +88,13 @@ final class GanDecodedPacket {
 abstract interface class GanPacketDecoder {
   Uint8List get requestFaceletsCommand;
 
-  GanDecodedPacket decode(Uint8List packet, DateTime receivedAt);
+  Uint8List get requestHardwareCommand;
+
+  GanDecodedPacket decode(
+    Uint8List packet,
+    DateTime receivedAt, {
+    required Duration hostTimestamp,
+  });
 }
 
 GanPacketDecoder createGanPacketDecoder(GanProtocolGeneration generation) {
@@ -214,15 +221,35 @@ final class GanProtocolMessageView {
 final class GanGen2PacketDecoder implements GanPacketDecoder {
   int _lastSerial = -1;
   int _cubeTimestampMs = 0;
-  DateTime? _lastReceivedAt;
 
   @override
   Uint8List get requestFaceletsCommand => Uint8List(20)..[0] = 0x04;
 
   @override
-  GanDecodedPacket decode(Uint8List packet, DateTime receivedAt) {
+  Uint8List get requestHardwareCommand => Uint8List(20)..[0] = 0x05;
+
+  @override
+  GanDecodedPacket decode(
+    Uint8List packet,
+    DateTime receivedAt, {
+    required Duration hostTimestamp,
+  }) {
     final message = GanProtocolMessageView(packet);
     final eventType = message.getBitWord(0, 4);
+    if (eventType == 0x01) {
+      return GanDecodedPacket(
+        kind: GanPacketKind.orientation,
+        events: [
+          _decodeGanOrientation(
+            message,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+            quaternionStart: 4,
+            velocityStart: 68,
+          ),
+        ],
+      );
+    }
     if (eventType == 0x04) {
       _lastSerial = message.getBitWord(4, 8);
       return GanDecodedPacket(
@@ -232,10 +259,29 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
             message,
             serial: _lastSerial,
             receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
             cornerPermutationStart: 12,
             cornerOrientationStart: 33,
             edgePermutationStart: 47,
             edgeOrientationStart: 91,
+          ),
+        ],
+      );
+    }
+    if (eventType == 0x05) {
+      final gyroscopeSupported = message.getBitWord(104, 1) == 1;
+      return GanDecodedPacket(
+        kind: GanPacketKind.hardware,
+        events: [
+          SmartCubeCapabilitiesEvent(
+            capabilities: CubeCapabilities(
+              initialState: true,
+              moveHistory: true,
+              cubeTimestamps: true,
+              gyroscope: gyroscopeSupported,
+            ),
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
           ),
         ],
       );
@@ -247,34 +293,66 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
     }
 
     final serial = message.getBitWord(4, 8);
-    final difference = ((serial - _lastSerial) & 0xff).clamp(0, 7);
+    final rawDifference = (serial - _lastSerial) & 0xff;
+    final difference = rawDifference.clamp(0, 7);
     _lastSerial = serial;
     if (difference == 0) {
       return const GanDecodedPacket(kind: GanPacketKind.move);
     }
 
-    final moves = <SmartCubeMoveEvent>[];
+    final events = <SmartCubeEvent>[];
+    if (rawDifference > 7) {
+      _cubeTimestampMs = 0;
+      events.add(
+        SmartCubeDataGapEvent(
+          reason: SmartCubeDataGapReason.missedMoves,
+          receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
+          missingMoveCount: rawDifference - 7,
+        ),
+      );
+    }
     for (var index = difference - 1; index >= 0; index--) {
       final face = message.getBitWord(12 + 5 * index, 4);
       final direction = message.getBitWord(16 + 5 * index, 1);
-      if (face >= _faceNames.length) continue;
-      var elapsed = message.getBitWord(47 + 16 * index, 16);
-      if (elapsed == 0 && index == 0 && _lastReceivedAt != null) {
-        elapsed = receivedAt.difference(_lastReceivedAt!).inMilliseconds;
+      final elapsed = message.getBitWord(47 + 16 * index, 16);
+      Duration? cubeTimestamp;
+      if (elapsed == 0) {
+        _cubeTimestampMs = 0;
+        events.add(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.cubeClockDiscontinuity,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+          ),
+        );
+      } else {
+        _cubeTimestampMs += elapsed;
+        cubeTimestamp = Duration(milliseconds: _cubeTimestampMs);
       }
-      _cubeTimestampMs += elapsed;
-      moves.add(
+      if (face >= _faceNames.length) {
+        events.add(
+          SmartCubeDataGapEvent(
+            reason: SmartCubeDataGapReason.malformedPacket,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+            missingMoveCount: 1,
+          ),
+        );
+        continue;
+      }
+      events.add(
         SmartCubeMoveEvent(
           move: _moveFor(face, direction),
           serial: (serial - index) & 0xff,
           receivedAt: receivedAt,
-          cubeTimestamp: Duration(milliseconds: _cubeTimestampMs),
+          hostTimestamp: hostTimestamp,
+          cubeTimestamp: cubeTimestamp,
           recovered: index != 0,
         ),
       );
     }
-    _lastReceivedAt = receivedAt;
-    return GanDecodedPacket(kind: GanPacketKind.move, events: moves);
+    return GanDecodedPacket(kind: GanPacketKind.move, events: events);
   }
 }
 
@@ -299,7 +377,22 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
   }
 
   @override
-  GanDecodedPacket decode(Uint8List packet, DateTime receivedAt) {
+  Uint8List get requestHardwareCommand {
+    final command = Uint8List(_layout.commandLength);
+    command.setRange(
+      0,
+      _layout.hardwareCommandPrefix.length,
+      _layout.hardwareCommandPrefix,
+    );
+    return command;
+  }
+
+  @override
+  GanDecodedPacket decode(
+    Uint8List packet,
+    DateTime receivedAt, {
+    required Duration hostTimestamp,
+  }) {
     final message = GanProtocolMessageView(packet);
     final eventType = message.getBitWord(_layout.eventTypeStart, 8);
     final dataLength = message.getBitWord(_layout.dataLengthStart, 8);
@@ -309,13 +402,47 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     }
 
     if (eventType == 0x01) {
-      return _decodeMove(message, receivedAt);
+      return _decodeMove(message, receivedAt, hostTimestamp);
     }
     if (eventType == _layout.moveHistoryEvent) {
-      return _decodeMoveHistory(message, dataLength, receivedAt);
+      return _decodeMoveHistory(message, dataLength, receivedAt, hostTimestamp);
     }
     if (eventType == _layout.faceletsEvent) {
-      return _decodeFacelets(message, receivedAt);
+      return _decodeFacelets(message, receivedAt, hostTimestamp);
+    }
+    if (_layout.gyroscopeEvent == eventType) {
+      return GanDecodedPacket(
+        kind: GanPacketKind.orientation,
+        events: [
+          _decodeGanOrientation(
+            message,
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+            quaternionStart: 16,
+            velocityStart: 80,
+          ),
+        ],
+      );
+    }
+    if (eventType == _layout.hardwareEvent) {
+      final gyroscopeSupported =
+          _layout.gyroscopeEvent != null &&
+          _decodeHardwareName(message, dataLength) == 'GAN12uiM';
+      return GanDecodedPacket(
+        kind: GanPacketKind.hardware,
+        events: [
+          SmartCubeCapabilitiesEvent(
+            capabilities: CubeCapabilities(
+              initialState: true,
+              moveHistory: true,
+              cubeTimestamps: true,
+              gyroscope: gyroscopeSupported,
+            ),
+            receivedAt: receivedAt,
+            hostTimestamp: hostTimestamp,
+          ),
+        ],
+      );
     }
     return const GanDecodedPacket(kind: GanPacketKind.ignored);
   }
@@ -323,6 +450,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
   GanDecodedPacket _decodeMove(
     GanProtocolMessageView message,
     DateTime receivedAt,
+    Duration hostTimestamp,
   ) {
     if (_lastSerial == -1) {
       return const GanDecodedPacket(kind: GanPacketKind.move);
@@ -344,6 +472,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
         move: _moveFor(face, direction),
         serial: serial,
         receivedAt: receivedAt,
+        hostTimestamp: hostTimestamp,
         cubeTimestamp: Duration(milliseconds: cubeTimestamp),
       ),
     );
@@ -354,6 +483,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     GanProtocolMessageView message,
     int dataLength,
     DateTime receivedAt,
+    Duration hostTimestamp,
   ) {
     final base = _layout.dataStart;
     final startSerial = message.getBitWord(base, 8);
@@ -368,6 +498,7 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
           move: _moveFor(face, direction),
           serial: (startSerial - index) & 0xff,
           receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
           recovered: true,
         ),
       );
@@ -381,12 +512,14 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
   GanDecodedPacket _decodeFacelets(
     GanProtocolMessageView message,
     DateTime receivedAt,
+    Duration hostTimestamp,
   ) {
     _serial = message.getBitWord(_layout.dataStart, 16, littleEndian: true);
     final state = _decodeCubeState(
       message,
       serial: _serial,
       receivedAt: receivedAt,
+      hostTimestamp: hostTimestamp,
       cornerPermutationStart: _layout.cornerPermutationStart,
       cornerOrientationStart: _layout.cornerOrientationStart,
       edgePermutationStart: _layout.edgePermutationStart,
@@ -408,6 +541,17 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       );
     }
     return GanDecodedPacket(kind: GanPacketKind.state, events: [state]);
+  }
+
+  String _decodeHardwareName(GanProtocolMessageView message, int dataLength) {
+    if (_layout.header != null || dataLength <= 1) return '';
+    final name = StringBuffer();
+    for (var index = 0; index < dataLength - 1; index++) {
+      name.writeCharCode(
+        message.getBitWord(_layout.dataStart + 8 + index * 8, 8),
+      );
+    }
+    return name.toString();
   }
 
   GanDecodedPacket _evictMoveBuffer({
@@ -482,27 +626,33 @@ final class _GanModernPacketLayout {
   const _GanModernPacketLayout({
     required this.commandLength,
     required this.faceletsCommandPrefix,
+    required this.hardwareCommandPrefix,
     required this.moveHistoryCommandPrefix,
     required this.eventTypeStart,
     required this.dataLengthStart,
     required this.dataStart,
     required this.moveHistoryEvent,
     required this.faceletsEvent,
+    required this.hardwareEvent,
     required this.cornerPermutationStart,
     required this.cornerOrientationStart,
     required this.edgePermutationStart,
     required this.edgeOrientationStart,
     this.header,
+    this.gyroscopeEvent,
   });
 
   final int commandLength;
   final List<int> faceletsCommandPrefix;
+  final List<int> hardwareCommandPrefix;
   final List<int> moveHistoryCommandPrefix;
   final int eventTypeStart;
   final int dataLengthStart;
   final int dataStart;
   final int moveHistoryEvent;
   final int faceletsEvent;
+  final int hardwareEvent;
+  final int? gyroscopeEvent;
   final int cornerPermutationStart;
   final int cornerOrientationStart;
   final int edgePermutationStart;
@@ -513,12 +663,14 @@ final class _GanModernPacketLayout {
 const _ganGen3Layout = _GanModernPacketLayout(
   commandLength: 16,
   faceletsCommandPrefix: [0x68, 0x01],
+  hardwareCommandPrefix: [0x68, 0x04],
   moveHistoryCommandPrefix: [0x68, 0x03],
   eventTypeStart: 8,
   dataLengthStart: 16,
   dataStart: 24,
   moveHistoryEvent: 0x06,
   faceletsEvent: 0x02,
+  hardwareEvent: 0x07,
   cornerPermutationStart: 40,
   cornerOrientationStart: 61,
   edgePermutationStart: 77,
@@ -529,12 +681,15 @@ const _ganGen3Layout = _GanModernPacketLayout(
 const _ganGen4Layout = _GanModernPacketLayout(
   commandLength: 20,
   faceletsCommandPrefix: [0xdd, 0x04, 0x00, 0xed, 0, 0],
+  hardwareCommandPrefix: [0xdf, 0x03, 0, 0, 0],
   moveHistoryCommandPrefix: [0xd1, 0x04],
   eventTypeStart: 0,
   dataLengthStart: 8,
   dataStart: 16,
   moveHistoryEvent: 0xd1,
   faceletsEvent: 0xed,
+  hardwareEvent: 0xfc,
+  gyroscopeEvent: 0xec,
   cornerPermutationStart: 32,
   cornerOrientationStart: 53,
   edgePermutationStart: 69,
@@ -551,6 +706,7 @@ SmartCubeStateEvent _decodeCubeState(
   GanProtocolMessageView message, {
   required int serial,
   required DateTime receivedAt,
+  required Duration hostTimestamp,
   required int cornerPermutationStart,
   required int cornerOrientationStart,
   required int edgePermutationStart,
@@ -589,5 +745,50 @@ SmartCubeStateEvent _decodeCubeState(
     ),
     serial: serial,
     receivedAt: receivedAt,
+    hostTimestamp: hostTimestamp,
   );
+}
+
+SmartCubeOrientationEvent _decodeGanOrientation(
+  GanProtocolMessageView message, {
+  required DateTime receivedAt,
+  required Duration hostTimestamp,
+  required int quaternionStart,
+  required int velocityStart,
+}) {
+  final rawW = message.getBitWord(quaternionStart, 16);
+  final rawX = message.getBitWord(quaternionStart + 16, 16);
+  final rawY = message.getBitWord(quaternionStart + 32, 16);
+  final rawZ = message.getBitWord(quaternionStart + 48, 16);
+  final rawVelocityX = message.getBitWord(velocityStart, 4);
+  final rawVelocityY = message.getBitWord(velocityStart + 4, 4);
+  final rawVelocityZ = message.getBitWord(velocityStart + 8, 4);
+  return SmartCubeOrientationEvent(
+    orientation: CubeOrientation(
+      x: _decodeSignedMagnitude(rawX, 15),
+      y: _decodeSignedMagnitude(rawY, 15),
+      z: _decodeSignedMagnitude(rawZ, 15),
+      w: _decodeSignedMagnitude(rawW, 15),
+    ),
+    angularVelocity: CubeAngularVelocity(
+      x: _decodeSignedInteger(rawVelocityX, 3),
+      y: _decodeSignedInteger(rawVelocityY, 3),
+      z: _decodeSignedInteger(rawVelocityZ, 3),
+      unit: 'gan_odr_step',
+    ),
+    receivedAt: receivedAt,
+    hostTimestamp: hostTimestamp,
+  );
+}
+
+double _decodeSignedMagnitude(int value, int magnitudeBits) {
+  final sign = (value >> magnitudeBits) == 0 ? 1 : -1;
+  final magnitudeMask = (1 << magnitudeBits) - 1;
+  return sign * (value & magnitudeMask) / magnitudeMask;
+}
+
+double _decodeSignedInteger(int value, int magnitudeBits) {
+  final sign = (value >> magnitudeBits) == 0 ? 1 : -1;
+  final magnitudeMask = (1 << magnitudeBits) - 1;
+  return (sign * (value & magnitudeMask)).toDouble();
 }

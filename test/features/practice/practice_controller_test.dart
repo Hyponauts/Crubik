@@ -5,9 +5,11 @@ import 'dart:math';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
+import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/practice_controller_factory.dart';
+import '../../support/practice_test_clock.dart';
 
 void main() {
   test('round trips every solve input source through JSON', () {
@@ -18,7 +20,7 @@ void main() {
 
     for (var index = 0; index < sources.length; index++) {
       final source = sources[index];
-      final record = SolveRecord(
+      final result = SolveRecord(
         id: 'solve-$index',
         scramble: 'R U',
         elapsed: const Duration(seconds: 1),
@@ -26,7 +28,7 @@ void main() {
         createdAt: DateTime.utc(2026, 1, index + 1),
         inputSource: source,
       );
-      final json = record.toJson();
+      final json = result.toJson();
       final restored = SolveRecord.fromJson(json);
 
       expect(json['input_source'], source.serializedValue);
@@ -69,11 +71,12 @@ void main() {
   });
 
   test('demo mode enables manual timing and virtual moves', () {
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
       scrambleGenerator: TestScrambleGenerator(random: Random(7)),
+      monotonicClock: clock,
     );
 
     controller.activateDemoInput();
@@ -113,11 +116,12 @@ void main() {
   test(
     'demo mode shares readiness, inspection, and first-move timing',
     () async {
-      final clock = _FakeSolveClock();
       var now = DateTime.utc(2026);
+      final clock = PracticeTestClock(wallTime: () => now);
       final controller = createTestPracticeController(
         clock: clock,
         now: () => now,
+        monotonicClock: clock,
       );
       controller.activateDemoInput();
       final scrambledFacelets = controller.cubeState.facelets;
@@ -142,7 +146,10 @@ void main() {
       expect(controller.attemptInProgress, isTrue);
 
       now = now.add(const Duration(seconds: 4));
-      controller.applyMove(CubeMove.parse('R'), occurredAt: now);
+      controller.applyMove(
+        CubeMove.parse('R'),
+        hostTimestamp: _hostTimestamp(now),
+      );
 
       expect(controller.phase, PracticePhase.solving);
       expect(controller.attemptInProgress, isTrue);
@@ -245,8 +252,11 @@ void main() {
   });
 
   test('leaving demo cancels an unsaved attempt and returns unselected', () {
-    final clock = _FakeSolveClock();
-    final controller = createTestPracticeController(clock: clock);
+    final clock = PracticeTestClock();
+    final controller = createTestPracticeController(
+      clock: clock,
+      monotonicClock: clock,
+    );
     controller.activateDemoInput();
     controller.startSolve();
     clock.value = const Duration(seconds: 5);
@@ -264,12 +274,13 @@ void main() {
   });
 
   test('records a manual solve and calculates basic statistics', () {
-    final clock = _FakeSolveClock();
     var timestamp = DateTime.utc(2026, 1, 1);
+    final clock = PracticeTestClock(wallTime: () => timestamp);
     final controller = createTestPracticeController(
       clock: clock,
       now: () => timestamp,
       preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
     );
     controller.activateDemoInput();
 
@@ -293,11 +304,12 @@ void main() {
   });
 
   test('new scramble preserves a pending solve review', () {
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
       scrambleGenerator: TestScrambleGenerator(random: Random(7)),
+      monotonicClock: clock,
     );
     controller.activateDemoInput();
     controller.startSolve();
@@ -365,36 +377,42 @@ void main() {
     controller.dispose();
   });
 
-  test('exports version 2 solve history while retaining manual metadata', () {
-    final clock = _FakeSolveClock();
-    final exportedAt = DateTime.utc(2026, 1, 1, 12);
-    final controller = createTestPracticeController(
-      clock: clock,
-      now: () => exportedAt,
-      preInspectionDelay: Duration.zero,
-    );
-    controller.activateDemoInput();
+  test(
+    'exports version 3 solve history while retaining manual metadata',
+    () async {
+      final exportedAt = DateTime.utc(2026, 1, 1, 12);
+      final clock = PracticeTestClock(wallTime: () => exportedAt);
+      final controller = createTestPracticeController(
+        clock: clock,
+        now: () => exportedAt,
+        preInspectionDelay: Duration.zero,
+        monotonicClock: clock,
+      );
+      controller.activateDemoInput();
 
-    controller.startSolve();
-    controller.applyMove(CubeMove.parse('R'));
-    clock.value = const Duration(milliseconds: 12345);
-    controller.stopSolve(inputSource: SolveInputSource.manual);
+      controller.startSolve();
+      controller.applyMove(CubeMove.parse('R'));
+      clock.value = const Duration(milliseconds: 12345);
+      controller.stopSolve(inputSource: SolveInputSource.manual);
 
-    final payload = jsonDecode(controller.exportJson()) as Map<String, Object?>;
-    final solves = payload['solves']! as List<Object?>;
-    final solve = solves.single! as Map<String, Object?>;
+      final payload =
+          jsonDecode(await controller.exportJson()) as Map<String, Object?>;
+      final solves = payload['solves']! as List<Object?>;
+      final solve = solves.single! as Map<String, Object?>;
 
-    expect(payload['format'], 'crubik-solve-history');
-    expect(payload['version'], 2);
-    expect(solve['elapsed_ms'], 12345);
-    expect(solve['move_count'], 1);
-    expect(solve['input_source'], 'manual');
-    expect(solve['start_trigger'], 'first_move');
-    expect(solve['inspection_elapsed_ms'], 0);
-    expect(solve['scramble'], isNotEmpty);
+      expect(payload['format'], 'crubik-solve-history');
+      expect(payload['version'], 3);
+      expect(solve['elapsed_ms'], 12345);
+      expect(solve['move_count'], 1);
+      expect(solve['input_source'], 'manual');
+      expect(solve['start_trigger'], 'first_move');
+      expect(solve['inspection_elapsed_ms'], 0);
+      expect(solve['scramble'], isNotEmpty);
+      expect(solve, isNot(contains('recording')));
 
-    controller.dispose();
-  });
+      controller.dispose();
+    },
+  );
 
   test(
     'preserves the physical state when a smart cube gets a new scramble',
@@ -441,7 +459,7 @@ void main() {
     controller.applyMove(
       CubeMove(wrongFace),
       fromSmartCube: true,
-      occurredAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
 
     expect(controller.guidanceIsCorrection, isTrue);
@@ -455,7 +473,7 @@ void main() {
       controller.applyMove(
         move,
         fromSmartCube: true,
-        occurredAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
       );
     }
 
@@ -478,7 +496,11 @@ void main() {
 
     final first = controller.scramble.moves.first;
     final expectedNext = controller.scramble.moves[1];
-    controller.applyMove(first, fromSmartCube: true, occurredAt: occurredAt);
+    controller.applyMove(
+      first,
+      fromSmartCube: true,
+      hostTimestamp: _hostTimestamp(occurredAt),
+    );
 
     final wrongFace = CubeFace.values.firstWhere(
       (face) => face != first.face && face != expectedNext.face,
@@ -489,11 +511,15 @@ void main() {
     );
     final wrong = CubeMove(wrongFace);
     final secondWrong = CubeMove(secondWrongFace);
-    controller.applyMove(wrong, fromSmartCube: true, occurredAt: occurredAt);
+    controller.applyMove(
+      wrong,
+      fromSmartCube: true,
+      hostTimestamp: _hostTimestamp(occurredAt),
+    );
     controller.applyMove(
       secondWrong,
       fromSmartCube: true,
-      occurredAt: occurredAt,
+      hostTimestamp: _hostTimestamp(occurredAt),
     );
 
     expect(controller.completedScrambleMoveCount, 1);
@@ -514,7 +540,7 @@ void main() {
     controller.applyMove(
       secondWrong.inverse,
       fromSmartCube: true,
-      occurredAt: occurredAt,
+      hostTimestamp: _hostTimestamp(occurredAt),
     );
     expect(controller.scrambleRecoveryMoves, [wrong.inverse]);
 
@@ -525,7 +551,7 @@ void main() {
     controller.applyMove(
       replanningWrong,
       fromSmartCube: true,
-      occurredAt: occurredAt,
+      hostTimestamp: _hostTimestamp(occurredAt),
     );
     expect(controller.scrambleRecoveryMoves, [
       replanningWrong.inverse,
@@ -533,14 +559,22 @@ void main() {
     ]);
 
     for (final move in [...controller.scrambleRecoveryMoves]) {
-      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+      controller.applyMove(
+        move,
+        fromSmartCube: true,
+        hostTimestamp: _hostTimestamp(occurredAt),
+      );
     }
     expect(controller.scrambleRecoveryMoves, isEmpty);
     expect(controller.guidanceIsCorrection, isFalse);
     expect(controller.nextScrambleMove, expectedNext);
 
     for (final move in [...controller.scrambleGuidance]) {
-      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+      controller.applyMove(
+        move,
+        fromSmartCube: true,
+        hostTimestamp: _hostTimestamp(occurredAt),
+      );
     }
     expect(controller.phase, PracticePhase.inspectionDelay);
     final target = CubeState.solved()..applyAll(controller.scramble.moves);
@@ -561,19 +595,27 @@ void main() {
     );
     expect(expectedIndex, isNonNegative);
     for (final move in controller.scramble.moves.take(expectedIndex)) {
-      controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+      controller.applyMove(
+        move,
+        fromSmartCube: true,
+        hostTimestamp: _hostTimestamp(occurredAt),
+      );
     }
     final expected = controller.scramble.moves[expectedIndex];
     controller.applyMove(
       expected.inverse,
       fromSmartCube: true,
-      occurredAt: occurredAt,
+      hostTimestamp: _hostTimestamp(occurredAt),
     );
 
     expect(controller.scrambleRecoveryMoves, [expected]);
     expect(controller.scrambleGuidance.take(2), [expected, expected]);
 
-    controller.applyMove(expected, fromSmartCube: true, occurredAt: occurredAt);
+    controller.applyMove(
+      expected,
+      fromSmartCube: true,
+      hostTimestamp: _hostTimestamp(occurredAt),
+    );
     expect(controller.scrambleRecoveryMoves, isEmpty);
     expect(controller.guidanceIsCorrection, isFalse);
     expect(controller.nextScrambleMove, expected);
@@ -598,7 +640,7 @@ void main() {
           controller.applyMove(
             quarterMove,
             fromSmartCube: true,
-            occurredAt: DateTime.utc(2026),
+            hostTimestamp: Duration.zero,
           );
           expect(controller.guidanceIsCorrection, isFalse);
           expect(controller.nextScrambleMove, quarterMove);
@@ -610,7 +652,7 @@ void main() {
           controller.applyMove(
             quarterMove,
             fromSmartCube: true,
-            occurredAt: DateTime.utc(2026),
+            hostTimestamp: Duration.zero,
           );
           expect(
             controller.completedScrambleMoveCount,
@@ -621,7 +663,7 @@ void main() {
           controller.applyMove(
             move,
             fromSmartCube: true,
-            occurredAt: DateTime.utc(2026),
+            hostTimestamp: Duration.zero,
           );
         }
       }
@@ -650,7 +692,7 @@ void main() {
         controller.applyMove(
           quarterMove,
           fromSmartCube: true,
-          occurredAt: DateTime.utc(2026),
+          hostTimestamp: Duration.zero,
         );
 
         expect(
@@ -664,7 +706,7 @@ void main() {
         controller.applyMove(
           quarterMove,
           fromSmartCube: true,
-          occurredAt: DateTime.utc(2026),
+          hostTimestamp: Duration.zero,
         );
 
         expect(controller.completedScrambleMoveCount, 1);
@@ -680,6 +722,7 @@ void main() {
     final controller = createTestPracticeController(
       scrambleGenerator: TestScrambleGenerator(random: Random(7)),
       now: () => now,
+      monotonicClock: PracticeTestClock(wallTime: () => now),
     );
 
     _matchConnectedScramble(controller, now);
@@ -694,13 +737,13 @@ void main() {
     controller.applyMove(
       CubeMove.parse('R'),
       fromSmartCube: true,
-      occurredAt: now,
+      hostTimestamp: _hostTimestamp(now),
     );
     expect(controller.phase, PracticePhase.scrambling);
     controller.applyMove(
       CubeMove.parse("R'"),
       fromSmartCube: true,
-      occurredAt: now,
+      hostTimestamp: _hostTimestamp(now),
     );
 
     expect(controller.phase, PracticePhase.inspectionDelay);
@@ -734,7 +777,7 @@ void main() {
     controller.applyMove(
       controller.scramble.moves.first,
       fromSmartCube: true,
-      occurredAt: DateTime.utc(2026),
+      hostTimestamp: Duration.zero,
     );
 
     final unexpected = CubeState.solved()
@@ -747,13 +790,14 @@ void main() {
   });
 
   test('first inspection move starts timing and is captured', () {
-    final clock = _FakeSolveClock();
     var now = DateTime.utc(2026);
+    final clock = PracticeTestClock(wallTime: () => now);
     final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
       scrambleGenerator: TestScrambleGenerator(random: Random(7)),
+      monotonicClock: clock,
     );
     _prepareConnectedCube(controller, now);
     final completedScramble = controller.scramble.toString();
@@ -762,13 +806,16 @@ void main() {
     controller.applyMove(
       CubeMove.parse('R'),
       fromSmartCube: true,
-      occurredAt: now,
+      hostTimestamp: _hostTimestamp(now),
     );
 
     expect(controller.phase, PracticePhase.solving);
     expect(controller.currentMoves, [CubeMove.parse('R')]);
     clock.value = const Duration(seconds: 8);
-    controller.syncCubeState(CubeState.solved(), occurredAt: now);
+    controller.syncCubeState(
+      CubeState.solved(),
+      hostTimestamp: _hostTimestamp(now),
+    );
 
     expect(controller.phase, PracticePhase.scrambling);
     expect(controller.cubeState.isSolved, isTrue);
@@ -783,7 +830,11 @@ void main() {
     expect(controller.solves.single.moveCount, 1);
 
     for (final move in [...controller.scrambleGuidance]) {
-      controller.applyMove(move, fromSmartCube: true, occurredAt: now);
+      controller.applyMove(
+        move,
+        fromSmartCube: true,
+        hostTimestamp: _hostTimestamp(now),
+      );
     }
     expect(controller.phase, PracticePhase.inspection);
     expect(controller.pendingSolveReview, isNull);
@@ -791,12 +842,13 @@ void main() {
   });
 
   test('an overdue inspection starts at the deadline', () {
-    final clock = _FakeSolveClock();
     var now = DateTime.utc(2026);
+    final clock = PracticeTestClock(wallTime: () => now);
     final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
     );
     _prepareConnectedCube(controller, now);
 
@@ -804,12 +856,15 @@ void main() {
     controller.applyMove(
       CubeMove.parse('R'),
       fromSmartCube: true,
-      occurredAt: now,
+      hostTimestamp: _hostTimestamp(now),
     );
 
     expect(controller.phase, PracticePhase.solving);
     expect(controller.elapsed, const Duration(seconds: 2));
-    controller.syncCubeState(CubeState.solved(), occurredAt: now);
+    controller.syncCubeState(
+      CubeState.solved(),
+      hostTimestamp: _hostTimestamp(now),
+    );
     expect(
       controller.solves.single.inspectionElapsed,
       PracticeController.defaultInspectionDuration,
@@ -822,11 +877,12 @@ void main() {
   });
 
   test('inspection timeout automatically enters solving', () async {
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
       inspectionDuration: const Duration(milliseconds: 20),
+      monotonicClock: clock,
     );
     _prepareConnectedCube(controller, DateTime.now());
 
@@ -846,17 +902,21 @@ void main() {
     final controller = createTestPracticeController(
       now: () => now,
       preInspectionDelay: Duration.zero,
+      monotonicClock: PracticeTestClock(wallTime: () => now),
     );
     _prepareConnectedCube(controller, now);
     now = now.add(const Duration(seconds: 3));
     final changedState = controller.cubeState.copy()
       ..apply(CubeMove.parse('R'));
 
-    controller.syncCubeState(changedState, occurredAt: now);
+    controller.syncCubeState(changedState, hostTimestamp: _hostTimestamp(now));
 
     expect(controller.phase, PracticePhase.solving);
     expect(controller.currentMoves, isEmpty);
-    controller.syncCubeState(CubeState.solved(), occurredAt: now);
+    controller.syncCubeState(
+      CubeState.solved(),
+      hostTimestamp: _hostTimestamp(now),
+    );
     expect(controller.phase, PracticePhase.scrambling);
     expect(controller.pendingSolveReview, same(controller.solves.single));
     expect(
@@ -868,20 +928,25 @@ void main() {
   });
 
   test('smart cube move completion immediately prepares the next scramble', () {
-    final clock = _FakeSolveClock();
     final now = DateTime.utc(2026);
+    final clock = PracticeTestClock(wallTime: () => now);
     final controller = createTestPracticeController(
       clock: clock,
       now: () => now,
       preInspectionDelay: Duration.zero,
       scrambleGenerator: TestScrambleGenerator(random: Random(7)),
+      monotonicClock: clock,
     );
     _prepareConnectedCube(controller, now);
     final completedScramble = controller.scramble.toString();
     final solution = [...controller.scramble.inverse.moves];
 
     for (final move in solution) {
-      controller.applyMove(move, fromSmartCube: true, occurredAt: now);
+      controller.applyMove(
+        move,
+        fromSmartCube: true,
+        hostTimestamp: _hostTimestamp(now),
+      );
     }
 
     expect(controller.phase, PracticePhase.scrambling);
@@ -919,17 +984,18 @@ void main() {
   });
 
   test('disconnect preserves an active attempt for state-based completion', () {
-    final clock = _FakeSolveClock();
+    final clock = PracticeTestClock();
     final controller = createTestPracticeController(
       clock: clock,
       preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
     );
-    final now = DateTime.now();
+    final now = DateTime.utc(2026);
     _prepareConnectedCube(controller, now);
     controller.applyMove(
       CubeMove.parse('R'),
       fromSmartCube: true,
-      occurredAt: now,
+      hostTimestamp: _hostTimestamp(now),
     );
     clock.value = const Duration(seconds: 8);
 
@@ -937,7 +1003,10 @@ void main() {
     expect(controller.inputMode, PracticeInputMode.smartCube);
     expect(controller.phase, PracticePhase.solving);
     controller.activateSmartCubeInput();
-    controller.syncCubeState(CubeState.solved(), occurredAt: now);
+    controller.syncCubeState(
+      CubeState.solved(),
+      hostTimestamp: _hostTimestamp(now),
+    );
 
     expect(controller.phase, PracticePhase.scrambling);
     expect(
@@ -1000,9 +1069,16 @@ void _matchConnectedScramble(
   DateTime occurredAt,
 ) {
   controller.activateSmartCubeInput();
-  controller.syncCubeState(CubeState.solved(), occurredAt: occurredAt);
+  controller.syncCubeState(
+    CubeState.solved(),
+    hostTimestamp: _hostTimestamp(occurredAt),
+  );
   for (final move in [...controller.scramble.moves]) {
-    controller.applyMove(move, fromSmartCube: true, occurredAt: occurredAt);
+    controller.applyMove(
+      move,
+      fromSmartCube: true,
+      hostTimestamp: _hostTimestamp(occurredAt),
+    );
   }
 }
 
@@ -1015,24 +1091,6 @@ extension on CubeFace {
     CubeFace.left => CubeFace.right,
     CubeFace.back => CubeFace.front,
   };
-}
-
-final class _FakeSolveClock implements SolveClock {
-  Duration value = Duration.zero;
-
-  @override
-  Duration get elapsed => value;
-
-  @override
-  void reset() => value = Duration.zero;
-
-  @override
-  void start({Duration initialElapsed = Duration.zero}) {
-    value = initialElapsed;
-  }
-
-  @override
-  void stop() {}
 }
 
 final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
@@ -1049,7 +1107,13 @@ final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
   }
 
   @override
-  Future<void> replaceAll(List<SolveRecord> solves) async {}
+  Future<void> add(SolveRecord solve, {SolveRecording? recording}) async {}
+
+  @override
+  Future<void> delete(String id) async {}
+
+  @override
+  Future<SolveRecording?> loadRecording(String solveId) async => null;
 }
 
 final class _FaceFirstDoubleTurnRandom implements Random {
@@ -1072,3 +1136,6 @@ final class _FaceFirstDoubleTurnRandom implements Random {
     return 0;
   }
 }
+
+Duration _hostTimestamp(DateTime timestamp) =>
+    timestamp.difference(DateTime.utc(2026));

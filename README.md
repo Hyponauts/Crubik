@@ -20,7 +20,7 @@ converted to move sequences locally with a two-phase solver. The implementation
 matches TNoodle's default minimum-distance rule, but it is not an official WCA
 scramble program or competition system.
 
-The current history schema exports solve summaries and timing/input metadata; versioned persistence and export of the raw per-move event stream remains future work. Do not describe the current JSON as a lossless raw-event export.
+Smart-cube solves retain versioned raw recordings with per-move timing and available orientation samples. Detailed recordings use lossless gzip-compressed JSON blobs in local storage; JSON exports remain readable and uncompressed.
 
 ## Cube device compatibility
 
@@ -66,6 +66,24 @@ When Drift or cube-solver code changes, regenerate the workers. When sqlite3 cha
 `tool/sqlite3_wasm_asset.json` with the matching release URL and checksum. In
 both cases, build the web app and test database startup and scramble generation
 in a browser. None of the generated runtime files should be committed.
+
+## iOS development
+
+Open `ios/Runner.xcworkspace` in Xcode. The pinned `universal_ble` plugin uses
+CocoaPods alongside Flutter's Swift Package Manager integration; opening
+`Runner.xcodeproj` alone omits the Pods project and can cause
+`Module 'universal_ble' not found`.
+
+After the dependency setup above, install the native dependencies:
+
+```sh
+cd ios
+pod install
+open Runner.xcworkspace
+```
+
+The app targets iOS 17.0. The Podfile also raises older plugin deployment targets
+to this minimum so current Xcode SDKs can build them.
 
 ## CI/CD
 

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:crubik/core/time/monotonic_clock.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
@@ -8,6 +9,7 @@ PracticeController createTestPracticeController({
   TestScrambleGenerator? scrambleGenerator,
   SolveHistoryRepository? repository,
   SolveClock? clock,
+  MonotonicClock? monotonicClock,
   DateTime Function()? now,
   Duration preInspectionDelay = PracticeController.defaultPreInspectionDelay,
   Duration inspectionDuration = PracticeController.defaultInspectionDuration,
@@ -17,6 +19,7 @@ PracticeController createTestPracticeController({
     nextScramble: generator.generate,
     repository: repository,
     clock: clock,
+    monotonicClock: monotonicClock,
     now: now,
     preInspectionDelay: preInspectionDelay,
     inspectionDuration: inspectionDuration,
