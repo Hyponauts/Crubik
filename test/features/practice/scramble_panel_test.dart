@@ -6,6 +6,7 @@ import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/presentation/widgets/scramble_panel.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/practice_controller_factory.dart';
@@ -25,6 +26,103 @@ void main() {
       15,
     );
   });
+
+  for (final viewport in [const Size(320, 568), const Size(1440, 900)]) {
+    for (final density in ScramblePanelDensity.values) {
+      for (final textScale in [1.0, 1.3, 2.0]) {
+        testWidgets('keeps scramble baselines and wrapping stable at '
+            '$viewport, $density, text scale $textScale', (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = viewport;
+          tester.platformDispatcher.textScaleFactorTestValue = textScale;
+          addTearDown(tester.view.reset);
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          final scramble = CubeScramble.parse(
+            "R U' F2 D L2 B' R2 F U2 L' D2 B U' R F2 D' L B2",
+          );
+          final practice = PracticeController(nextScramble: () => scramble)
+            ..activateSmartCubeInput();
+          addTearDown(practice.dispose);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: CrubikTheme.dark,
+              home: Scaffold(
+                body: AnimatedBuilder(
+                  animation: practice,
+                  builder: (context, _) => PracticeScramblePanel(
+                    practice: practice,
+                    density: density,
+                    bounded: true,
+                  ),
+                ),
+              ),
+            ),
+          );
+          final initialLayout = _scrambleTextLayout(tester);
+          final initialSize = tester.getSize(
+            find.byKey(const Key('scramble-text')),
+          );
+          expect(initialLayout, hasLength(scramble.moves.length));
+          _expectSharedBaselines(initialLayout);
+
+          practice.syncCubeState(CubeState.solved());
+          await tester.pump();
+
+          expect(find.byKey(const Key('next-scramble-move')), findsOneWidget);
+          expect(_scrambleTextLayout(tester), initialLayout);
+
+          practice.applyMove(
+            const CubeMove(CubeFace.down),
+            fromSmartCube: true,
+          );
+          practice.applyMove(
+            const CubeMove(CubeFace.left),
+            fromSmartCube: true,
+          );
+          await tester.pump();
+
+          expect(practice.scrambleRecoveryMoves, hasLength(2));
+          _expectSharedBaselines(_scrambleTextLayout(tester));
+
+          practice.applyMove(
+            const CubeMove(CubeFace.left, turns: 3),
+            fromSmartCube: true,
+          );
+          await tester.pump();
+          _expectSharedBaselines(_scrambleTextLayout(tester));
+
+          practice.applyMove(
+            const CubeMove(CubeFace.down, turns: 3),
+            fromSmartCube: true,
+          );
+          await tester.pump();
+          expect(_scrambleTextLayout(tester), initialLayout);
+
+          for (final move in scramble.moves) {
+            final observedMoves = move.turns == 2
+                ? [CubeMove(move.face), CubeMove(move.face)]
+                : [move];
+            for (final observedMove in observedMoves) {
+              practice.applyMove(observedMove, fromSmartCube: true);
+              await tester.pump();
+
+              expect(_scrambleTextLayout(tester), initialLayout);
+              expect(
+                tester.getSize(find.byKey(const Key('scramble-text'))),
+                initialSize,
+              );
+              expect(tester.takeException(), isNull);
+            }
+          }
+
+          expect(find.byKey(const Key('next-scramble-move')), findsNothing);
+          expect(practice.phase, PracticePhase.inspectionDelay);
+          practice.abortAttempt();
+        });
+      }
+    }
+  }
 
   testWidgets('describes the configured pre-inspection delay', (tester) async {
     final practice = createTestPracticeController(
@@ -241,5 +339,44 @@ void main() {
       expect(find.byKey(const Key('scramble-loading')), findsNothing);
       expect(tester.takeException(), isNull);
     });
+  }
+}
+
+List<({Rect rect, double baseline})> _scrambleTextLayout(WidgetTester tester) {
+  final paragraphs = find.descendant(
+    of: find.byKey(const Key('scramble-text')),
+    matching: find.byType(RichText),
+  );
+
+  return [
+    for (final paragraph in tester.renderObjectList<RenderParagraph>(
+      paragraphs,
+    ))
+      (
+        rect: paragraph.localToGlobal(Offset.zero) & paragraph.size,
+        baseline: paragraph
+            .localToGlobal(
+              Offset(
+                0,
+                paragraph.getDryBaseline(
+                  paragraph.constraints,
+                  TextBaseline.alphabetic,
+                )!,
+              ),
+            )
+            .dy,
+      ),
+  ];
+}
+
+void _expectSharedBaselines(List<({Rect rect, double baseline})> layout) {
+  var rowBottom = double.negativeInfinity;
+  var rowBaseline = double.nan;
+  for (final text in layout) {
+    if (text.rect.top >= rowBottom) {
+      rowBottom = text.rect.bottom;
+      rowBaseline = text.baseline;
+    }
+    expect(text.baseline, rowBaseline);
   }
 }
