@@ -139,8 +139,9 @@ The main source areas are:
 | `CubeSolver` / `CubeSolution` | Solver abstraction returning a target-to-solved `CubeAlgorithm`. `CubeSolution.toScramble()` reverses and inverts that sequence for scramble generation. The abstraction is independent of the two-phase implementation so later training solvers can provide different strategies without changing consumers. |
 | `WcaScrambleGenerator` | Uniformly samples reachable 3×3 cubie states, applies TNoodle's default distance filter, solves target-to-solved, and inverts the solution into a scramble. |
 | `CuberCubeSolver` | Adapts the local `cuber` two-phase solver with the same 21-move search bound configured by TNoodle for 3×3, a 60-second attempt timeout, and one retry against the same target. The bound is a maximum accepted solution length, not a minimum scramble length. Search runs in an isolate on native platforms and a generated dedicated Worker on web. |
-| `CrubikDatabase` | Shared Drift database structure and migrations for solve summaries, versioned raw recording JSON, and app settings. |
-| `DriftSolveHistoryRepository` | Saves a solve summary and optional recording together in one transaction. Loads summaries separately and recording JSON on demand. Deleting a solve also deletes its recording. |
+| `CrubikDatabase` | Shared Drift database structure and migrations for solve summaries, gzip-compressed raw recording JSON blobs, and app settings. |
+| `DriftSolveHistoryRepository` | Saves a solve summary and optional compressed recording together in one transaction. Loads summaries separately and decompresses recording JSON on demand. Deleting a solve also deletes its recording. |
+| `encodeSolveRecording` / `decodeSolveRecording` | Persistence-owned codec for lossless gzip-compressed UTF-8 recording JSON. Uses the pinned `archive` package on native and web platforms; keeps compression outside the domain model and export format. |
 | `DriftRememberedCubeStore` | Saves the most recently connected device ID and display name. |
 | `DriftScrambleCacheStore` | Stores the expendable versioned scramble pool as an application setting without adding a schema table. |
 | `Cube3DView` | Draws the 3D cube in Flutter, handles interaction and move animation, and respects reduced-motion settings. |
@@ -266,7 +267,7 @@ flowchart LR
     SolveRepo --> DB["CrubikDatabase"]
     Remembered --> DB
     DB --> Summaries["solve_entries"]
-    DB --> Recordings["solve_recordings: versioned raw JSON"]
+    DB --> Recordings["solve_recordings: gzip-compressed JSON BLOB"]
     ScrambleStore --> DB
     DB --> Native["SQLite on native platforms"]
     DB --> Web["SQLite Wasm + IndexedDB on web"]
@@ -278,7 +279,8 @@ flowchart LR
 
 - Local data is the source of truth. Recording and review work without a network connection.
 - `SolveHistory` runs writes and exports in order. Failed writes stay queued and are retried on later changes, an explicit save of pending changes (flush), or export. Each operation captures its write sequence boundary when requested, so an earlier retry cannot save mutations queued after an export. Export captures its summaries and timestamp immediately, merges history still loading with the local changes captured at that point, and keeps later writes behind its recording reads. Export fails if an earlier write still has not been saved.
-- A smart-cube summary and its versioned raw recording JSON are saved in one transaction. Each solve has at most one recording row, with explicit event sequence numbers. Deleting the solve also deletes its recording. Times between moves are calculated during export, not stored in the recording.
+- A smart-cube summary and its versioned raw recording JSON are saved in one transaction. Recording JSON is compact UTF-8, losslessly gzip-compressed into the `solve_recordings.payload` BLOB column without base64 encoding. The same codec works on native platforms and web. Each solve has at most one recording row, with explicit event sequence numbers. Deleting the solve also deletes its recording. Times between moves are calculated during export, not stored in the recording.
+- Loading a recording validates its gzip checksum and uncompressed size before decoding JSON. Damaged or unsupported recordings fail the read and export rather than silently discarding evidence.
 - Startup loads solve summaries only. Detailed event timelines load when needed, including during asynchronous export, so long sessions do not load every move and orientation sample into memory.
 - Solves added or deleted while history loads are merged with the loaded data.
 - `CrubikApp` saves pending history changes before closing its database.
@@ -290,7 +292,7 @@ Native platforms use Drift with SQLite. Web uses SQLite WebAssembly (`sqlite3.wa
 
 When the Drift schema changes, regenerate ignored `*.g.dart` files locally with `build_runner`. Add a migration and migration tests when `schemaVersion` increases. Before Flutter web builds, `build_runner` also downloads SQLite WASM and compiles the Drift and cube-solver workers. Never commit generated Dart files or web runtime output.
 
-Schema version 4 adds JSON recording storage and solve timing reliability in one migration. Upgrading from older schemas preserves solve summaries, inspection metadata, and remembered-cube settings. It does not invent recordings for older solves. Older summaries keep reliable timing by default.
+Schema version 4 adds gzip-compressed JSON recording storage and solve timing reliability in one migration from the schemas shipped on `main` (versions 1–3). Upgrading preserves solve summaries, inspection metadata, and remembered-cube settings. It does not invent recordings for older solves. Older summaries keep reliable timing by default. The unreleased version 4 text-payload schema is not a migration target.
 
 ### Export and timing reliability
 
@@ -298,7 +300,7 @@ Crubik JSON version 3 includes a nested recording only when one exists. Summary 
 
 Review and history display “Timing unavailable” for these solves. Best and mean exclude them. Ao5 is unavailable if any of the latest five solves has unavailable timing.
 
-SQLite keeps the original clock values. Export adds calculated move intervals and the clock used for each interval. The first move's time from solve start is a separate value from its “time since previous move,” which is always unavailable because there is no previous move.
+SQLite keeps the original clock values inside the compressed recording. Export decompresses each recording on demand and emits readable, uncompressed JSON with calculated move intervals and the clock used for each interval. The first move's time from solve start is a separate value from its “time since previous move,” which is always unavailable because there is no previous move.
 
 ### What a recording keeps
 

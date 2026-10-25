@@ -20,7 +20,7 @@ converted to move sequences locally with a two-phase solver. The implementation
 matches TNoodle's default minimum-distance rule, but it is not an official WCA
 scramble program or competition system.
 
-The current history schema exports solve summaries and timing/input metadata; versioned persistence and export of the raw per-move event stream remains future work. Do not describe the current JSON as a lossless raw-event export.
+Smart-cube solves retain versioned raw recordings with per-move timing and available orientation samples. Detailed recordings use lossless gzip-compressed JSON blobs in local storage; JSON exports remain readable and uncompressed.
 
 ## Cube device compatibility
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crubik/core/data/crubik_database.dart';
@@ -5,6 +6,7 @@ import 'package:crubik/features/cube/application/remembered_cube_store.dart';
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
+import 'package:crubik/features/practice/application/solve_history.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:drift/native.dart';
@@ -167,7 +169,21 @@ void main() {
     final stored = await reopenedDatabase
         .select(reopenedDatabase.solveRecordings)
         .getSingle();
-    expect(stored.payload, isNot(contains('interval_us')));
+    final storedJson = utf8.decode(gzip.decode(stored.payload));
+    expect(storedJson, isNot(contains('interval_us')));
+    expect(
+      jsonDecode(storedJson),
+      recording.toJson(includeDerivedTiming: false),
+    );
+    expect(stored.payload.length, lessThan(utf8.encode(storedJson).length));
+    final storageType = await reopenedDatabase
+        .customSelect('SELECT typeof(payload) AS type FROM solve_recordings')
+        .getSingle();
+    expect(storageType.read<String>('type'), 'blob');
+    expect(
+      restored?.toJson(includeDerivedTiming: false),
+      recording.toJson(includeDerivedTiming: false),
+    );
     expect(restored?.protocolFamily, CubeProtocolFamily.gan);
     expect(restored?.orientationReduction, adaptiveQuaternionReduction);
     expect(
@@ -183,6 +199,17 @@ void main() {
     final gap = restored?.events[3] as RecordedDataGap;
     expect(gap.reason, RecordingGapReason.stateTransition);
     expect(gap.missingMoveCount, 1);
+
+    final history = SolveHistory(
+      repository: repository,
+      now: () => DateTime.utc(2026),
+    );
+    final export =
+        jsonDecode(await history.exportJson()) as Map<String, Object?>;
+    final exportedSolve =
+        (export['solves']! as List<Object?>).single as Map<String, Object?>;
+    expect(export['version'], 3);
+    expect(exportedSolve['recording'], recording.toJson());
   });
 
   test('solve and recording insertion is atomic', () async {
@@ -361,6 +388,42 @@ void main() {
       expect(recording, isNull);
       final rememberedCube = await DriftRememberedCubeStore(database).load();
       expect(rememberedCube?.deviceId, version == 3 ? 'legacy-cube-id' : null);
+
+      final newSolve = SolveRecord(
+        id: 'compressed-solve',
+        scramble: 'R',
+        elapsed: const Duration(seconds: 1),
+        moveCount: 1,
+        createdAt: DateTime.utc(2026),
+        inputSource: SolveInputSource.smartCube,
+      );
+      final newRecording = SolveRecording(
+        protocolFamily: CubeProtocolFamily.gan,
+        cubeTimestampsAvailable: true,
+        orientationAvailable: false,
+        events: [
+          RecordedMove(
+            sequence: 0,
+            hostOffset: Duration.zero,
+            move: CubeMove.parse('R'),
+            serial: 1,
+            recovered: false,
+            cubeTimestamp: const Duration(seconds: 1),
+          ),
+        ],
+      );
+
+      await repository.add(newSolve, recording: newRecording);
+      final savedRecording = await repository.loadRecording(newSolve.id);
+
+      expect(
+        savedRecording?.toJson(includeDerivedTiming: false),
+        newRecording.toJson(includeDerivedTiming: false),
+      );
+      final storageType = await database
+          .customSelect('SELECT typeof(payload) AS type FROM solve_recordings')
+          .getSingle();
+      expect(storageType.read<String>('type'), 'blob');
     });
   }
 }

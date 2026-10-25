@@ -8,6 +8,7 @@ import '../../features/cube/application/scramble_cache.dart';
 import '../../features/cube/domain/cube_model.dart';
 import '../../features/practice/domain/solve_record.dart';
 import '../../features/practice/domain/solve_recording.dart';
+import 'solve_recording_codec.dart';
 
 part 'crubik_database.g.dart';
 
@@ -49,7 +50,7 @@ class SolveRecordings extends Table {
   TextColumn get solveId =>
       text().references(SolveEntries, #id, onDelete: KeyAction.cascade)();
 
-  TextColumn get payload => text()();
+  BlobColumn get payload => blob()();
 
   @override
   Set<Column<Object>> get primaryKey => {solveId};
@@ -214,47 +215,43 @@ final class DriftSolveHistoryRepository implements SolveHistoryRepository {
     final query = _database.select(_database.solveRecordings)
       ..where((entry) => entry.solveId.equals(solveId));
     final row = await query.getSingleOrNull();
-    return row == null
-        ? null
-        : SolveRecording.fromJson(
-            jsonDecode(row.payload) as Map<String, Object?>,
-          );
+    return row == null ? null : decodeSolveRecording(row.payload);
   }
 
   @override
-  Future<void> add(
-    SolveRecord solve, {
-    SolveRecording? recording,
-  }) => _database.transaction(() async {
-    await _database
-        .into(_database.solveEntries)
-        .insertOnConflictUpdate(
-          SolveEntriesCompanion.insert(
-            id: solve.id,
-            scramble: solve.scramble,
-            elapsedMs: solve.elapsed.inMilliseconds,
-            moveCount: solve.moveCount,
-            createdAt: solve.createdAt,
-            inputSource: solve.inputSource.serializedValue,
-            timingReliable: Value(solve.isTimingReliable),
-            inspectionElapsedMs: Value(solve.inspectionElapsed?.inMilliseconds),
-            startTrigger: Value(solve.startTrigger?.serializedValue),
-          ),
-        );
-    await (_database.delete(
-      _database.solveRecordings,
-    )..where((entry) => entry.solveId.equals(solve.id))).go();
-    if (recording == null) return;
+  Future<void> add(SolveRecord solve, {SolveRecording? recording}) =>
+      _database.transaction(() async {
+        await _database
+            .into(_database.solveEntries)
+            .insertOnConflictUpdate(
+              SolveEntriesCompanion.insert(
+                id: solve.id,
+                scramble: solve.scramble,
+                elapsedMs: solve.elapsed.inMilliseconds,
+                moveCount: solve.moveCount,
+                createdAt: solve.createdAt,
+                inputSource: solve.inputSource.serializedValue,
+                timingReliable: Value(solve.isTimingReliable),
+                inspectionElapsedMs: Value(
+                  solve.inspectionElapsed?.inMilliseconds,
+                ),
+                startTrigger: Value(solve.startTrigger?.serializedValue),
+              ),
+            );
+        await (_database.delete(
+          _database.solveRecordings,
+        )..where((entry) => entry.solveId.equals(solve.id))).go();
+        if (recording == null) return;
 
-    await _database
-        .into(_database.solveRecordings)
-        .insert(
-          SolveRecordingsCompanion.insert(
-            solveId: solve.id,
-            payload: jsonEncode(recording.toJson(includeDerivedTiming: false)),
-          ),
-        );
-  });
+        await _database
+            .into(_database.solveRecordings)
+            .insert(
+              SolveRecordingsCompanion.insert(
+                solveId: solve.id,
+                payload: encodeSolveRecording(recording),
+              ),
+            );
+      });
 
   @override
   Future<void> delete(String id) async {
