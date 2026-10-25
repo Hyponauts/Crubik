@@ -74,28 +74,62 @@ final class CubeMove {
   String toString() => notation;
 }
 
-final class Scramble {
-  const Scramble(this.moves);
+/// An immutable sequence of moves in cube notation.
+abstract base class CubeAlgorithm {
+  CubeAlgorithm(Iterable<CubeMove> moves) : moves = List.unmodifiable(moves);
 
   final List<CubeMove> moves;
-
-  factory Scramble.parse(String value) {
-    final tokens = value.trim().split(RegExp(r'\s+'));
-    if (tokens.length == 1 && tokens.single.isEmpty) {
-      return const Scramble([]);
-    }
-    return Scramble(List.unmodifiable(tokens.map(CubeMove.parse)));
-  }
-
-  Scramble get inverse =>
-      Scramble(List.unmodifiable(moves.reversed.map((move) => move.inverse)));
 
   @override
   String toString() => moves.map((move) => move.notation).join(' ');
 }
 
+/// Moves that transform a solved cube into a target state.
+final class CubeScramble extends CubeAlgorithm {
+  CubeScramble(super.moves);
+
+  factory CubeScramble.parse(String value) {
+    final tokens = value.trim().split(RegExp(r'\s+'));
+    if (tokens.length == 1 && tokens.single.isEmpty) {
+      return CubeScramble(const []);
+    }
+    return CubeScramble(tokens.map(CubeMove.parse));
+  }
+
+  CubeScramble get inverse =>
+      CubeScramble(moves.reversed.map((move) => move.inverse));
+}
+
 final class CubeState {
   CubeState._(this._stickers);
+
+  // Standard Kociemba cubie indexing, shared with GAN packet conversion.
+  // The protocol-side mapping provenance remains in THIRD_PARTY_NOTICES.md.
+  static const _cornerFacelets = [
+    [8, 9, 20],
+    [6, 18, 38],
+    [0, 36, 47],
+    [2, 45, 11],
+    [29, 26, 15],
+    [27, 44, 24],
+    [33, 53, 42],
+    [35, 17, 51],
+  ];
+
+  static const _edgeFacelets = [
+    [5, 10],
+    [7, 19],
+    [3, 37],
+    [1, 46],
+    [32, 16],
+    [28, 25],
+    [30, 43],
+    [34, 52],
+    [23, 12],
+    [21, 41],
+    [50, 39],
+    [48, 14],
+  ];
 
   factory CubeState.solved() {
     final stickers = <_StickerKey, StickerColor>{};
@@ -134,6 +168,53 @@ final class CubeState {
       }
     }
     return CubeState._(stickers);
+  }
+
+  /// Builds a physical 3x3 state from Kociemba cubie coordinates.
+  ///
+  /// The constructor rejects coordinates that cannot occur on a real cube:
+  /// corner twists must sum to zero modulo 3, edge flips modulo 2, and the
+  /// corner and edge permutations must have the same parity.
+  factory CubeState.fromCubieCoordinates({
+    required List<int> cornerPermutation,
+    required List<int> cornerOrientations,
+    required List<int> edgePermutation,
+    required List<int> edgeOrientations,
+  }) {
+    _validatePermutation(cornerPermutation, 8, 'corner permutation');
+    _validatePermutation(edgePermutation, 12, 'edge permutation');
+    _validateOrientations(cornerOrientations, 8, 3, 'corner orientations');
+    _validateOrientations(edgeOrientations, 12, 2, 'edge orientations');
+    if (cornerOrientations.fold(0, (sum, value) => sum + value) % 3 != 0) {
+      throw const FormatException('Corner twist sum must be divisible by 3.');
+    }
+    if (edgeOrientations.fold(0, (sum, value) => sum + value) % 2 != 0) {
+      throw const FormatException('Edge flip sum must be even.');
+    }
+    if (_permutationParity(cornerPermutation) !=
+        _permutationParity(edgePermutation)) {
+      throw const FormatException(
+        'Corner and edge permutations must have matching parity.',
+      );
+    }
+
+    const faces = 'URFDLB';
+    final facelets = List<String>.generate(54, (index) => faces[index ~/ 9]);
+    for (var cubie = 0; cubie < 8; cubie++) {
+      for (var position = 0; position < 3; position++) {
+        facelets[_cornerFacelets[cubie][(position + cornerOrientations[cubie]) %
+                3]] =
+            faces[_cornerFacelets[cornerPermutation[cubie]][position] ~/ 9];
+      }
+    }
+    for (var cubie = 0; cubie < 12; cubie++) {
+      for (var position = 0; position < 2; position++) {
+        facelets[_edgeFacelets[cubie][(position + edgeOrientations[cubie]) %
+                2]] =
+            faces[_edgeFacelets[edgePermutation[cubie]][position] ~/ 9];
+      }
+    }
+    return CubeState.fromFacelets(facelets.join());
   }
 
   final Map<_StickerKey, StickerColor> _stickers;
@@ -254,6 +335,44 @@ final class CubeState {
       CubeFace.down => const _Vec3(0, -1, 0),
     };
     return _StickerKey(position, normal);
+  }
+
+  static void _validatePermutation(
+    List<int> permutation,
+    int length,
+    String name,
+  ) {
+    if (permutation.length != length ||
+        permutation.toSet().length != length ||
+        permutation.any((value) => value < 0 || value >= length)) {
+      throw FormatException(
+        '$name must contain each value from 0 to ${length - 1} exactly once.',
+      );
+    }
+  }
+
+  static void _validateOrientations(
+    List<int> orientations,
+    int length,
+    int base,
+    String name,
+  ) {
+    if (orientations.length != length ||
+        orientations.any((value) => value < 0 || value >= base)) {
+      throw FormatException(
+        '$name must contain $length values from 0 to ${base - 1}.',
+      );
+    }
+  }
+
+  static int _permutationParity(List<int> permutation) {
+    var inversions = 0;
+    for (var left = 0; left < permutation.length; left++) {
+      for (var right = left + 1; right < permutation.length; right++) {
+        if (permutation[left] > permutation[right]) inversions++;
+      }
+    }
+    return inversions % 2;
   }
 }
 

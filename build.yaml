@@ -4,13 +4,14 @@ targets:
       build_web_compilers:entrypoint:
         generate_for:
           - web/drift_worker_entrypoint.dart
+          - web/cube_solver_worker_entrypoint.dart
         options:
           compilers:
             dart2js:
               args:
                 - -O4
                 - --no-source-maps
-      crubik:drift_worker_copy:
+      crubik:web_worker_copy:
         enabled: true
       crubik:external_asset:
         enabled: true
@@ -24,13 +25,15 @@ targets:
           maximum_bytes: 5242880
 
 builders:
-  drift_worker_copy:
-    import: "tool/drift_worker_copy_builder.dart"
+  web_worker_copy:
+    import: "tool/web_worker_copy_builder.dart"
     builder_factories:
-      - driftWorkerCopyBuilder
+      - webWorkerCopyBuilder
     build_extensions:
       "web/drift_worker_entrypoint.dart.js":
         - "web/drift_worker.dart.js"
+      "web/cube_solver_worker_entrypoint.dart.js":
+        - "web/cube_solver_worker.dart.js"
     auto_apply: none
     build_to: source
     required_inputs:

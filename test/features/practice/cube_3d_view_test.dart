@@ -97,7 +97,7 @@ void main() {
     );
 
     final scrambled = CubeState.solved()
-      ..applyAll(Scramble.parse("R U F' L2 D B").moves);
+      ..applyAll(CubeScramble.parse("R U F' L2 D B").moves);
     await tester.pumpWidget(_host(state: scrambled));
     await tester.pump();
     await expectLater(
@@ -185,7 +185,8 @@ void main() {
   });
 
   testWidgets('camera controls never mutate cube state', (tester) async {
-    final state = CubeState.solved()..applyAll(Scramble.parse('R U F').moves);
+    final state = CubeState.solved()
+      ..applyAll(CubeScramble.parse('R U F').moves);
     final before = state.facelets;
     await tester.pumpWidget(_host(state: state));
 

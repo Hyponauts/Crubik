@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:crubik/core/data/crubik_database.dart';
 import 'package:crubik/features/cube/application/remembered_cube_store.dart';
+import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -114,6 +115,19 @@ void main() {
     rememberedCube = await store.load();
     expect(rememberedCube?.deviceId, 'unnamed-cube-id');
     expect(rememberedCube?.name, isNull);
+  });
+
+  test('persists the expendable scramble pool in app settings', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final store = DriftScrambleCacheStore(database);
+
+    await store.save([CubeScramble.parse('R U'), CubeScramble.parse("F2 D'")]);
+
+    expect((await store.load()).map((scramble) => scramble.toString()), [
+      'R U',
+      "F2 D'",
+    ]);
   });
 
   test(

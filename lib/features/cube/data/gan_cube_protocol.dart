@@ -580,66 +580,14 @@ SmartCubeStateEvent _decodeCubeState(
   }
   edgePermutation.add(66 - edgePermutation.fold(0, (a, b) => a + b));
   edgeOrientation.add((2 - (edgeOrientation.fold(0, (a, b) => a + b) % 2)) % 2);
-  final facelets = _toKociembaFacelets(
-    cornerPermutation,
-    cornerOrientation,
-    edgePermutation,
-    edgeOrientation,
-  );
   return SmartCubeStateEvent(
-    state: CubeState.fromFacelets(facelets),
+    state: CubeState.fromCubieCoordinates(
+      cornerPermutation: cornerPermutation,
+      cornerOrientations: cornerOrientation,
+      edgePermutation: edgePermutation,
+      edgeOrientations: edgeOrientation,
+    ),
     serial: serial,
     receivedAt: receivedAt,
   );
-}
-
-const _cornerFaceletMap = [
-  [8, 9, 20],
-  [6, 18, 38],
-  [0, 36, 47],
-  [2, 45, 11],
-  [29, 26, 15],
-  [27, 44, 24],
-  [33, 53, 42],
-  [35, 17, 51],
-];
-
-const _edgeFaceletMap = [
-  [5, 10],
-  [7, 19],
-  [3, 37],
-  [1, 46],
-  [32, 16],
-  [28, 25],
-  [30, 43],
-  [34, 52],
-  [23, 12],
-  [21, 41],
-  [50, 39],
-  [48, 14],
-];
-
-String _toKociembaFacelets(
-  List<int> cornerPermutation,
-  List<int> cornerOrientation,
-  List<int> edgePermutation,
-  List<int> edgeOrientation,
-) {
-  const faces = 'URFDLB';
-  final facelets = List<String>.generate(54, (index) => faces[index ~/ 9]);
-  for (var index = 0; index < 8; index++) {
-    for (var position = 0; position < 3; position++) {
-      facelets[_cornerFaceletMap[index][(position + cornerOrientation[index]) %
-              3]] =
-          faces[_cornerFaceletMap[cornerPermutation[index]][position] ~/ 9];
-    }
-  }
-  for (var index = 0; index < 12; index++) {
-    for (var position = 0; position < 2; position++) {
-      facelets[_edgeFaceletMap[index][(position + edgeOrientation[index]) %
-              2]] =
-          faces[_edgeFaceletMap[edgePermutation[index]][position] ~/ 9];
-    }
-  }
-  return facelets.join();
 }
