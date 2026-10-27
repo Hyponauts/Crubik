@@ -437,22 +437,18 @@ class _ScrambleMoveToken extends StatelessWidget {
                   )
                 : null,
             borderRadius: BorderRadius.circular(5),
-            border: recovery
-                ? Border.all(
-                    color: CrubikColors.warning.withValues(
-                      alpha: next ? 0.95 : 0.55,
-                    ),
-                    width: next ? 1.5 : 1,
-                  )
-                : partiallyCompleted
-                ? Border.all(
-                    color: CrubikColors.primaryAccent.withValues(alpha: 0.8),
-                  )
-                : next
-                ? Border.all(
-                    color: CrubikColors.secondaryAccent.withValues(alpha: 0.7),
-                  )
-                : null,
+            // Container adds border widths to its padding; reserve the same
+            // inset in every state to keep baselines and wrapping unchanged.
+            border: Border.all(
+              width: 1.5,
+              color: recovery
+                  ? CrubikColors.warning.withValues(alpha: next ? 0.95 : 0.55)
+                  : partiallyCompleted
+                  ? CrubikColors.primaryAccent.withValues(alpha: 0.8)
+                  : next
+                  ? CrubikColors.secondaryAccent.withValues(alpha: 0.7)
+                  : Colors.transparent,
+            ),
           ),
           child: Text(
             move.notation,
@@ -460,13 +456,7 @@ class _ScrambleMoveToken extends StatelessWidget {
               color: color,
               fontFamily: 'monospace',
               fontSize: density.layoutSize(dense: 15, compact: 18, full: 20),
-              fontWeight: recovery
-                  ? next
-                        ? FontWeight.w900
-                        : FontWeight.w800
-                  : completed || next
-                  ? FontWeight.w800
-                  : FontWeight.w600,
+              fontWeight: FontWeight.w800,
               decoration: completed ? TextDecoration.lineThrough : null,
               decorationColor: CrubikColors.primaryAccent,
               decorationThickness: 1.5,
