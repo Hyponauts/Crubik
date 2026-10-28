@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../cube/domain/cube_model.dart';
@@ -56,32 +57,51 @@ class PracticeScramblePanel extends StatelessWidget {
                 scramble: displayedScramble,
                 density: density,
               ),
-              if (practice.smartCubeWorkflowActive) ...[
-                SizedBox(
-                  height: density.layoutSize(dense: 1, compact: 5, full: 14),
-                ),
-                _ScrambleGuidance(practice: practice, density: density),
-              ],
               SizedBox(
                 height: density.layoutSize(dense: 3, compact: 7, full: 16),
               ),
               Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: const Key('new-scramble'),
-                      onPressed: canChangeScramble
-                          ? practice.newScramble
-                          : null,
-                      style: density.isCompact
-                          ? OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                            )
-                          : null,
-                      icon: const Icon(Icons.shuffle_rounded, size: 18),
-                      label: Text(density.isCompact ? 'New' : 'New scramble'),
+                  if (practice.smartCubeWorkflowActive)
+                    Expanded(
+                      child: _ScrambleGuidance(
+                        practice: practice,
+                        density: density,
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  SizedBox(
+                    width: density.layoutSize(dense: 1, compact: 3, full: 5),
+                  ),
+                  IconButton(
+                    key: const Key('copy-scramble'),
+                    onPressed: () => _copyScramble(context, displayedScramble),
+                    tooltip: 'Copy scramble',
+                    visualDensity: density.isCompact
+                        ? VisualDensity.compact
+                        : VisualDensity.standard,
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                  ),
+                  SizedBox(
+                    width: density.layoutSize(dense: 1, compact: 3, full: 5),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('new-scramble'),
+                    onPressed: canChangeScramble ? practice.newScramble : null,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: density.layoutSize(
+                          dense: 7,
+                          compact: 10,
+                          full: 14,
+                        ),
+                        vertical: density.isCompact ? 8 : 10,
+                      ),
                     ),
+                    icon: const Icon(Icons.shuffle_rounded, size: 18),
+                    label: const Text('NEW'),
                   ),
                 ],
               ),
@@ -129,6 +149,18 @@ class PracticeScramblePanel extends StatelessWidget {
             )
           : content,
     );
+  }
+
+  Future<void> _copyScramble(
+    BuildContext context,
+    CubeScramble scramble,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: scramble.toString()));
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Scramble copied')));
   }
 }
 
@@ -504,11 +536,12 @@ class _ScrambleGuidance extends StatelessWidget {
         'Wrong turn detected · ${recoveryMoves.length} recovery '
             '${recoveryMoves.length == 1 ? 'move' : 'moves'} needed',
       PracticePhase.scrambling when partialTurns > 0 =>
-        '${practice.completedScrambleMoveCount} complete · current step '
+        '${practice.completedScrambleMoveCount} of '
+            '${practice.scramble.moves.length} turns · current step '
             '$partialTurns of ${practice.scramble.moves[practice.completedScrambleMoveCount].turns} turns',
       PracticePhase.scrambling =>
         '${practice.completedScrambleMoveCount} of '
-            '${practice.scramble.moves.length} moves complete',
+            '${practice.scramble.moves.length} turns',
       PracticePhase.inspectionDelay =>
         'Scramble verified · inspection starts in '
             '${formatPracticeDelay(practice.preInspectionDelay)}',
