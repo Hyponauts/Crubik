@@ -32,13 +32,91 @@ void main() {
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
     expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
+    expect(find.byKey(const Key('delete-solve-button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('continue-after-solve')));
     await tester.pump();
     expect(practice.pendingSolveReview, isNull);
     expect(practice.phase, PracticePhase.manualReady);
     expect(find.byKey(const Key('ready-action-label')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deleting the completed solve requires confirmation', (
+    tester,
+  ) async {
+    final clock = PracticeTestClock();
+    final practice = createTestPracticeController(
+      clock: clock,
+      preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
+    )..activateDemoInput();
+    addTearDown(practice.dispose);
+
+    practice.startSolve();
+    practice.applyMove(CubeMove.parse('R'));
+    clock.value = const Duration(seconds: 12);
+    practice.stopSolve();
+    await tester.pumpWidget(_host(practice));
+
+    await tester.tap(find.byKey(const Key('delete-solve-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('DELETE SOLVE?'), findsOneWidget);
+    expect(practice.solves, hasLength(1));
+
+    await tester.tap(find.text('CANCEL'));
+    await tester.pumpAndSettle();
+    expect(practice.solves, hasLength(1));
+
+    await tester.tap(find.byKey(const Key('delete-solve-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-delete-solve')));
+    await tester.pumpAndSettle();
+
+    expect(practice.solves, isEmpty);
+    expect(practice.pendingSolveReview, isNull);
+  });
+
+  testWidgets('analysis chart is tappable and steps use a compact table', (
+    tester,
+  ) async {
+    final clock = PracticeTestClock();
+    final practice = createTestPracticeController(
+      clock: clock,
+      preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
+    );
+    addTearDown(practice.dispose);
+    practice.activateSmartCubeInput();
+    practice.syncCubeState(CubeState.solved());
+    for (final move in practice.scramble.moves) {
+      clock.value += const Duration(milliseconds: 100);
+      practice.applyMove(move, fromSmartCube: true);
+    }
+    for (final move in practice.scramble.inverse.moves) {
+      clock.value += const Duration(milliseconds: 100);
+      practice.applyMove(move, fromSmartCube: true);
+    }
+
+    await tester.pumpWidget(_host(practice));
+    final crossBar = find.byKey(const Key('stage-bar-cross'));
+    expect(crossBar, findsOneWidget);
+    final tooltip = tester.widget<Tooltip>(crossBar);
+    expect(tooltip.triggerMode, TooltipTriggerMode.tap);
+    expect(tooltip.message, contains('STEP'));
+
+    await tester.tap(find.text('STEPS'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('compact-steps-table')), findsOneWidget);
+    expect(find.text('RECOG'), findsOneWidget);
+    expect(find.text('TOTAL'), findsOneWidget);
+
+    await tester.tap(find.text('INFO'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('copy-completed-scramble')), findsOneWidget);
+    expect(find.text('SESSION'), findsOneWidget);
+    expect(find.text('SOLVED'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets(

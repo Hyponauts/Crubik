@@ -68,6 +68,12 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
     );
   }
 
+  Future<void> _deleteSolve() async {
+    final shouldDelete = await confirmSolveDeletion(context, widget.solve);
+    if (!mounted || !shouldDelete) return;
+    widget.practice.deleteSolve(widget.solve.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final solve = widget.solve;
@@ -82,6 +88,7 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
             solve: solve,
             historical: widget.historical,
             onContinue: widget.onContinue,
+            onDelete: () => unawaited(_deleteSolve()),
           ),
           const SizedBox(height: 6),
           Container(height: 1, color: CrubikColors.border),
@@ -89,8 +96,6 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
             height: 40,
             child: TabBar(
               controller: _tabs,
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
               dividerColor: CrubikColors.border,
               labelColor: CrubikColors.text,
               unselectedLabelColor: CrubikColors.muted,
@@ -145,11 +150,13 @@ class _SolveSummary extends StatelessWidget {
     required this.solve,
     required this.historical,
     required this.onContinue,
+    required this.onDelete,
   });
 
   final SolveRecord solve;
   final bool historical;
   final VoidCallback? onContinue;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -212,13 +219,24 @@ class _SolveSummary extends StatelessWidget {
             value: solve.moveCount.toString(),
             valueKey: const Key('finish-moves'),
           ),
+          const SizedBox(width: 6),
+          IconButton(
+            key: const Key('delete-solve-button'),
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline, size: 20),
+            tooltip: 'Delete solve',
+          ),
           if (onContinue != null) ...[
-            const SizedBox(width: 8),
-            IconButton.filled(
+            const SizedBox(width: 2),
+            FilledButton(
               key: const Key('continue-after-solve'),
               onPressed: onContinue,
-              icon: const Icon(Icons.arrow_forward),
-              tooltip: 'Continue to the next scramble',
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(48, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('OK'),
             ),
           ],
         ],
@@ -243,7 +261,7 @@ class _SummaryMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 48,
+      width: 44,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -282,6 +300,33 @@ class _SummaryMetric extends StatelessWidget {
   }
 }
 
+Future<bool> confirmSolveDeletion(
+  BuildContext context,
+  SolveRecord solve,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('DELETE SOLVE?'),
+      content: Text(
+        'DELETE ${formatPracticeDuration(solve.elapsed)} FROM ${_formatDate(solve.createdAt).toUpperCase()}? THIS CANNOT BE UNDONE.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          key: const Key('confirm-delete-solve'),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('DELETE'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
+
 class _OverviewTab extends StatelessWidget {
   const _OverviewTab({required this.analysis});
 
@@ -297,18 +342,137 @@ class _OverviewTab extends StatelessWidget {
         .map((stage) => stage.stepTime?.inMicroseconds ?? 0)
         .fold<int>(1, (current, value) => value > current ? value : current);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
+      child: Column(
         children: [
-          for (final stage in analysis.stages)
-            Expanded(
-              child: _StageBar(stage: stage, maximumMicroseconds: maximum),
+          const Align(alignment: Alignment.centerRight, child: _ChartLegend()),
+          const SizedBox(height: 6),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ChartScale(maximumMicroseconds: maximum),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      const Positioned.fill(
+                        child: CustomPaint(painter: _OverviewGridPainter()),
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final stage in analysis.stages)
+                            Expanded(
+                              child: _StageBar(
+                                stage: stage,
+                                maximumMicroseconds: maximum,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: const [
+      _LegendItem(color: CrubikColors.primaryAccent, label: 'RECOG'),
+      SizedBox(width: 10),
+      _LegendItem(color: CrubikColors.secondaryAccent, label: 'EXEC'),
+    ],
+  );
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 3),
+      Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: CrubikColors.muted,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
+}
+
+class _ChartScale extends StatelessWidget {
+  const _ChartScale({required this.maximumMicroseconds});
+
+  final int maximumMicroseconds;
+
+  @override
+  Widget build(BuildContext context) {
+    final maximumSeconds = maximumMicroseconds / Duration.microsecondsPerSecond;
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: CrubikColors.muted,
+      fontSize: 8,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    return SizedBox(
+      width: 30,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(maximumSeconds.toStringAsFixed(1), style: style),
+            Text((maximumSeconds / 2).toStringAsFixed(1), style: style),
+            Text('0', style: style),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewGridPainter extends CustomPainter {
+  const _OverviewGridPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = CrubikColors.border
+      ..strokeWidth = 1;
+    final chartHeight = size.height - 20;
+    for (final fraction in const [0.0, 0.5, 1.0]) {
+      final y = chartHeight * fraction;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OverviewGridPainter oldDelegate) => false;
 }
 
 class _StageBar extends StatelessWidget {
@@ -322,53 +486,72 @@ class _StageBar extends StatelessWidget {
     final recognition = stage.recognitionTime?.inMicroseconds ?? 0;
     final execution = stage.executionTime?.inMicroseconds ?? 0;
     final availableHeight = (recognition + execution) / maximumMicroseconds;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: FractionallySizedBox(
-                heightFactor: availableHeight.clamp(0.02, 1),
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 34),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: CrubikColors.border),
-                  ),
-                  child: Column(
-                    children: [
-                      if (execution > 0)
-                        Expanded(
-                          flex: execution,
-                          child: Container(color: CrubikColors.secondaryAccent),
-                        ),
-                      if (recognition > 0)
-                        Expanded(
-                          flex: recognition,
-                          child: Container(color: CrubikColors.primaryAccent),
-                        ),
-                    ],
+    final tooltip =
+        '${stage.kind.label.toUpperCase()}\n'
+        'STEP ${_preciseDuration(stage.stepTime)}\n'
+        'RECOG ${_preciseDuration(stage.recognitionTime)}\n'
+        'EXEC ${_preciseDuration(stage.executionTime)}';
+    return Tooltip(
+      key: Key('stage-bar-${stage.kind.serializedValue}'),
+      message: tooltip,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 4),
+      child: Semantics(
+        button: true,
+        label: tooltip.replaceAll('\n', '. '),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FractionallySizedBox(
+                    heightFactor: availableHeight.clamp(0.02, 1),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 34),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: CrubikColors.border),
+                      ),
+                      child: Column(
+                        children: [
+                          if (execution > 0)
+                            Expanded(
+                              flex: execution,
+                              child: Container(
+                                color: CrubikColors.secondaryAccent,
+                              ),
+                            ),
+                          if (recognition > 0)
+                            Expanded(
+                              flex: recognition,
+                              child: Container(
+                                color: CrubikColors.primaryAccent,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 5),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              stage.kind.shortLabel,
-              maxLines: 1,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: CrubikColors.muted,
-                fontSize: 9,
+              const SizedBox(height: 5),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  stage.kind.shortLabel,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: CrubikColors.muted,
+                    fontSize: 9,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -400,36 +583,106 @@ class _CompactSteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
+    final headerStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: CrubikColors.muted,
+      fontSize: 8,
+      fontWeight: FontWeight.w700,
+    );
+    final valueStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      fontSize: 9,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    const columnWidths = <int, TableColumnWidth>{
+      0: FlexColumnWidth(1.4),
+      1: FlexColumnWidth(),
+      2: FlexColumnWidth(),
+      3: FlexColumnWidth(),
+      4: FlexColumnWidth(),
+      5: FlexColumnWidth(0.7),
+      6: FlexColumnWidth(0.8),
+    };
+    return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: stages.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final stage = stages[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                stage.kind.label.toUpperCase(),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: CrubikColors.text,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                'RECOG ${_duration(stage.recognitionTime)}  ·  EXEC ${_duration(stage.executionTime)}  ·  STEP ${_duration(stage.stepTime)}  ·  TOTAL ${_duration(stage.totalTime)}  ·  ${stage.moves.length} TURNS  ·  ${_decimal(stage.turnsPerSecond)} TPS',
-                maxLines: 2,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+      children: [
+        Table(
+          key: const Key('compact-steps-table'),
+          columnWidths: columnWidths,
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          border: const TableBorder(
+            horizontalInside: BorderSide(color: CrubikColors.border),
+            bottom: BorderSide(color: CrubikColors.border),
           ),
-        );
-      },
+          children: [
+            TableRow(
+              decoration: const BoxDecoration(color: CrubikColors.elevated),
+              children: [
+                for (final label in const [
+                  'STEP',
+                  'RECOG',
+                  'EXEC',
+                  'TIME',
+                  'TOTAL',
+                  'TURN',
+                  'TPS',
+                ])
+                  _StepCell(label, style: headerStyle),
+              ],
+            ),
+            for (final stage in stages)
+              TableRow(
+                children: [
+                  _StepCell(
+                    stage.kind.shortLabel,
+                    style: valueStyle?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : _shortDuration(stage.recognitionTime),
+                    style: valueStyle,
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : _shortDuration(stage.executionTime),
+                    style: valueStyle,
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : _shortDuration(stage.stepTime),
+                    style: valueStyle,
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : _shortDuration(stage.totalTime),
+                    style: valueStyle,
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : stage.moves.length.toString(),
+                    style: valueStyle,
+                  ),
+                  _StepCell(
+                    stage.skipped ? '—' : _decimal(stage.turnsPerSecond),
+                    style: valueStyle,
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ],
     );
   }
+}
+
+class _StepCell extends StatelessWidget {
+  const _StepCell(this.value, {required this.style});
+
+  final String value;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(value, maxLines: 1, style: style),
+    ),
+  );
 }
 
 class _WideSteps extends StatelessWidget {
@@ -746,36 +999,60 @@ class _InfoTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 22,
-            runSpacing: 7,
+          Row(
             children: [
-              _InfoValue(label: 'SESSION', value: solve.sessionName),
-              _InfoValue(label: 'METHOD', value: solve.method.displayName),
-              _InfoValue(label: 'INPUT', value: solve.inputSource.displayLabel),
-              _InfoValue(
-                label: 'CUBE',
-                value: _protocolName(analysis?.protocolFamily),
+              Expanded(
+                child: _InfoValue(label: 'SESSION', value: solve.sessionName),
               ),
-              _InfoValue(label: 'SOLVED', value: _formatDate(solve.createdAt)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _InfoValue(
+                  label: 'METHOD',
+                  value: solve.method.displayName,
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _InfoValue(
+                  label: 'INPUT',
+                  value: solve.inputSource.displayLabel,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _InfoValue(
+                  label: 'CUBE',
+                  value: _protocolName(analysis?.protocolFamily),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _InfoValue(label: 'SOLVED', value: _formatDate(solve.createdAt)),
+          const SizedBox(height: 10),
+          const Divider(height: 1),
+          const SizedBox(height: 7),
           Row(
             children: [
               Text(
                 'SCRAMBLE',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: CrubikColors.muted,
+                  fontSize: 9,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(width: 4),
+              const Spacer(),
               IconButton(
+                key: const Key('copy-completed-scramble'),
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints.tightFor(
@@ -829,7 +1106,12 @@ class _InfoValue extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 1),
-      Text(value.toUpperCase(), style: Theme.of(context).textTheme.bodySmall),
+      Text(
+        value.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     ],
   );
 }
@@ -857,6 +1139,17 @@ class _AnalysisUnavailable extends StatelessWidget {
 String _duration(Duration? value) {
   if (value == null) return '—';
   return '${(value.inMicroseconds / 1000000).toStringAsFixed(2)}S';
+}
+
+String _shortDuration(Duration? value) {
+  if (value == null) return '—';
+  return (value.inMicroseconds / Duration.microsecondsPerSecond)
+      .toStringAsFixed(2);
+}
+
+String _preciseDuration(Duration? value) {
+  if (value == null) return '—';
+  return '${(value.inMicroseconds / Duration.microsecondsPerSecond).toStringAsFixed(3)}S';
 }
 
 String _decimal(double? value) => value?.toStringAsFixed(1) ?? '—';

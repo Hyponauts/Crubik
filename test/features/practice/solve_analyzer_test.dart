@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/practice/application/solve_analyzer.dart';
 import 'package:crubik/features/practice/domain/solve_analysis.dart';
@@ -115,6 +118,79 @@ void main() {
     expect(analysis.stages.last.skipped, isTrue);
   });
 
+  test(
+    'auto-detects a yellow Cross instead of assigning the solve to Cross',
+    () {
+      final solve = SolveRecord(
+        id: 'yellow-cross',
+        scramble: 'U',
+        elapsed: const Duration(seconds: 1),
+        moveCount: 1,
+        createdAt: DateTime.utc(2026, 10, 28),
+        inputSource: SolveInputSource.smartCube,
+        method: SolveMethodConfig(
+          preset: SolveMethodPreset.custom,
+          customStages: const [SolveStageKind.cross, SolveStageKind.solved],
+        ),
+      );
+      final recording = SolveRecording(
+        protocolFamily: CubeProtocolFamily.gan,
+        cubeTimestampsAvailable: false,
+        orientationAvailable: false,
+        events: [
+          RecordedMove(
+            sequence: 0,
+            hostOffset: const Duration(seconds: 1),
+            move: CubeMove.parse("U'"),
+            serial: 1,
+            recovered: false,
+          ),
+        ],
+      );
+
+      final analysis = const SolveAnalyzer().analyze(
+        solve: solve,
+        recording: recording,
+      );
+
+      expect(analysis.isComplete, isTrue);
+      expect(analysis.stages.first.skipped, isTrue);
+      expect(analysis.stages.last.moves.single.notation, "U'");
+    },
+  );
+
+  test('counts a continuous cube rotation as one regrip episode', () {
+    final angles = [0.0, 10.0, 20.0, 35.0, 55.0, 75.0, 90.0, 90.5, 90.0];
+    final events = <SolveRecordingEvent>[
+      for (var index = 0; index < angles.length; index++)
+        RecordedOrientation(
+          sequence: index,
+          hostOffset: Duration(milliseconds: index * 100),
+          orientation: _orientationForDegrees(angles[index]),
+        ),
+      RecordedMove(
+        sequence: angles.length,
+        hostOffset: const Duration(seconds: 1),
+        move: CubeMove.parse("R'"),
+        serial: 1,
+        recovered: false,
+      ),
+    ];
+    final recording = SolveRecording(
+      protocolFamily: CubeProtocolFamily.gan,
+      cubeTimestampsAvailable: false,
+      orientationAvailable: true,
+      events: events,
+    );
+
+    final analysis = const SolveAnalyzer().analyze(
+      solve: _solve(scramble: 'R'),
+      recording: recording,
+    );
+
+    expect(analysis.stages.first.regripCount, 1);
+  });
+
   test('round trips versioned analysis JSON', () {
     final analysis = SolveAnalysis(
       analyzerVersion: currentSolveAnalyzerVersion,
@@ -154,3 +230,13 @@ SolveRecord _solve({required String scramble}) => SolveRecord(
   inputSource: SolveInputSource.smartCube,
   method: SolveMethodConfig.preset(SolveMethodPreset.cfop),
 );
+
+CubeOrientation _orientationForDegrees(double degrees) {
+  final halfAngle = degrees * math.pi / 360;
+  return CubeOrientation(
+    x: 0,
+    y: math.sin(halfAngle),
+    z: 0,
+    w: math.cos(halfAngle),
+  );
+}

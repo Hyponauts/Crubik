@@ -117,7 +117,7 @@ void main() {
     expect(find.byKey(const Key('scramble-text')), findsOneWidget);
     expect(find.text('NEXT PRACTICE SCRAMBLE'), findsOneWidget);
     expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
-    expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
     expect(find.byKey(const Key('manual-moves-button')), findsNothing);
     expect(find.text('Analyze'), findsOneWidget);
     expect(
@@ -494,7 +494,7 @@ void main() {
       expect(find.byKey(const Key('timer-display')), findsNothing);
       expect(find.byKey(const Key('timer-toggle')), findsNothing);
       expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
+      expect(find.text('OK'), findsOneWidget);
       expect(
         tester.widget<Text>(find.byKey(const Key('finish-time'))).data,
         '8.00',
@@ -977,7 +977,7 @@ void main() {
     expect(find.byKey(const Key('cube-3d-canvas')), findsNothing);
     expect(find.text('MANUAL MOVE INPUT'), findsNothing);
     expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
     expect(find.byKey(const Key('session-summary-panel')), findsOneWidget);
     expect(tester.takeException(), isNull);
