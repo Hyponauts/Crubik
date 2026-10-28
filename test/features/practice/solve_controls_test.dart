@@ -62,7 +62,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('delete-solve-button')));
     await tester.pumpAndSettle();
-    expect(find.text('DELETE SOLVE?'), findsOneWidget);
+    expect(find.text('Delete solve?'), findsOneWidget);
     expect(practice.solves, hasLength(1));
 
     await tester.tap(find.text('CANCEL'));
@@ -105,6 +105,7 @@ void main() {
     final tooltip = tester.widget<Tooltip>(crossBar);
     expect(tooltip.triggerMode, TooltipTriggerMode.tap);
     expect(tooltip.message, contains('STEP'));
+    expect(find.text('RECOGNITION'), findsOneWidget);
     final tabs = tester.widget<TabBar>(find.byType(TabBar));
     expect(tabs.labelStyle?.fontSize, tabs.unselectedLabelStyle?.fontSize);
     expect(tabs.labelStyle?.fontSize, 9);

@@ -320,9 +320,9 @@ Future<bool> confirmSolveDeletion(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('DELETE SOLVE?'),
+      title: const Text('Delete solve?'),
       content: Text(
-        'DELETE ${formatPracticeDuration(solve.elapsed)} FROM ${_formatDate(solve.createdAt).toUpperCase()}? THIS CANNOT BE UNDONE.',
+        'Delete ${formatPracticeDuration(solve.elapsed)} from ${_formatDate(solve.createdAt)}? This cannot be undone.',
       ),
       actions: [
         TextButton(
@@ -403,7 +403,7 @@ class _ChartLegend extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: const [
-      _LegendItem(color: CrubikColors.primaryAccent, label: 'RECOG'),
+      _LegendItem(color: CrubikColors.primaryAccent, label: 'RECOGNITION'),
       SizedBox(width: 10),
       _LegendItem(color: CrubikColors.secondaryAccent, label: 'EXEC'),
     ],

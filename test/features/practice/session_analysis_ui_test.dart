@@ -126,7 +126,7 @@ void main() {
     await tester.tap(find.byTooltip('Delete solve'));
     await tester.pumpAndSettle();
 
-    expect(find.text('DELETE SOLVE?'), findsOneWidget);
+    expect(find.text('Delete solve?'), findsOneWidget);
     expect(practice.solves, hasLength(1));
     await tester.tap(find.text('CANCEL'));
     await tester.pumpAndSettle();
