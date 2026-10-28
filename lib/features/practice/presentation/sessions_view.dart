@@ -52,94 +52,36 @@ class _SessionsViewState extends State<SessionsView> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedSolve = practice.solves
-        .where((solve) => solve.id == _selectedSolveId)
-        .firstOrNull;
-    if (_selectedSolveId != null && selectedSolve == null) {
+    if (_selectedSolveId != null &&
+        !practice.solves.any((solve) => solve.id == _selectedSolveId)) {
       _selectedSolveId = null;
     }
-    if (widget.mobile) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            children: [
-              _AnalyzeHeader(practice: practice, exportLabel: 'EXPORT'),
-              const SizedBox(height: 10),
-              Expanded(
-                child: selectedSolve == null
-                    ? _RecentSolves(
-                        practice: practice,
-                        scrollable: true,
-                        selectedSolveId: null,
-                        onSelected: (id) =>
-                            setState(() => _selectedSolveId = id),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextButton.icon(
-                            key: const Key('back-to-solve-history'),
-                            onPressed: () =>
-                                setState(() => _selectedSolveId = null),
-                            icon: const Icon(Icons.arrow_back, size: 18),
-                            label: const Text('SOLVES'),
-                          ),
-                          const SizedBox(height: 4),
-                          Expanded(
-                            key: const Key('historical-solve-analysis'),
-                            child: SolveAnalysisPanel(
-                              practice: practice,
-                              solve: selectedSolve,
-                              historical: true,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-        child: Column(
-          children: [
-            _AnalyzeHeader(practice: practice, exportLabel: 'COPY EXPORT'),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    width: 360,
-                    child: _RecentSolves(
-                      practice: practice,
-                      scrollable: true,
-                      selectedSolveId: _selectedSolveId,
-                      onSelected: (id) => setState(() => _selectedSolveId = id),
-                    ),
+        padding: widget.mobile
+            ? const EdgeInsets.fromLTRB(16, 12, 16, 12)
+            : const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
+              children: [
+                _AnalyzeHeader(
+                  practice: practice,
+                  exportLabel: widget.mobile ? 'EXPORT' : 'COPY EXPORT',
+                ),
+                SizedBox(height: widget.mobile ? 10 : 16),
+                Expanded(
+                  child: _RecentSolves(
+                    practice: practice,
+                    scrollable: true,
+                    selectedSolveId: _selectedSolveId,
+                    onSelected: (id) => setState(() => _selectedSolveId = id),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: selectedSolve == null
-                        ? const _SelectSolvePrompt()
-                        : SizedBox(
-                            key: const Key('historical-solve-analysis'),
-                            child: SolveAnalysisPanel(
-                              practice: practice,
-                              solve: selectedSolve,
-                              historical: true,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -178,30 +120,6 @@ class _AnalyzeHeader extends StatelessWidget {
         label: exportLabel,
       ),
     ],
-  );
-}
-
-class _SelectSolvePrompt extends StatelessWidget {
-  const _SelectSolvePrompt();
-
-  @override
-  Widget build(BuildContext context) => PracticePanel(
-    child: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.analytics_outlined, size: 32),
-          const SizedBox(height: 10),
-          Text(
-            'SELECT A SOLVE TO ANALYZE',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: CrubikColors.muted,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    ),
   );
 }
 
@@ -367,6 +285,22 @@ class _SolveItem extends StatelessWidget {
           onTap: () => onSelected(expanded ? null : solve.id),
           onDelete: () => unawaited(_deleteSolve(context)),
         ),
+        if (expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 10),
+            child: SizedBox(
+              key: const Key('historical-solve-analysis'),
+              height: 360,
+              child: SolveAnalysisPanel(
+                practice: practice,
+                solve: solve,
+                historical: true,
+                embedded: true,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -427,7 +361,7 @@ class _SolveRow extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(
-              width: 32,
+              width: 36,
               child: Text(
                 '#$position',
                 style: Theme.of(
@@ -440,6 +374,16 @@ class _SolveRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
+                    _formatSolveDateTime(solve.createdAt),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: CrubikColors.muted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
                     solve.isTimingReliable
                         ? formatPracticeDuration(solve.elapsed)
                         : 'Timing unavailable',
@@ -447,18 +391,17 @@ class _SolveRow extends StatelessWidget {
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    !solve.isTimingReliable
-                        ? '${solve.moveCount} moves · ${solve.inputSource.displayLabel}'
-                        : solve.moveCount == 0
-                        ? solve.inputSource.displayLabel
-                        : '${solve.moveCount} moves · ${solve.turnsPerSecond?.toStringAsFixed(1)} TPS',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
+            _SolveMetric(label: 'TURNS', value: solve.moveCount.toString()),
+            const SizedBox(width: 10),
+            _SolveMetric(
+              label: 'TPS',
+              value: solve.turnsPerSecond?.toStringAsFixed(1) ?? '—',
+            ),
+            const SizedBox(width: 4),
             Icon(
               expanded ? Icons.expand_less : Icons.expand_more,
               size: 18,
@@ -474,4 +417,44 @@ class _SolveRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SolveMetric extends StatelessWidget {
+  const _SolveMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 38,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: CrubikColors.muted,
+            fontSize: 8,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          maxLines: 1,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+String _formatSolveDateTime(DateTime value) {
+  final local = value.toLocal();
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${twoDigits(local.day)}.${twoDigits(local.month)}.${local.year} · '
+      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
 }

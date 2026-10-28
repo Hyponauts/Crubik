@@ -109,24 +109,20 @@ final class SolveAnalyzer {
     List<Duration>? regripTimes,
   ) {
     final boundaries = List<int>.filled(descriptors.length, -1);
-    var nextBoundary = statesAfterMove.length - 1;
+    var earliestBoundary = 0;
 
-    for (var index = descriptors.length - 1; index >= 0; index--) {
+    for (var index = 0; index < descriptors.length; index++) {
       final descriptor = descriptors[index];
       if (descriptor.isAchieved(initialState, orientation)) continue;
 
-      var boundary = nextBoundary;
-      while (boundary >= 0 &&
+      var boundary = earliestBoundary;
+      while (boundary < statesAfterMove.length &&
           !descriptor.isAchieved(statesAfterMove[boundary], orientation)) {
-        boundary--;
+        boundary++;
       }
-      if (boundary < 0) return null;
-      while (boundary > 0 &&
-          descriptor.isAchieved(statesAfterMove[boundary - 1], orientation)) {
-        boundary--;
-      }
+      if (boundary == statesAfterMove.length) return null;
       boundaries[index] = boundary;
-      nextBoundary = boundary;
+      earliestBoundary = boundary;
     }
 
     final stages = <SolveStageAnalysis>[];

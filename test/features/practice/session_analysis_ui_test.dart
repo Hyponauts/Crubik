@@ -48,7 +48,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Analyze expands historical solve without practice summary', (
+  testWidgets('Analyze expands tabs inline without duplicating solve summary', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -80,8 +80,18 @@ void main() {
 
     expect(find.byKey(const Key('historical-solve-analysis')), findsOneWidget);
     expect(find.byKey(const Key('solve-analysis-panel')), findsOneWidget);
-    expect(find.byKey(Key('solve-row-${solve.id}')), findsNothing);
-    expect(find.byKey(const Key('back-to-solve-history')), findsOneWidget);
+    final solveRow = find.byKey(Key('solve-row-${solve.id}'));
+    expect(solveRow, findsOneWidget);
+    expect(find.byKey(const Key('finish-time')), findsNothing);
+    expect(find.text('12.00'), findsOneWidget);
+    expect(
+      find.descendant(of: solveRow, matching: find.text('TURNS')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: solveRow, matching: find.text('TPS')),
+      findsOneWidget,
+    );
     expect(find.text('SOLVE COMPLETE'), findsNothing);
     expect(find.byKey(const Key('session-summary-panel')), findsNothing);
     expect(tester.takeException(), isNull);
@@ -131,7 +141,7 @@ void main() {
     expect(find.text('Your first solve starts here'), findsOneWidget);
   });
 
-  testWidgets('desktop Analyze uses side-by-side master detail', (
+  testWidgets('opening another solve collapses the previous inline analysis', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -147,7 +157,14 @@ void main() {
     practice.applyMove(CubeMove.parse('R'));
     clock.value = const Duration(seconds: 12);
     practice.stopSolve();
-    final solve = practice.solves.single;
+    final firstSolve = practice.solves.single;
+    practice.continueAfterSolve();
+    clock.value = const Duration(seconds: 20);
+    practice.startSolve();
+    practice.applyMove(CubeMove.parse('R'));
+    clock.value = const Duration(seconds: 35);
+    practice.stopSolve();
+    final secondSolve = practice.solves.first;
     practice.continueAfterSolve();
     final connection = CubeConnectionController(gateway: _SilentGateway());
     addTearDown(practice.dispose);
@@ -158,12 +175,49 @@ void main() {
     );
     await tester.tap(find.text('Analyze'));
     await tester.pump();
-    await tester.tap(find.byKey(Key('solve-row-${solve.id}')));
+    await tester.tap(find.byKey(Key('solve-row-${firstSolve.id}')));
     await tester.pump();
 
-    expect(find.byKey(Key('solve-row-${solve.id}')), findsOneWidget);
+    expect(find.byKey(Key('solve-row-${firstSolve.id}')), findsOneWidget);
     expect(find.byKey(const Key('historical-solve-analysis')), findsOneWidget);
-    expect(find.byKey(const Key('back-to-solve-history')), findsNothing);
+    await tester.tap(find.byKey(Key('solve-row-${secondSolve.id}')));
+    await tester.pump();
+
+    expect(find.byKey(Key('solve-row-${firstSolve.id}')), findsOneWidget);
+    expect(find.byKey(Key('solve-row-${secondSolve.id}')), findsOneWidget);
+    expect(find.byKey(const Key('historical-solve-analysis')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('session settings remain available during solve review', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+    final clock = PracticeTestClock();
+    final practice = createTestPracticeController(
+      clock: clock,
+      monotonicClock: clock,
+      preInspectionDelay: Duration.zero,
+    )..activateDemoInput();
+    practice.startSolve();
+    practice.applyMove(CubeMove.parse('R'));
+    clock.value = const Duration(seconds: 12);
+    practice.stopSolve();
+    final connection = CubeConnectionController(gateway: _SilentGateway());
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('session-settings-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('SESSION SETTINGS'), findsOneWidget);
+    expect(practice.pendingSolveReview, isNotNull);
     expect(tester.takeException(), isNull);
   });
 }

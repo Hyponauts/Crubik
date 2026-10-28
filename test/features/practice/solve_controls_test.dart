@@ -105,6 +105,9 @@ void main() {
     final tooltip = tester.widget<Tooltip>(crossBar);
     expect(tooltip.triggerMode, TooltipTriggerMode.tap);
     expect(tooltip.message, contains('STEP'));
+    final tabs = tester.widget<TabBar>(find.byType(TabBar));
+    expect(tabs.labelStyle?.fontSize, tabs.unselectedLabelStyle?.fontSize);
+    expect(tabs.labelStyle?.fontSize, 9);
 
     await tester.tap(find.text('STEPS'));
     await tester.pumpAndSettle();

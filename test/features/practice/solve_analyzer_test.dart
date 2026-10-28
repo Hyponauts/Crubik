@@ -78,12 +78,12 @@ void main() {
     expect(analysis.failureReason, contains('telemetry gap'));
   });
 
-  test('uses the final stable stage achievement after a regression', () {
+  test('keeps the first Cross boundary when later turns break it', () {
     final solve = SolveRecord(
       id: 'regression',
-      scramble: 'R',
-      elapsed: const Duration(seconds: 3),
-      moveCount: 3,
+      scramble: 'D R',
+      elapsed: const Duration(seconds: 4),
+      moveCount: 4,
       createdAt: DateTime.utc(2026, 10, 28),
       inputSource: SolveInputSource.smartCube,
       method: SolveMethodConfig(
@@ -91,7 +91,7 @@ void main() {
         customStages: const [SolveStageKind.cross, SolveStageKind.solved],
       ),
     );
-    final moves = ["R'", 'R', "R'"];
+    final moves = ["R'", 'R', "R'", "D'"];
     final recording = SolveRecording(
       protocolFamily: CubeProtocolFamily.gan,
       cubeTimestampsAvailable: false,
@@ -114,8 +114,12 @@ void main() {
     );
 
     expect(analysis.isComplete, isTrue);
-    expect(analysis.stages.first.moves, hasLength(3));
-    expect(analysis.stages.last.skipped, isTrue);
+    expect(analysis.stages.first.moves.map((move) => move.notation), ["R'"]);
+    expect(analysis.stages.last.moves.map((move) => move.notation), [
+      'R',
+      "R'",
+      "D'",
+    ]);
   });
 
   test(

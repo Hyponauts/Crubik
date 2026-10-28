@@ -1,7 +1,7 @@
 import '../../cube/domain/cube_model.dart';
 import 'solve_method.dart';
 
-const currentSolveAnalyzerVersion = 2;
+const currentSolveAnalyzerVersion = 3;
 
 final class SolveStageAnalysis {
   SolveStageAnalysis({

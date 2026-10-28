@@ -385,8 +385,7 @@ final class PracticeController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  bool get canConfigureSession =>
-      _sessionsInitialized && !attemptInProgress && _pendingSolveReview == null;
+  bool get canConfigureSession => _sessionsInitialized && !attemptInProgress;
 
   void selectSession(String id) {
     if (!canConfigureSession || id == _selectedSessionId) return;

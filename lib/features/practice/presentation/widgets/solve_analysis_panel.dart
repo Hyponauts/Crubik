@@ -15,6 +15,7 @@ class SolveAnalysisPanel extends StatefulWidget {
     required this.practice,
     required this.solve,
     this.historical = false,
+    this.embedded = false,
     this.onContinue,
     super.key,
   });
@@ -22,6 +23,7 @@ class SolveAnalysisPanel extends StatefulWidget {
   final PracticeController practice;
   final SolveRecord solve;
   final bool historical;
+  final bool embedded;
   final VoidCallback? onContinue;
 
   @override
@@ -78,12 +80,15 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
   Widget build(BuildContext context) {
     final solve = widget.solve;
     final analysis = widget.practice.analysisForCached(solve.id) ?? _analysis;
-    return PracticePanel(
-      key: const Key('solve-analysis-panel'),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final tabStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      fontSize: 9,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.4,
+    );
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!widget.embedded) ...[
           _SolveSummary(
             solve: solve,
             historical: widget.historical,
@@ -92,43 +97,53 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
           ),
           const SizedBox(height: 6),
           Container(height: 1, color: CrubikColors.border),
-          SizedBox(
-            height: 40,
-            child: TabBar(
-              controller: _tabs,
-              dividerColor: CrubikColors.border,
-              labelColor: CrubikColors.text,
-              unselectedLabelColor: CrubikColors.muted,
-              labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.7,
-              ),
-              tabs: const [
-                _AnalysisTabLabel('OVERVIEW'),
-                _AnalysisTabLabel('STEPS'),
-                _AnalysisTabLabel('SOLUTION'),
-                _AnalysisTabLabel('STATS'),
-                _AnalysisTabLabel('TPS'),
-                _AnalysisTabLabel('INFO'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _OverviewTab(analysis: analysis),
-                _StepsTab(analysis: analysis),
-                _SolutionTab(analysis: analysis),
-                _StatsTab(solve: solve, analysis: analysis),
-                _TpsTab(analysis: analysis),
-                _InfoTab(solve: solve, analysis: analysis),
-              ],
-            ),
-          ),
         ],
-      ),
+        SizedBox(
+          height: 40,
+          child: TabBar(
+            controller: _tabs,
+            dividerColor: CrubikColors.border,
+            labelColor: CrubikColors.text,
+            unselectedLabelColor: CrubikColors.muted,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 1),
+            labelStyle: tabStyle,
+            unselectedLabelStyle: tabStyle,
+            tabs: const [
+              _AnalysisTabLabel('OVERVIEW'),
+              _AnalysisTabLabel('STEPS'),
+              _AnalysisTabLabel('SOLUTION'),
+              _AnalysisTabLabel('STATS'),
+              _AnalysisTabLabel('TPS'),
+              _AnalysisTabLabel('INFO'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: TabBarView(
+            controller: _tabs,
+            children: [
+              _OverviewTab(analysis: analysis),
+              _StepsTab(analysis: analysis),
+              _SolutionTab(analysis: analysis),
+              _StatsTab(solve: solve, analysis: analysis),
+              _TpsTab(analysis: analysis),
+              _InfoTab(solve: solve, analysis: analysis),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (widget.embedded) {
+      return KeyedSubtree(
+        key: const Key('solve-analysis-panel'),
+        child: content,
+      );
+    }
+    return PracticePanel(
+      key: const Key('solve-analysis-panel'),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+      child: content,
     );
   }
 }
@@ -139,10 +154,8 @@ class _AnalysisTabLabel extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Tab(
-    height: 38,
-    child: FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
-  );
+  Widget build(BuildContext context) =>
+      Tab(height: 38, child: Text(label, maxLines: 1, softWrap: false));
 }
 
 class _SolveSummary extends StatelessWidget {
