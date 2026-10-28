@@ -63,6 +63,20 @@ final class SolveStageAnalysis {
       );
 }
 
+final class SolveStageTimingAverage {
+  const SolveStageTimingAverage({
+    required this.recognitionTime,
+    required this.executionTime,
+    required this.sampleCount,
+  });
+
+  final Duration recognitionTime;
+  final Duration executionTime;
+  final int sampleCount;
+
+  Duration get stepTime => recognitionTime + executionTime;
+}
+
 final class SolveAnalysis {
   SolveAnalysis({
     required this.analyzerVersion,

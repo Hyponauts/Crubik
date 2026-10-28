@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../application/practice_controller.dart';
 import '../../domain/solve_analysis.dart';
+import '../../domain/solve_method.dart';
 import '../../domain/solve_record.dart';
 import 'practice_formatters.dart';
 import 'practice_panel.dart';
@@ -34,12 +35,14 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   SolveAnalysis? _analysis;
+  Map<SolveStageKind, SolveStageTimingAverage> _stageAverages = const {};
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 6, vsync: this);
     _loadAnalysis();
+    _loadStageAverages();
   }
 
   @override
@@ -47,8 +50,10 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.solve.id != widget.solve.id) {
       _analysis = null;
+      _stageAverages = const {};
       _tabs.index = 0;
       _loadAnalysis();
+      _loadStageAverages();
     }
   }
 
@@ -67,6 +72,19 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
           setState(() => _analysis = analysis);
         }
       }),
+    );
+  }
+
+  void _loadStageAverages() {
+    final solveId = widget.solve.id;
+    unawaited(
+      widget.practice
+          .stageTimingAverages(sessionId: widget.solve.sessionId)
+          .then((averages) {
+            if (mounted && widget.solve.id == solveId) {
+              setState(() => _stageAverages = averages);
+            }
+          }),
     );
   }
 
@@ -123,7 +141,7 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
           child: TabBarView(
             controller: _tabs,
             children: [
-              _OverviewTab(analysis: analysis),
+              _OverviewTab(analysis: analysis, stageAverages: _stageAverages),
               _StepsTab(analysis: analysis),
               _SolutionTab(analysis: analysis),
               _StatsTab(solve: solve, analysis: analysis),
@@ -341,9 +359,10 @@ Future<bool> confirmSolveDeletion(
 }
 
 class _OverviewTab extends StatelessWidget {
-  const _OverviewTab({required this.analysis});
+  const _OverviewTab({required this.analysis, required this.stageAverages});
 
   final SolveAnalysis? analysis;
+  final Map<SolveStageKind, SolveStageTimingAverage> stageAverages;
 
   @override
   Widget build(BuildContext context) {
@@ -352,7 +371,12 @@ class _OverviewTab extends StatelessWidget {
       return _AnalysisUnavailable(analysis: analysis);
     }
     final maximum = analysis.stages
-        .map((stage) => stage.stepTime?.inMicroseconds ?? 0)
+        .map(
+          (stage) => [
+            stage.stepTime?.inMicroseconds ?? 0,
+            stageAverages[stage.kind]?.stepTime.inMicroseconds ?? 0,
+          ].reduce((current, value) => value > current ? value : current),
+        )
         .fold<int>(1, (current, value) => value > current ? value : current);
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
@@ -379,6 +403,7 @@ class _OverviewTab extends StatelessWidget {
                             Expanded(
                               child: _StageBar(
                                 stage: stage,
+                                average: stageAverages[stage.kind],
                                 maximumMicroseconds: maximum,
                               ),
                             ),
@@ -400,12 +425,15 @@ class _ChartLegend extends StatelessWidget {
   const _ChartLegend();
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => Wrap(
+    alignment: WrapAlignment.end,
+    spacing: 10,
+    runSpacing: 3,
     children: const [
       _LegendItem(color: CrubikColors.primaryAccent, label: 'RECOGNITION'),
-      SizedBox(width: 10),
       _LegendItem(color: CrubikColors.secondaryAccent, label: 'EXEC'),
+      _LegendItem(color: CrubikColors.warning, label: 'RECOGNITION AO100'),
+      _LegendItem(color: CrubikColors.danger, label: 'EXEC AO100'),
     ],
   );
 }
@@ -489,21 +517,29 @@ class _OverviewGridPainter extends CustomPainter {
 }
 
 class _StageBar extends StatelessWidget {
-  const _StageBar({required this.stage, required this.maximumMicroseconds});
+  const _StageBar({
+    required this.stage,
+    required this.average,
+    required this.maximumMicroseconds,
+  });
 
   final SolveStageAnalysis stage;
+  final SolveStageTimingAverage? average;
   final int maximumMicroseconds;
 
   @override
   Widget build(BuildContext context) {
     final recognition = stage.recognitionTime?.inMicroseconds ?? 0;
     final execution = stage.executionTime?.inMicroseconds ?? 0;
-    final availableHeight = (recognition + execution) / maximumMicroseconds;
+    final average = this.average;
+    final averageRecognition = average?.recognitionTime.inMicroseconds ?? 0;
+    final averageExecution = average?.executionTime.inMicroseconds ?? 0;
     final tooltip =
         '${stage.kind.label.toUpperCase()}\n'
         'STEP ${_preciseDuration(stage.stepTime)}\n'
-        'RECOG ${_preciseDuration(stage.recognitionTime)}\n'
-        'EXEC ${_preciseDuration(stage.executionTime)}';
+        'RECOGNITION ${_preciseDuration(stage.recognitionTime)}\n'
+        'EXEC ${_preciseDuration(stage.executionTime)}'
+        '${average == null ? '' : '\nRECOGNITION AO100 ${_preciseDuration(average.recognitionTime)}\nEXEC AO100 ${_preciseDuration(average.executionTime)}\n${average.sampleCount} SOLVES'}';
     return Tooltip(
       key: Key('stage-bar-${stage.kind.serializedValue}'),
       message: tooltip,
@@ -518,34 +554,40 @@ class _StageBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Expanded(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: FractionallySizedBox(
-                    heightFactor: availableHeight.clamp(0.02, 1),
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 34),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: CrubikColors.border),
-                      ),
-                      child: Column(
-                        children: [
-                          if (execution > 0)
-                            Expanded(
-                              flex: execution,
-                              child: Container(
-                                color: CrubikColors.secondaryAccent,
-                              ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _StackedTimingBar(
+                          recognitionMicroseconds: recognition,
+                          executionMicroseconds: execution,
+                          maximumMicroseconds: maximumMicroseconds,
+                          availableHeight: constraints.maxHeight,
+                          width: 18,
+                          recognitionColor: CrubikColors.primaryAccent,
+                          executionColor: CrubikColors.secondaryAccent,
+                          showBorder: true,
+                        ),
+                        if (average != null) ...[
+                          const SizedBox(width: 2),
+                          Opacity(
+                            opacity: 0.48,
+                            child: _StackedTimingBar(
+                              recognitionMicroseconds: averageRecognition,
+                              executionMicroseconds: averageExecution,
+                              maximumMicroseconds: maximumMicroseconds,
+                              availableHeight: constraints.maxHeight,
+                              width: 6,
+                              recognitionColor: CrubikColors.warning,
+                              executionColor: CrubikColors.danger,
+                              showBorder: false,
                             ),
-                          if (recognition > 0)
-                            Expanded(
-                              flex: recognition,
-                              child: Container(
-                                color: CrubikColors.primaryAccent,
-                              ),
-                            ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -565,6 +607,62 @@ class _StageBar extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StackedTimingBar extends StatelessWidget {
+  const _StackedTimingBar({
+    required this.recognitionMicroseconds,
+    required this.executionMicroseconds,
+    required this.maximumMicroseconds,
+    required this.availableHeight,
+    required this.width,
+    required this.recognitionColor,
+    required this.executionColor,
+    required this.showBorder,
+  });
+
+  final int recognitionMicroseconds;
+  final int executionMicroseconds;
+  final int maximumMicroseconds;
+  final double availableHeight;
+  final double width;
+  final Color recognitionColor;
+  final Color executionColor;
+  final bool showBorder;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = recognitionMicroseconds + executionMicroseconds;
+    final height = total == 0
+        ? 2.0
+        : (availableHeight * total / maximumMicroseconds).clamp(
+            2.0,
+            availableHeight,
+          );
+    return Container(
+      width: width,
+      height: height,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(showBorder ? 4 : 2),
+        border: showBorder ? Border.all(color: CrubikColors.border) : null,
+      ),
+      child: Column(
+        children: [
+          if (executionMicroseconds > 0)
+            Expanded(
+              flex: executionMicroseconds,
+              child: ColoredBox(color: executionColor),
+            ),
+          if (recognitionMicroseconds > 0)
+            Expanded(
+              flex: recognitionMicroseconds,
+              child: ColoredBox(color: recognitionColor),
+            ),
+        ],
       ),
     );
   }

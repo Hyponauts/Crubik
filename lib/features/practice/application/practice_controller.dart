@@ -356,10 +356,64 @@ final class PracticeController extends ChangeNotifier {
     if (cached != null && !cached.isOutdated) return Future.value(cached);
     return _analysisRequests.putIfAbsent(
       solve.id,
-      () => _loadOrCreateAnalysis(
-        solve,
-      ).whenComplete(() => _analysisRequests.remove(solve.id)),
+      () => _loadOrCreateAnalysis(solve).whenComplete(() {
+        _analysisRequests.remove(solve.id);
+      }),
     );
+  }
+
+  /// Calculates per-stage means from the newest recorded analyses in a session.
+  ///
+  /// Skipped and unavailable stages do not contribute to their stage mean.
+  Future<Map<SolveStageKind, SolveStageTimingAverage>> stageTimingAverages({
+    required String sessionId,
+    int maximumSolveCount = 100,
+  }) async {
+    assert(maximumSolveCount > 0);
+    final recentSolves = _history.records
+        .where((solve) => solve.sessionId == sessionId)
+        .take(maximumSolveCount);
+    final analyses = await Future.wait(recentSolves.map(analysisFor));
+    final totals =
+        <
+          SolveStageKind,
+          ({
+            int recognitionMicroseconds,
+            int executionMicroseconds,
+            int sampleCount,
+          })
+        >{};
+
+    for (final analysis in analyses.whereType<SolveAnalysis>()) {
+      for (final stage in analysis.stages) {
+        final recognition = stage.recognitionTime;
+        final execution = stage.executionTime;
+        if (stage.skipped || recognition == null || execution == null) continue;
+
+        final previous = totals[stage.kind];
+        totals[stage.kind] = (
+          recognitionMicroseconds:
+              (previous?.recognitionMicroseconds ?? 0) +
+              recognition.inMicroseconds,
+          executionMicroseconds:
+              (previous?.executionMicroseconds ?? 0) + execution.inMicroseconds,
+          sampleCount: (previous?.sampleCount ?? 0) + 1,
+        );
+      }
+    }
+
+    return Map.unmodifiable({
+      for (final MapEntry(key: kind, value: total) in totals.entries)
+        kind: SolveStageTimingAverage(
+          recognitionTime: Duration(
+            microseconds: total.recognitionMicroseconds ~/ total.sampleCount,
+          ),
+          executionTime: Duration(
+            microseconds: total.executionMicroseconds ~/ total.sampleCount,
+          ),
+          sampleCount: total.sampleCount,
+        ),
+    });
   }
 
   Future<String> exportJson() => _history.exportJson();

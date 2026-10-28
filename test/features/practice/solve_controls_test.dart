@@ -100,12 +100,15 @@ void main() {
     }
 
     await tester.pumpWidget(_host(practice));
+    await tester.pump();
     final crossBar = find.byKey(const Key('stage-bar-cross'));
     expect(crossBar, findsOneWidget);
     final tooltip = tester.widget<Tooltip>(crossBar);
     expect(tooltip.triggerMode, TooltipTriggerMode.tap);
     expect(tooltip.message, contains('STEP'));
+    expect(tooltip.message, contains('RECOGNITION AO100'));
     expect(find.text('RECOGNITION'), findsOneWidget);
+    expect(find.text('RECOGNITION AO100'), findsOneWidget);
     final tabs = tester.widget<TabBar>(find.byType(TabBar));
     expect(tabs.labelStyle?.fontSize, tabs.unselectedLabelStyle?.fontSize);
     expect(tabs.labelStyle?.fontSize, 9);

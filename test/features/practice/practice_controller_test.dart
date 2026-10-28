@@ -4,6 +4,9 @@ import 'dart:math';
 
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
+import 'package:crubik/features/practice/domain/practice_session.dart';
+import 'package:crubik/features/practice/domain/solve_analysis.dart';
+import 'package:crubik/features/practice/domain/solve_method.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,6 +38,57 @@ void main() {
       expect(restored.inputSource, source);
       expect(restored.toJson()['input_source'], source.serializedValue);
     }
+  });
+
+  test('stage timing averages use the newest 100 session analyses', () async {
+    final repository = MemorySolveHistoryRepository();
+    final createdAt = DateTime.utc(2026);
+    for (var index = 0; index <= 100; index++) {
+      final solve = SolveRecord(
+        id: 'solve-$index',
+        scramble: 'R U',
+        elapsed: const Duration(seconds: 10),
+        moveCount: 2,
+        createdAt: createdAt.add(Duration(minutes: index)),
+      );
+      await repository.add(solve);
+      await repository.saveAnalysis(
+        solve.id,
+        SolveAnalysis(
+          analyzerVersion: currentSolveAnalyzerVersion,
+          method: SolveMethodConfig.preset(SolveMethodPreset.cfop),
+          protocolFamily: 'test',
+          createdAt: solve.createdAt,
+          isComplete: true,
+          stages: [
+            SolveStageAnalysis(
+              kind: SolveStageKind.cross,
+              recognitionTime: Duration(milliseconds: index + 1),
+              executionTime: Duration(milliseconds: (index + 1) * 2),
+              totalTime: Duration(milliseconds: (index + 1) * 3),
+              moves: [CubeMove.parse('R')],
+              regripCount: 0,
+              skipped: false,
+            ),
+          ],
+        ),
+      );
+    }
+    final controller = createTestPracticeController(repository: repository);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+
+    final averages = await controller.stageTimingAverages(
+      sessionId: defaultPracticeSessionId,
+    );
+
+    final cross = averages[SolveStageKind.cross]!;
+    expect(cross.sampleCount, 100);
+    expect(
+      cross.recognitionTime,
+      const Duration(milliseconds: 51, microseconds: 500),
+    );
+    expect(cross.executionTime, const Duration(milliseconds: 103));
   });
 
   test('can be disposed while solve history is still loading', () async {
