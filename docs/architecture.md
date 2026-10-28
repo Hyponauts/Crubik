@@ -33,10 +33,12 @@ flowchart TB
         Coordinator["PracticeInputCoordinator"]
         Practice["PracticeController"]
         History["SolveHistory"]
+        Analyzer["SolveAnalyzer"]
         ScramblePool["ScrambleCache"]
         Connection["CubeConnectionController"]
         GatewayContract["CubeConnectionGateway / SmartCubeSession"]
         HistoryContract["SolveHistoryRepository"]
+        SessionContract["PracticeSessionStore"]
         RememberedContract["RememberedCubeStore"]
         ScrambleStoreContract["ScrambleCacheStore"]
     end
@@ -46,7 +48,8 @@ flowchart TB
         Scrambling["WcaScrambleGenerator / CubeSolver"]
         Device["CubeDeviceCandidate / Capabilities"]
         Events["Move / state / orientation / capability / gap events"]
-        Solve["SolveRecord / SolveRecording"]
+        Solve["SolveRecord / SolveRecording / SolveAnalysis"]
+        Method["PracticeSession / SolveMethodConfig / StateDescriptor"]
     end
 
     subgraph Infrastructure["Shared data and infrastructure"]
@@ -72,6 +75,8 @@ flowchart TB
     Coordinator --> Practice
     Coordinator --> Connection
     Practice --> History
+    Practice --> Analyzer
+    Practice --> SessionContract
     Practice -. nextScramble callback .-> ScramblePool
     ScramblePool --> ScrambleStoreContract
     ScramblePool --> Scrambling
@@ -79,6 +84,8 @@ flowchart TB
     History --> HistoryContract
     Practice --> Cube
     HistoryContract --> Solve
+    Analyzer --> Solve
+    Analyzer --> Method
     Connection --> GatewayContract
     Connection --> RememberedContract
     Connection --> Device
@@ -90,6 +97,7 @@ flowchart TB
     Adapters --> Central
     Events --> Coordinator
     HistoryContract -. implemented by .-> Repositories
+    SessionContract -. implemented by .-> Repositories
     RememberedContract -. implemented by .-> Repositories
     ScrambleStoreContract -. implemented by .-> Repositories
     Repositories --> Database
@@ -118,12 +126,16 @@ The main source areas are:
 | `PracticePage` | Handles top-level navigation and chooses the layout for the screen width. Reads both controllers directly and uses the coordinator for actions involving both. Enables keyboard timing only on the active practice screen. |
 | `DesktopPracticeLayout` / `MobilePracticeLayout` | Separate wide and compact layouts for preparation, attempts, solve review, and session history. |
 | `PracticeInputCoordinator` | Coordinates demo selection, connection changes, disconnect handling, and forwarding common cube events. These operations involve both controllers. UI code does not read state from the coordinator. |
-| `PracticeController` | Controls the scramble, current cube state, inspection, timer, when to start or stop recording, solve completion, review data, and preparation of the next scramble. |
+| `PracticeController` | Controls the scramble, current cube state, inspection, timer, selected practice session, session-scoped statistics, when to start or stop recording, solve completion, review data, and preparation of the next scramble. It snapshots the selected session and method into each completed solve. |
 | `ScrambleCache` / `ScrambleCacheStore` | Maintains a sequential FIFO pool of ready scrambles behind a feature-owned persistence contract. Taking an item removes it before returning and then starts background refill; ready items remain available while the next item is generated, and an empty pool never substitutes a move-list fallback. |
 | `SolveRecordingBuilder` | Builds an ordered event timeline with times relative to solve start. Keeps relevant pre-start observations, selects orientation samples to retain, detects clock jumps, and finishes the recording. Does not depend on practice phases, timers, or storage. |
-| `SolveHistory` | Calculates best, mean, and Ao5. Merges changes made while history loads. Runs writes and export in order, keeps failed writes for retry, loads detailed recordings only when needed for export, and produces versioned JSON. |
-| `SolveRecord` | Saved solve summary: timing availability, move count, input source, inspection duration, and what started the solve. |
+| `SolveHistory` | Owns the ordered solve collection and persistence/export queue. It merges changes made while history loads, keeps failed writes for retry, loads detailed recordings and analysis only when needed, and produces versioned JSON. |
+| `PracticeSession` / `PracticeSessionStore` | A named local history scope with its current solve-method configuration. The Drift implementation stores the small session list and selected ID in app settings. Deleting a session explicitly deletes its solves. |
+| `SolveMethodConfig` / `StateDescriptor` | Method presets and the method-agnostic predicates used to recognize stage boundaries from cube states. CFOP descriptors recognize Cross, four cumulative F2L-pair milestones, last-layer milestones, and solved state; Layer by Layer uses layer milestones. Custom methods store an ordered subset. |
+| `SolveAnalyzer` | Replays an immutable recording from its scramble, recognizes configured stage boundaries, and derives recognition time, execution time, cumulative time, turns, TPS, skipped stages, and orientation-based regrips. A telemetry gap makes analysis explicitly unavailable rather than guessed. |
+| `SolveRecord` | Saved solve summary and immutable context snapshot: timing availability, move count, input source, inspection duration, start trigger, session ID/name, and solve method. |
 | `SolveRecording` | Versioned timeline in a common format across vendors. Contains observed moves, cube-reported states, selected orientation samples, data gaps, available host and cube times, and protocol features. Times between moves are calculated later, not stored. |
+| `SolveAnalysis` | Versioned derived data stored separately from its authoritative recording. An analyzer-version mismatch triggers lazy reanalysis when the solve is opened. |
 | `CubeConnectionController` | Manages discovery, permissions, scan cancellation, startup reconnect, sessions, battery state, diagnostics with private data removed, and common cube events. |
 | `CubeConnectionGateway` | App-defined interface for finding and connecting to cubes. The app uses a BLE implementation, while application logic stays independent of the BLE plugin. |
 | `SmartCubeSession` | Common interface for a cube connection: startup confirmed by a cube-state report, state requests, events, battery, connection status, and cleanup. |
@@ -139,8 +151,8 @@ The main source areas are:
 | `CubeSolver` / `CubeSolution` | Solver abstraction returning a target-to-solved `CubeAlgorithm`. `CubeSolution.toScramble()` reverses and inverts that sequence for scramble generation. The abstraction is independent of the two-phase implementation so later training solvers can provide different strategies without changing consumers. |
 | `WcaScrambleGenerator` | Uniformly samples reachable 3×3 cubie states, applies TNoodle's default distance filter, solves target-to-solved, and inverts the solution into a scramble. |
 | `CuberCubeSolver` | Adapts the local `cuber` two-phase solver with the same 21-move search bound configured by TNoodle for 3×3, a 60-second attempt timeout, and one retry against the same target. The bound is a maximum accepted solution length, not a minimum scramble length. Search runs in an isolate on native platforms and a generated dedicated Worker on web. |
-| `CrubikDatabase` | Shared Drift database structure and migrations for solve summaries, gzip-compressed raw recording JSON blobs, and app settings. |
-| `DriftSolveHistoryRepository` | Saves a solve summary and optional compressed recording together in one transaction. Loads summaries separately and decompresses recording JSON on demand. Deleting a solve also deletes its recording. |
+| `CrubikDatabase` | Shared Drift database structure and migrations for solve summaries, gzip-compressed raw recording JSON blobs, versioned analysis JSON, and app settings. |
+| `DriftSolveHistoryRepository` | Saves a solve summary and optional compressed recording together in one transaction. Loads summaries separately and detailed evidence on demand. Deleting a solve cascades to its recording and analysis. |
 | `encodeSolveRecording` / `decodeSolveRecording` | Persistence-owned codec for lossless gzip-compressed UTF-8 recording JSON. Uses the pinned `archive` package on native and web platforms; keeps compression outside the domain model and export format. |
 | `DriftRememberedCubeStore` | Saves the most recently connected device ID and display name. |
 | `DriftScrambleCacheStore` | Stores the expendable versioned scramble pool as an application setting without adding a schema table. |
@@ -254,6 +266,8 @@ stateDiagram-v2
 
 For smart-cube attempts, aborting or dismissing review returns to `AwaitingCubeState`, `Scrambling`, or `NeedsSolvedCube`. The choice depends on whether the cube has reported its state and whether it is solved. A solve can finish either when a state packet reports a solved cube or when applying received moves produces a solved state. Keep both completion paths working.
 
+The selected session can change only outside an attempt and while no solve review is open. Completion stores the session ID, its display name, and the current method on the solve before the next scramble is requested. Later edits to a session therefore do not change the historical context shown in the solve's Info tab. Practice shows Last/Best Single, Ao5, Ao12, and Ao100 for the selected session. Analyze shows that session's history; selecting a row expands the same analysis tabs used immediately after completion without adding the current-session Last/Best summary to historical detail.
+
 ## Persistence and offline behavior
 
 The shared database and concrete persistence adapters live under `lib/core/data` because the database serves practice history, remembered cube state, and the ready-scramble pool. Feature code continues to depend on feature-owned repository and store contracts.
@@ -261,18 +275,24 @@ The shared database and concrete persistence adapters live under `lib/core/data`
 ```mermaid
 flowchart LR
     Practice["PracticeController"] --> History["SolveHistory"]
+    Practice --> SessionStore["DriftPracticeSessionStore"]
+    Practice --> Analyzer["SolveAnalyzer"]
     History -->|serialized add / delete| SolveRepo["DriftSolveHistoryRepository"]
     Connection["CubeConnectionController"] --> Remembered["DriftRememberedCubeStore"]
     Cache["ScrambleCache"] --> ScrambleStore["DriftScrambleCacheStore"]
     SolveRepo --> DB["CrubikDatabase"]
+    SessionStore --> DB
     Remembered --> DB
     DB --> Summaries["solve_entries"]
     DB --> Recordings["solve_recordings: gzip-compressed JSON BLOB"]
+    DB --> Analyses["solve_analyses: versioned JSON"]
+    DB --> Settings["app_settings: sessions and selected ID"]
     ScrambleStore --> DB
     DB --> Native["SQLite on native platforms"]
     DB --> Web["SQLite Wasm + IndexedDB on web"]
     History -->|lazy loadRecording| SolveRepo
-    History --> Export["Crubik JSON v3"]
+    History -->|lazy loadAnalysis| SolveRepo
+    History --> Export["Crubik JSON v4"]
 ```
 
 ### Saving and loading
@@ -280,8 +300,9 @@ flowchart LR
 - Local data is the source of truth. Recording and review work without a network connection.
 - `SolveHistory` runs writes and exports in order. Failed writes stay queued and are retried on later changes, an explicit save of pending changes (flush), or export. Each operation captures its write sequence boundary when requested, so an earlier retry cannot save mutations queued after an export. Export captures its summaries and timestamp immediately, merges history still loading with the local changes captured at that point, and keeps later writes behind its recording reads. Export fails if an earlier write still has not been saved.
 - A smart-cube summary and its versioned raw recording JSON are saved in one transaction. Recording JSON is compact UTF-8, losslessly gzip-compressed into the `solve_recordings.payload` BLOB column without base64 encoding. The same codec works on native platforms and web. Each solve has at most one recording row, with explicit event sequence numbers. Deleting the solve also deletes its recording. Times between moves are calculated during export, not stored in the recording.
+- Derived analysis is saved in `solve_analyses` with its analyzer version and JSON payload. It is disposable: missing, damaged, or older analysis can be rebuilt lazily from the recording. The raw recording remains authoritative and is never rewritten by analysis.
 - Loading a recording validates its gzip checksum and uncompressed size before decoding JSON. Damaged or unsupported recordings fail the read and export rather than silently discarding evidence.
-- Startup loads solve summaries only. Detailed event timelines load when needed, including during asynchronous export, so long sessions do not load every move and orientation sample into memory.
+- Startup loads solve summaries and the small session-settings document only. Detailed event timelines and analysis load when a solve is opened or exported, so long sessions do not load every move and orientation sample into memory.
 - Solves added or deleted while history loads are merged with the loaded data.
 - `CrubikApp` saves pending history changes before closing its database.
 - The scramble pool is expendable, contains at most fifteen plain scramble strings, and is refilled one item at a time without blocking access to ready entries or waiting for persistence on the cache-hit path. Corrupt or unavailable cache data is ignored; failure to generate when the pool is empty is surfaced to practice UI.
@@ -292,11 +313,11 @@ Native platforms use Drift with SQLite. Web uses SQLite WebAssembly (`sqlite3.wa
 
 When the Drift schema changes, regenerate ignored `*.g.dart` files locally with `build_runner`. Add a migration and migration tests when `schemaVersion` increases. Before Flutter web builds, `build_runner` also downloads SQLite WASM and compiles the Drift and cube-solver workers. Never commit generated Dart files or web runtime output.
 
-Schema version 4 adds gzip-compressed JSON recording storage and solve timing reliability in one migration from the schemas shipped on `main` (versions 1–3). Upgrading preserves solve summaries, inspection metadata, and remembered-cube settings. It does not invent recordings for older solves. Older summaries keep reliable timing by default. The unreleased version 4 text-payload schema is not a migration target.
+Schema version 4 added gzip-compressed JSON recording storage and solve timing reliability. Schema version 5 adds the session/method snapshot columns and the separate `solve_analyses` table. Upgrading from versions 1–4 preserves solve summaries, inspection metadata, recordings, and remembered-cube settings. Older solves are assigned to the default SpeedSolving session with CFOP, but no recording or analysis is invented.
 
 ### Export and timing reliability
 
-Crubik JSON version 3 includes a nested recording only when one exists. Summary timing is unavailable if the first or final move was recovered, a state report establishes an unobserved start or finish, or the finish receipt time is earlier than solve start. State-based completion still saves the solve and its recording, including after reconnect, but does not substitute the report's receipt time for an unknown physical boundary. A gap or state correction in the middle of a solve does not invalidate otherwise observed boundaries. Unavailable timing exports as `timing_reliable: false` and `elapsed_ms: null`.
+Crubik JSON version 4 includes each solve's session/method snapshot, plus nested recording and analysis values only when they exist. Summary timing is unavailable if the first or final move was recovered, a state report establishes an unobserved start or finish, or the finish receipt time is earlier than solve start. State-based completion still saves the solve and its recording, including after reconnect, but does not substitute the report's receipt time for an unknown physical boundary. A gap or state correction in the middle of a solve does not invalidate otherwise observed boundaries. Unavailable timing exports as `timing_reliable: false` and `elapsed_ms: null`.
 
 Review and history display “Timing unavailable” for these solves. Best and mean exclude them. Ao5 is unavailable if any of the latest five solves has unavailable timing.
 
@@ -306,7 +327,7 @@ SQLite keeps the original clock values inside the compressed recording. Export d
 
 Recordings keep quarter-turn order, sequence numbers (serials), recovery flags, actual cube timestamps where available, cube-reported states, selected orientation samples, feature availability, and explicit data gaps.
 
-They do not keep duplicate time differences, state snapshots for every move, encrypted or decrypted packets, device identity, signal strength, battery values, or animation frames. Later analysis—turns per second (TPS), pauses, stages, cases, regrips, replay, and clock regression—must be calculated from the recorded data.
+They do not keep duplicate time differences, state snapshots for every move, encrypted or decrypted packets, device identity, signal strength, battery values, or animation frames. Derived TPS, pauses, method stages, and regrips are calculated from the recording. Case recognition, replay, and clock regression remain future derived consumers of the same evidence.
 
 ## Extension points
 

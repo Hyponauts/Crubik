@@ -12,6 +12,8 @@ import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
 import 'widgets/practice_panel.dart';
 import 'widgets/scramble_panel.dart';
+import 'widgets/session_settings.dart';
+import 'widgets/session_summary_panel.dart';
 import 'widgets/solve_controls.dart';
 
 /// Arranges practice content and session history for desktop viewports.
@@ -44,6 +46,8 @@ class DesktopPracticeLayout extends StatelessWidget {
                 connection: connection,
                 onPressed: onConnectPressed,
               ),
+              const SizedBox(width: 8),
+              PracticeSessionButton(practice: practice),
             ],
           ),
           const SizedBox(height: 24),
@@ -85,9 +89,12 @@ class DesktopPracticeLayout extends StatelessWidget {
                               child: Column(
                                 children: [
                                   if (reviewing)
-                                    PracticeAccessoryPanel(
-                                      practice: practice,
-                                      contained: true,
+                                    SizedBox(
+                                      height: 480,
+                                      child: PracticeAccessoryPanel(
+                                        practice: practice,
+                                        contained: true,
+                                      ),
                                     )
                                   else
                                     _DesktopPracticeHero(
@@ -204,6 +211,8 @@ class _MobilePreparationPortrait extends StatelessWidget {
                       connection: connection,
                     ),
             ),
+            const SizedBox(height: 8),
+            SessionSummaryPanel(practice: practice),
             if (showReadyAction) ...[
               const SizedBox(height: 8),
               PracticeAccessoryPanel(
@@ -232,6 +241,7 @@ class _MobilePreparationLandscape extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reviewing = practice.pendingSolveReview != null;
+    final showSessionSummary = MediaQuery.sizeOf(context).height >= 360;
     final showReadyAction =
         !reviewing &&
         practice.inputMode == PracticeInputMode.demo &&
@@ -258,6 +268,10 @@ class _MobilePreparationLandscape extends StatelessWidget {
                   bounded: true,
                 ),
               ),
+              if (showSessionSummary) ...[
+                const SizedBox(height: 8),
+                SessionSummaryPanel(practice: practice),
+              ],
               if (showReadyAction) ...[
                 const SizedBox(height: 8),
                 PracticeAccessoryPanel(

@@ -378,7 +378,7 @@ void main() {
   });
 
   test(
-    'exports version 3 solve history while retaining manual metadata',
+    'exports version 4 solve history while retaining manual metadata',
     () async {
       final exportedAt = DateTime.utc(2026, 1, 1, 12);
       final clock = PracticeTestClock(wallTime: () => exportedAt);
@@ -401,7 +401,7 @@ void main() {
       final solve = solves.single! as Map<String, Object?>;
 
       expect(payload['format'], 'crubik-solve-history');
-      expect(payload['version'], 3);
+      expect(payload['version'], 4);
       expect(solve['elapsed_ms'], 12345);
       expect(solve['move_count'], 1);
       expect(solve['input_source'], 'manual');

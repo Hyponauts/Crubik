@@ -7,6 +7,9 @@ import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/practice/application/solve_history.dart';
+import 'package:crubik/features/practice/domain/practice_session.dart';
+import 'package:crubik/features/practice/domain/solve_analysis.dart';
+import 'package:crubik/features/practice/domain/solve_method.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:drift/native.dart';
@@ -28,6 +31,9 @@ void main() {
         inputSource: SolveInputSource.smartCube,
         inspectionElapsed: const Duration(milliseconds: 4321),
         startTrigger: SolveStartTrigger.firstMove,
+        sessionId: 'training',
+        sessionName: 'Training',
+        method: SolveMethodConfig.preset(SolveMethodPreset.twoLookCfop),
       ),
     ];
 
@@ -44,6 +50,9 @@ void main() {
     expect(restored.single.inspectionElapsed, records.single.inspectionElapsed);
     expect(restored.single.startTrigger, records.single.startTrigger);
     expect(restored.single.isTimingReliable, isTrue);
+    expect(restored.single.sessionId, 'training');
+    expect(restored.single.sessionName, 'Training');
+    expect(restored.single.method.preset, SolveMethodPreset.twoLookCfop);
   });
 
   test('round trips every solve input source through Drift', () async {
@@ -208,7 +217,7 @@ void main() {
         jsonDecode(await history.exportJson()) as Map<String, Object?>;
     final exportedSolve =
         (export['solves']! as List<Object?>).single as Map<String, Object?>;
-    expect(export['version'], 3);
+    expect(export['version'], 4);
     expect(exportedSolve['recording'], recording.toJson());
   });
 
@@ -279,6 +288,63 @@ void main() {
     expect(eventCount.read<int>('count'), 0);
   });
 
+  test('persists versioned solve analysis separately from recording', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = DriftSolveHistoryRepository(database);
+    final solve = SolveRecord(
+      id: 'analyzed-solve',
+      scramble: 'R',
+      elapsed: const Duration(seconds: 2),
+      moveCount: 1,
+      createdAt: DateTime.utc(2026),
+    );
+    final analysis = SolveAnalysis(
+      analyzerVersion: currentSolveAnalyzerVersion,
+      method: solve.method,
+      protocolFamily: 'gan',
+      createdAt: DateTime.utc(2026),
+      isComplete: true,
+      stages: const [],
+    );
+
+    await repository.add(solve);
+    await repository.saveAnalysis(solve.id, analysis);
+
+    final restored = await repository.loadAnalysis(solve.id);
+    expect(restored?.analyzerVersion, currentSolveAnalyzerVersion);
+    expect(restored?.protocolFamily, 'gan');
+
+    await repository.delete(solve.id);
+    expect(await repository.loadAnalysis(solve.id), isNull);
+  });
+
+  test('persists sessions and selected session in app settings', () async {
+    final database = CrubikDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final store = DriftPracticeSessionStore(database);
+    final defaultSession = PracticeSession.defaultSession();
+    final custom = PracticeSession(
+      id: 'custom',
+      name: 'Custom training',
+      method: SolveMethodConfig(
+        preset: SolveMethodPreset.custom,
+        customStages: const [SolveStageKind.cross, SolveStageKind.solved],
+      ),
+    );
+
+    await store.save([defaultSession, custom], custom.id);
+    final restored = await store.load();
+
+    expect(restored?.selectedId, custom.id);
+    expect(restored?.sessions, hasLength(2));
+    expect(restored?.sessions.last.method.preset, SolveMethodPreset.custom);
+    expect(restored?.sessions.last.method.stages, [
+      SolveStageKind.cross,
+      SolveStageKind.solved,
+    ]);
+  });
+
   test('persists the recently connected cube locally', () async {
     final database = CrubikDatabase(NativeDatabase.memory());
     addTearDown(database.close);
@@ -319,7 +385,7 @@ void main() {
     ]);
   });
 
-  for (final version in [1, 2, 3]) {
+  for (final version in [1, 2, 3, 4]) {
     test('migrates version $version without losing legacy evidence', () async {
       final directory = await Directory.systemTemp.createTemp(
         'crubik-migration-',
@@ -330,11 +396,14 @@ void main() {
       final inspectionColumns = version >= 2
           ? ', inspection_elapsed_ms INTEGER, start_trigger TEXT'
           : '';
+      final timingColumns = version >= 4
+          ? ', timing_reliable INTEGER NOT NULL DEFAULT 1'
+          : '';
       legacy.execute("""
         CREATE TABLE solve_entries (
           id TEXT NOT NULL PRIMARY KEY, scramble TEXT NOT NULL, elapsed_ms INTEGER NOT NULL,
           move_count INTEGER NOT NULL, created_at INTEGER NOT NULL, input_source TEXT NOT NULL
-          $inspectionColumns
+          $inspectionColumns $timingColumns
         )
       """);
       legacy.execute(
@@ -352,6 +421,14 @@ void main() {
         legacy.execute(
           'CREATE TABLE app_settings (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL)',
         );
+      }
+      if (version >= 4) {
+        legacy.execute('''
+          CREATE TABLE solve_recordings (
+            solve_id TEXT NOT NULL PRIMARY KEY REFERENCES solve_entries(id) ON DELETE CASCADE,
+            payload BLOB NOT NULL
+          )
+        ''');
       }
       if (version >= 2) {
         legacy.execute(
@@ -373,7 +450,7 @@ void main() {
       final restored = (await repository.load()).single;
       final recording = await repository.loadRecording(restored.id);
 
-      expect(database.schemaVersion, 4);
+      expect(database.schemaVersion, 5);
       expect(restored.id, 'legacy-solve');
       expect(restored.elapsed, const Duration(seconds: 12));
       expect(
@@ -385,6 +462,8 @@ void main() {
         version >= 2 ? SolveStartTrigger.firstMove : null,
       );
       expect(restored.isTimingReliable, isTrue);
+      expect(restored.sessionId, defaultPracticeSessionId);
+      expect(restored.method.preset, SolveMethodPreset.cfop);
       expect(recording, isNull);
       final rememberedCube = await DriftRememberedCubeStore(database).load();
       expect(rememberedCube?.deviceId, version == 3 ? 'legacy-cube-id' : null);

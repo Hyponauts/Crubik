@@ -1,3 +1,6 @@
+import 'practice_session.dart';
+import 'solve_analysis.dart';
+import 'solve_method.dart';
 import 'solve_recording.dart';
 
 enum SolveStartTrigger {
@@ -62,7 +65,7 @@ final class SolveInputSource {
 }
 
 final class SolveRecord {
-  const SolveRecord({
+  SolveRecord({
     required this.id,
     required this.scramble,
     required this.elapsed,
@@ -72,7 +75,10 @@ final class SolveRecord {
     this.inspectionElapsed,
     this.startTrigger,
     this.isTimingReliable = true,
-  });
+    this.sessionId = defaultPracticeSessionId,
+    this.sessionName = 'SpeedSolving',
+    SolveMethodConfig? method,
+  }) : method = method ?? SolveMethodConfig.preset(SolveMethodPreset.cfop);
 
   final String id;
   final String scramble;
@@ -84,6 +90,9 @@ final class SolveRecord {
   final SolveInputSource inputSource;
   final Duration? inspectionElapsed;
   final SolveStartTrigger? startTrigger;
+  final String sessionId;
+  final String sessionName;
+  final SolveMethodConfig method;
 
   /// False when recovery or a state report leaves a solve boundary unobserved.
   final bool isTimingReliable;
@@ -102,6 +111,9 @@ final class SolveRecord {
     'input_source': inputSource.serializedValue,
     'inspection_elapsed_ms': inspectionElapsed?.inMilliseconds,
     'start_trigger': startTrigger?.serializedValue,
+    'session_id': sessionId,
+    'session_name': sessionName,
+    'method': method.toJson(),
   };
 
   factory SolveRecord.fromJson(Map<String, Object?> json) => SolveRecord(
@@ -123,6 +135,15 @@ final class SolveRecord {
     startTrigger: SolveStartTrigger.fromSerializedValue(
       json['start_trigger'] as String?,
     ),
+    sessionId: (json['session_id'] as String?) ?? defaultPracticeSessionId,
+    sessionName: (json['session_name'] as String?) ?? 'SpeedSolving',
+    method: switch (json['method']) {
+      final Map<String, Object?> value => SolveMethodConfig.fromJson(value),
+      final Map value => SolveMethodConfig.fromJson(
+        value.cast<String, Object?>(),
+      ),
+      _ => SolveMethodConfig.preset(SolveMethodPreset.cfop),
+    },
   );
 }
 
@@ -136,9 +157,17 @@ abstract interface class SolveHistoryRepository {
   Future<void> delete(String id);
 }
 
-final class MemorySolveHistoryRepository implements SolveHistoryRepository {
+abstract interface class SolveAnalysisRepository {
+  Future<SolveAnalysis?> loadAnalysis(String solveId);
+
+  Future<void> saveAnalysis(String solveId, SolveAnalysis analysis);
+}
+
+final class MemorySolveHistoryRepository
+    implements SolveHistoryRepository, SolveAnalysisRepository {
   final List<SolveRecord> _solves = [];
   final Map<String, SolveRecording> _recordingsBySolveId = {};
+  final Map<String, SolveAnalysis> _analysesBySolveId = {};
 
   @override
   Future<List<SolveRecord>> load() async => List.unmodifiable(_solves);
@@ -146,6 +175,10 @@ final class MemorySolveHistoryRepository implements SolveHistoryRepository {
   @override
   Future<SolveRecording?> loadRecording(String solveId) async =>
       _recordingsBySolveId[solveId];
+
+  @override
+  Future<SolveAnalysis?> loadAnalysis(String solveId) async =>
+      _analysesBySolveId[solveId];
 
   @override
   Future<void> add(SolveRecord solve, {SolveRecording? recording}) async {
@@ -159,8 +192,14 @@ final class MemorySolveHistoryRepository implements SolveHistoryRepository {
   }
 
   @override
+  Future<void> saveAnalysis(String solveId, SolveAnalysis analysis) async {
+    _analysesBySolveId[solveId] = analysis;
+  }
+
+  @override
   Future<void> delete(String id) async {
     _solves.removeWhere((solve) => solve.id == id);
     _recordingsBySolveId.remove(id);
+    _analysesBySolveId.remove(id);
   }
 }

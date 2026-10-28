@@ -10,6 +10,7 @@ import 'sessions_view.dart';
 import 'widgets/practice_brand.dart';
 import 'widgets/practice_connection.dart';
 import 'widgets/practice_panel.dart';
+import 'widgets/session_settings.dart';
 
 /// Coordinates practice/session navigation, input selection, and page chrome.
 class PracticePage extends StatefulWidget {
@@ -105,12 +106,17 @@ class _PracticePageState extends State<PracticePage> {
                 child: PracticeBrand(compact: true),
               ),
               actions: [
+                PracticeConnectionButton(
+                  practice: widget.practiceController,
+                  connection: widget.connectionController,
+                  onPressed: _showConnectionDialog,
+                  compact: true,
+                ),
+                const SizedBox(width: 6),
                 Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: PracticeConnectionButton(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: PracticeSessionButton(
                     practice: widget.practiceController,
-                    connection: widget.connectionController,
-                    onPressed: _showConnectionDialog,
                     compact: true,
                   ),
                 ),
@@ -131,7 +137,7 @@ class _PracticePageState extends State<PracticePage> {
                 BottomNavigationBarItem(
                   icon: Icon(Icons.insights_outlined),
                   activeIcon: Icon(Icons.insights),
-                  label: 'Session',
+                  label: 'Analyze',
                 ),
               ],
             ),
@@ -223,7 +229,7 @@ class _DesktopNavigation extends StatelessWidget {
                 NavigationRailDestination(
                   icon: Icon(Icons.insights_outlined),
                   selectedIcon: Icon(Icons.insights),
-                  label: Text('Session'),
+                  label: Text('Analyze'),
                 ),
               ],
             ),

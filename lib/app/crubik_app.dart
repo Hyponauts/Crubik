@@ -55,6 +55,7 @@ class _CrubikAppState extends State<CrubikApp> {
       _practiceController = PracticeController(
         nextScramble: _scrambleCache!.take,
         repository: DriftSolveHistoryRepository(_database!),
+        sessionStore: DriftPracticeSessionStore(_database!),
         monotonicClock: monotonicClock,
       );
     } else {

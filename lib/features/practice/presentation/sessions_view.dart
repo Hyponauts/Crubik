@@ -6,6 +6,8 @@ import '../application/practice_controller.dart';
 import '../domain/solve_record.dart';
 import 'widgets/practice_panel.dart';
 import 'widgets/practice_formatters.dart';
+import 'widgets/session_summary_panel.dart';
+import 'widgets/solve_analysis_panel.dart';
 
 class SessionSidebar extends StatelessWidget {
   const SessionSidebar({required this.practice, super.key});
@@ -16,69 +18,42 @@ class SessionSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        PracticePanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const PracticeSectionLabel('SESSION SNAPSHOT'),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _StatValue(
-                      label: 'BEST',
-                      value: formatOptionalPracticeDuration(practice.bestTime),
-                      accent: CrubikColors.primaryAccent,
-                    ),
-                  ),
-                  Expanded(
-                    child: _StatValue(
-                      label: 'MEAN',
-                      value: formatOptionalPracticeDuration(
-                        practice.sessionAverage,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _StatValue(
-                      label: 'AO5',
-                      value: formatOptionalPracticeDuration(
-                        practice.averageOfFive,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: _StatValue(
-                      label: 'SOLVES',
-                      value: practice.solves.length.toString(),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+        SessionSummaryPanel(practice: practice),
+        const SizedBox(height: 16),
+        Expanded(
+          child: _RecentSolves(
+            practice: practice,
+            scrollable: true,
+            selectedSolveId: null,
+            onSelected: (_) {},
           ),
         ),
-        const SizedBox(height: 16),
-        Expanded(child: _RecentSolves(practice: practice, scrollable: true)),
       ],
     );
   }
 }
 
-class SessionsView extends StatelessWidget {
+class SessionsView extends StatefulWidget {
   const SessionsView({required this.practice, this.mobile = false, super.key});
 
   final PracticeController practice;
   final bool mobile;
 
   @override
+  State<SessionsView> createState() => _SessionsViewState();
+}
+
+class _SessionsViewState extends State<SessionsView> {
+  String? _selectedSolveId;
+
+  PracticeController get practice => widget.practice;
+
+  @override
   Widget build(BuildContext context) {
-    if (mobile) {
+    if (!practice.solves.any((solve) => solve.id == _selectedSolveId)) {
+      _selectedSolveId = null;
+    }
+    if (widget.mobile) {
       return SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -88,7 +63,7 @@ class SessionsView extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Session',
+                      'ANALYZE',
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                   ),
@@ -99,11 +74,21 @@ class SessionsView extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              _MobileStats(practice: practice),
+              Text(
+                practice.selectedSession.name.toUpperCase(),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: CrubikColors.muted,
+                  letterSpacing: 0.8,
+                ),
+              ),
               const SizedBox(height: 10),
               Expanded(
-                child: _RecentSolves(practice: practice, scrollable: true),
+                child: _RecentSolves(
+                  practice: practice,
+                  scrollable: true,
+                  selectedSolveId: _selectedSolveId,
+                  onSelected: (id) => setState(() => _selectedSolveId = id),
+                ),
               ),
             ],
           ),
@@ -119,7 +104,7 @@ class SessionsView extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Session',
+                  'ANALYZE',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
@@ -132,13 +117,15 @@ class SessionsView extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Solve history and essential statistics.',
+            practice.selectedSession.name.toUpperCase(),
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 20),
-          _MobileStats(practice: practice),
           const SizedBox(height: 16),
-          _RecentSolves(practice: practice),
+          _RecentSolves(
+            practice: practice,
+            selectedSolveId: _selectedSolveId,
+            onSelected: (id) => setState(() => _selectedSolveId = id),
+          ),
         ],
       ),
     );
@@ -207,81 +194,17 @@ class _SolveExportButtonState extends State<_SolveExportButton> {
   }
 }
 
-class _MobileStats extends StatelessWidget {
-  const _MobileStats({required this.practice});
-
-  final PracticeController practice;
-
-  @override
-  Widget build(BuildContext context) {
-    return PracticePanel(
-      child: Row(
-        children: [
-          Expanded(
-            child: _StatValue(
-              label: 'BEST',
-              value: formatOptionalPracticeDuration(practice.bestTime),
-              accent: CrubikColors.primaryAccent,
-            ),
-          ),
-          Expanded(
-            child: _StatValue(
-              label: 'MEAN',
-              value: formatOptionalPracticeDuration(practice.sessionAverage),
-            ),
-          ),
-          Expanded(
-            child: _StatValue(
-              label: 'AO5',
-              value: formatOptionalPracticeDuration(practice.averageOfFive),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatValue extends StatelessWidget {
-  const _StatValue({required this.label, required this.value, this.accent});
-
-  final String label;
-  final String value;
-  final Color? accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: CrubikColors.muted,
-            letterSpacing: 1.1,
-          ),
-        ),
-        const SizedBox(height: 4),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: accent ?? CrubikColors.text,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _RecentSolves extends StatelessWidget {
-  const _RecentSolves({required this.practice, this.scrollable = false});
+  const _RecentSolves({
+    required this.practice,
+    required this.selectedSolveId,
+    required this.onSelected,
+    this.scrollable = false,
+  });
 
   final PracticeController practice;
+  final String? selectedSolveId;
+  final ValueChanged<String?> onSelected;
   final bool scrollable;
 
   @override
@@ -294,10 +217,12 @@ class _RecentSolves extends StatelessWidget {
             padding: EdgeInsets.zero,
             itemCount: solves.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) => _SolveRow(
-              position: practice.solves.length - index,
+            itemBuilder: (context, index) => _SolveItem(
+              practice: practice,
+              position: solves.length - index,
               solve: solves[index],
-              onDelete: () => practice.deleteSolve(solves[index].id),
+              expanded: solves[index].id == selectedSolveId,
+              onSelected: onSelected,
             ),
           );
     return PracticePanel(
@@ -306,10 +231,10 @@ class _RecentSolves extends StatelessWidget {
         children: [
           Row(
             children: [
-              const PracticeSectionLabel('RECENT SOLVES'),
+              const PracticeSectionLabel('SOLVES'),
               const Spacer(),
               Text(
-                '${practice.solves.length} total',
+                '${practice.solves.length} TOTAL',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -321,15 +246,64 @@ class _RecentSolves extends StatelessWidget {
             list
           else
             for (var index = 0; index < solves.length; index++) ...[
-              _SolveRow(
-                position: practice.solves.length - index,
+              _SolveItem(
+                practice: practice,
+                position: solves.length - index,
                 solve: solves[index],
-                onDelete: () => practice.deleteSolve(solves[index].id),
+                expanded: solves[index].id == selectedSolveId,
+                onSelected: onSelected,
               ),
               if (index != solves.length - 1) const Divider(height: 1),
             ],
         ],
       ),
+    );
+  }
+}
+
+class _SolveItem extends StatelessWidget {
+  const _SolveItem({
+    required this.practice,
+    required this.position,
+    required this.solve,
+    required this.expanded,
+    required this.onSelected,
+  });
+
+  final PracticeController practice;
+  final int position;
+  final SolveRecord solve;
+  final bool expanded;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _SolveRow(
+          position: position,
+          solve: solve,
+          expanded: expanded,
+          onTap: () => onSelected(expanded ? null : solve.id),
+          onDelete: () {
+            if (expanded) onSelected(null);
+            practice.deleteSolve(solve.id);
+          },
+        ),
+        if (expanded) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            key: const Key('historical-solve-analysis'),
+            height: 430,
+            child: SolveAnalysisPanel(
+              practice: practice,
+              solve: solve,
+              historical: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
     );
   }
 }
@@ -367,58 +341,72 @@ class _SolveRow extends StatelessWidget {
   const _SolveRow({
     required this.position,
     required this.solve,
+    required this.expanded,
+    required this.onTap,
     required this.onDelete,
   });
 
   final int position;
   final SolveRecord solve;
+  final bool expanded;
+  final VoidCallback onTap;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 32,
-            child: Text(
-              '#$position',
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(color: CrubikColors.muted),
+    return InkWell(
+      key: Key('solve-row-${solve.id}'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 32,
+              child: Text(
+                '#$position',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: CrubikColors.muted),
+              ),
             ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  solve.isTimingReliable
-                      ? formatPracticeDuration(solve.elapsed)
-                      : 'Timing unavailable',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    solve.isTimingReliable
+                        ? formatPracticeDuration(solve.elapsed)
+                        : 'Timing unavailable',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  !solve.isTimingReliable
-                      ? '${solve.moveCount} moves · ${solve.inputSource.displayLabel}'
-                      : solve.moveCount == 0
-                      ? solve.inputSource.displayLabel
-                      : '${solve.moveCount} moves · ${solve.turnsPerSecond?.toStringAsFixed(1)} TPS',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    !solve.isTimingReliable
+                        ? '${solve.moveCount} moves · ${solve.inputSource.displayLabel}'
+                        : solve.moveCount == 0
+                        ? solve.inputSource.displayLabel
+                        : '${solve.moveCount} moves · ${solve.turnsPerSecond?.toStringAsFixed(1)} TPS',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            onPressed: onDelete,
-            icon: const Icon(Icons.close, size: 17),
-            tooltip: 'Delete solve',
-          ),
-        ],
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: CrubikColors.muted,
+            ),
+            IconButton(
+              onPressed: onDelete,
+              icon: const Icon(Icons.close, size: 17),
+              tooltip: 'Delete solve',
+            ),
+          ],
+        ),
       ),
     );
   }

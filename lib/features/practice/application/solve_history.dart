@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../domain/solve_analysis.dart';
 import '../domain/solve_record.dart';
 import '../domain/solve_recording.dart';
 
@@ -97,15 +98,20 @@ final class SolveHistory {
       output
         ..writeln('{')
         ..writeln('  "format": "crubik-solve-history",')
-        ..writeln('  "version": 3,')
+        ..writeln('  "version": 4,')
         ..writeln('  "exported_at": ${jsonEncode(exportedAt)},')
         ..writeln('  "solves": [');
       for (var index = 0; index < records.length; index++) {
         final solve = records[index];
         final recording = await _repository.loadRecording(solve.id);
+        final analysisRepository = _repository is SolveAnalysisRepository
+            ? _repository as SolveAnalysisRepository
+            : null;
+        final analysis = await analysisRepository?.loadAnalysis(solve.id);
         _writeIndentedJson(output, {
           ...solve.toJson(),
           if (recording != null) 'recording': recording.toJson(),
+          if (analysis != null) 'analysis': analysis.toJson(),
         }, trailingComma: index != records.length - 1);
       }
       output
@@ -147,14 +153,39 @@ final class SolveHistory {
     }
   }
 
-  void add(SolveRecord solve, {SolveRecording? recording}) {
+  void add(
+    SolveRecord solve, {
+    SolveRecording? recording,
+    SolveAnalysis? analysis,
+  }) {
     if (_initializing || _initializationFuture == null) {
       _mutatedDuringInitialization = true;
       _deletedDuringInitialization.remove(solve.id);
     }
     _records.insert(0, solve);
-    _schedulePersistence(() => _repository.add(solve, recording: recording));
+    _schedulePersistence(() async {
+      await _repository.add(solve, recording: recording);
+      if (analysis != null && _repository is SolveAnalysisRepository) {
+        await (_repository as SolveAnalysisRepository).saveAnalysis(
+          solve.id,
+          analysis,
+        );
+      }
+    });
   }
+
+  Future<SolveRecording?> loadRecording(String solveId) =>
+      _repository.loadRecording(solveId);
+
+  Future<SolveAnalysis?> loadAnalysis(String solveId) =>
+      _repository is SolveAnalysisRepository
+      ? (_repository as SolveAnalysisRepository).loadAnalysis(solveId)
+      : Future.value();
+
+  Future<void> saveAnalysis(String solveId, SolveAnalysis analysis) =>
+      _repository is SolveAnalysisRepository
+      ? (_repository as SolveAnalysisRepository).saveAnalysis(solveId, analysis)
+      : Future.value();
 
   void delete(String id) {
     if (_initializing || _initializationFuture == null) {

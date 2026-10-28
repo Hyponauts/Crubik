@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -6,8 +7,12 @@ import '../../../core/time/monotonic_clock.dart';
 import '../../cube/domain/cube_model.dart';
 import '../../cube/domain/smart_cube_device.dart';
 import '../../cube/domain/smart_cube_event.dart';
+import '../domain/practice_session.dart';
+import '../domain/solve_analysis.dart';
+import '../domain/solve_method.dart';
 import '../domain/solve_record.dart';
 import '../domain/solve_recording.dart';
+import 'solve_analyzer.dart';
 import 'solve_history.dart';
 import 'solve_recording_builder.dart';
 
@@ -92,6 +97,8 @@ final class PracticeController extends ChangeNotifier {
   PracticeController({
     required FutureOr<CubeScramble> Function() nextScramble,
     SolveHistoryRepository? repository,
+    PracticeSessionStore? sessionStore,
+    SolveAnalyzer analyzer = const SolveAnalyzer(),
     SolveClock? clock,
     MonotonicClock? monotonicClock,
     DateTime Function()? now,
@@ -100,6 +107,8 @@ final class PracticeController extends ChangeNotifier {
   }) : this._(
          nextScramble,
          repository,
+         sessionStore,
+         analyzer,
          clock,
          monotonicClock,
          now,
@@ -110,6 +119,8 @@ final class PracticeController extends ChangeNotifier {
   PracticeController._(
     this._nextScramble,
     SolveHistoryRepository? repository,
+    PracticeSessionStore? sessionStore,
+    this._analyzer,
     SolveClock? clock,
     MonotonicClock? monotonicClock,
     DateTime Function()? now,
@@ -122,6 +133,10 @@ final class PracticeController extends ChangeNotifier {
       repository: repository ?? MemorySolveHistoryRepository(),
       now: _now,
     );
+    _sessionStore = sessionStore ?? MemoryPracticeSessionStore();
+    final defaultSession = PracticeSession.defaultSession();
+    _sessions.add(defaultSession);
+    _selectedSessionId = defaultSession.id;
     _requestNextScramble(notify: false);
   }
 
@@ -129,7 +144,16 @@ final class PracticeController extends ChangeNotifier {
   late final SolveClock _clock;
   late final MonotonicClock _monotonicClock;
   final DateTime Function() _now;
+  final SolveAnalyzer _analyzer;
   late final SolveHistory _history;
+  late final PracticeSessionStore _sessionStore;
+  final List<PracticeSession> _sessions = [];
+  late String _selectedSessionId;
+  final Map<String, SolveAnalysis> _analyses = {};
+  final Map<String, Future<SolveAnalysis?>> _analysisRequests = {};
+  Future<void> _sessionPersistenceQueue = Future.value();
+  Object? _sessionPersistenceError;
+  bool _sessionsInitialized = false;
   final Duration preInspectionDelay;
   final Duration inspectionDuration;
   final ChangeNotifier _clockTicks = ChangeNotifier();
@@ -174,7 +198,13 @@ final class PracticeController extends ChangeNotifier {
   Object? get scramblePreparationError => _scramblePreparationError;
   CubeState get cubeState => _cubeState;
   List<CubeMove> get currentMoves => List.unmodifiable(_currentMoves);
-  List<SolveRecord> get solves => _history.records;
+  List<SolveRecord> get allSolves => _history.records;
+  List<SolveRecord> get solves => List.unmodifiable(
+    _history.records.where((solve) => solve.sessionId == _selectedSessionId),
+  );
+  List<PracticeSession> get sessions => List.unmodifiable(_sessions);
+  PracticeSession get selectedSession =>
+      _sessions.firstWhere((session) => session.id == _selectedSessionId);
   PracticePhase get phase => _phase;
   PracticeInputMode get inputMode => _inputMode;
   Duration get elapsed => _clock.elapsed;
@@ -189,7 +219,8 @@ final class PracticeController extends ChangeNotifier {
   int get cubeMoveRevision => _cubeMoveRevision;
   SolveRecord? get pendingSolveReview => _pendingSolveReview;
   Listenable get clockTicks => _clockTicks;
-  Object? get persistenceError => _history.persistenceError;
+  Object? get persistenceError =>
+      _history.persistenceError ?? _sessionPersistenceError;
 
   Duration get preInspectionRemaining {
     if (_phase != PracticePhase.inspectionDelay) return Duration.zero;
@@ -294,21 +325,133 @@ final class PracticeController extends ChangeNotifier {
         _phase == PracticePhase.solving;
   }
 
-  bool get hasSolves => _history.hasRecords;
+  bool get hasSolves => solves.isNotEmpty;
 
-  Duration? get bestTime => _history.bestTime;
+  Duration? get lastTime {
+    final solve = solves.firstOrNull;
+    if (solve == null || !solve.isTimingReliable) return null;
+    return solve.elapsed;
+  }
 
-  Duration? get sessionAverage => _history.sessionAverage;
+  Duration? get bestTime => _bestTime(solves);
 
-  Duration? get averageOfFive => _history.averageOfFive;
+  Duration? get sessionAverage => _meanTime(solves);
+
+  Duration? get averageOfFive => _lastAverage(solves, 5);
+
+  Duration? get averageOfTwelve => _lastAverage(solves, 12);
+
+  Duration? get averageOfOneHundred => _lastAverage(solves, 100);
+
+  Duration? get bestAverageOfFive => _bestAverage(solves, 5);
+
+  Duration? get bestAverageOfTwelve => _bestAverage(solves, 12);
+
+  Duration? get bestAverageOfOneHundred => _bestAverage(solves, 100);
+
+  SolveAnalysis? analysisForCached(String solveId) => _analyses[solveId];
+
+  Future<SolveAnalysis?> analysisFor(SolveRecord solve) {
+    final cached = _analyses[solve.id];
+    if (cached != null && !cached.isOutdated) return Future.value(cached);
+    return _analysisRequests.putIfAbsent(
+      solve.id,
+      () => _loadOrCreateAnalysis(
+        solve,
+      ).whenComplete(() => _analysisRequests.remove(solve.id)),
+    );
+  }
 
   Future<String> exportJson() => _history.exportJson();
 
-  Future<void> flushPersistence() => _history.flush();
+  Future<void> flushPersistence() async {
+    await Future.wait([_history.flush(), _sessionPersistenceQueue]);
+  }
 
   Future<void> initialize() async {
-    await _history.initialize();
+    final results = await Future.wait([
+      _history.initialize(),
+      _sessionStore.load(),
+    ]);
+    final stored =
+        results[1] as ({List<PracticeSession> sessions, String selectedId})?;
+    if (stored != null) {
+      _sessions
+        ..clear()
+        ..addAll(stored.sessions);
+      _selectedSessionId = stored.selectedId;
+    }
+    _sessionsInitialized = true;
     if (!_disposed) notifyListeners();
+  }
+
+  bool get canConfigureSession =>
+      _sessionsInitialized && !attemptInProgress && _pendingSolveReview == null;
+
+  void selectSession(String id) {
+    if (!canConfigureSession || id == _selectedSessionId) return;
+    if (!_sessions.any((session) => session.id == id)) return;
+    _selectedSessionId = id;
+    _persistSessions();
+    notifyListeners();
+  }
+
+  PracticeSession createSession({
+    required String name,
+    SolveMethodConfig? method,
+  }) {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Session name cannot be empty.');
+    }
+    final timestamp = _now().microsecondsSinceEpoch;
+    var id = 'session-$timestamp';
+    var suffix = 2;
+    while (_sessions.any((session) => session.id == id)) {
+      id = 'session-$timestamp-${suffix++}';
+    }
+    final session = PracticeSession(
+      id: id,
+      name: normalizedName,
+      method: method ?? SolveMethodConfig.preset(SolveMethodPreset.cfop),
+    );
+    _sessions.add(session);
+    _selectedSessionId = session.id;
+    _persistSessions();
+    notifyListeners();
+    return session;
+  }
+
+  void updateSelectedSession({String? name, SolveMethodConfig? method}) {
+    if (!canConfigureSession) return;
+    final index = _sessions.indexWhere(
+      (session) => session.id == _selectedSessionId,
+    );
+    if (index < 0) return;
+    final normalizedName = name?.trim();
+    if (normalizedName != null && normalizedName.isEmpty) return;
+    _sessions[index] = _sessions[index].copyWith(
+      name: normalizedName,
+      method: method,
+    );
+    _persistSessions();
+    notifyListeners();
+  }
+
+  void deleteSelectedSession() {
+    if (!canConfigureSession || _sessions.length == 1) return;
+    final deletedId = _selectedSessionId;
+    _sessions.removeWhere((session) => session.id == deletedId);
+    _selectedSessionId = _sessions.first.id;
+    for (final solve
+        in _history.records
+            .where((solve) => solve.sessionId == deletedId)
+            .toList()) {
+      _analyses.remove(solve.id);
+      _history.delete(solve.id);
+    }
+    _persistSessions();
+    notifyListeners();
   }
 
   void newScramble() {
@@ -662,6 +805,7 @@ final class PracticeController extends ChangeNotifier {
     _ticker = null;
 
     final createdAt = _now();
+    final session = selectedSession;
     final solve = SolveRecord(
       id: createdAt.microsecondsSinceEpoch.toString(),
       scramble: _scramble!.toString(),
@@ -672,9 +816,20 @@ final class PracticeController extends ChangeNotifier {
       inspectionElapsed: _inspectionElapsed,
       startTrigger: _startTrigger,
       isTimingReliable: _isTimingReliable,
+      sessionId: session.id,
+      sessionName: session.name,
+      method: session.method,
     );
     final recording = _recordingBuilder.finish();
-    _history.add(solve, recording: recording);
+    final analysis = recording == null
+        ? null
+        : _analyzer.analyze(
+            solve: solve,
+            recording: recording,
+            analyzedAt: createdAt,
+          );
+    if (analysis != null) _analyses[solve.id] = analysis;
+    _history.add(solve, recording: recording, analysis: analysis);
     _pendingSolveReview = solve;
     _requestNextScramble(notify: false);
     notifyListeners();
@@ -957,8 +1112,50 @@ final class PracticeController extends ChangeNotifier {
 
   void deleteSolve(String id) {
     _history.delete(id);
+    _analyses.remove(id);
     if (_pendingSolveReview?.id == id) _pendingSolveReview = null;
     notifyListeners();
+  }
+
+  Future<SolveAnalysis?> _loadOrCreateAnalysis(SolveRecord solve) async {
+    try {
+      final stored = await _history.loadAnalysis(solve.id);
+      if (stored != null && !stored.isOutdated) {
+        _analyses[solve.id] = stored;
+        if (!_disposed) notifyListeners();
+        return stored;
+      }
+
+      final recording = await _history.loadRecording(solve.id);
+      if (recording == null) {
+        if (stored != null) _analyses[solve.id] = stored;
+        if (!_disposed) notifyListeners();
+        return stored;
+      }
+
+      final analysis = _analyzer.analyze(solve: solve, recording: recording);
+      _analyses[solve.id] = analysis;
+      try {
+        await _history.saveAnalysis(solve.id, analysis);
+      } on Object {
+        // Analysis remains usable in memory and can be regenerated later.
+      }
+      if (!_disposed) notifyListeners();
+      return analysis;
+    } on Object {
+      return null;
+    }
+  }
+
+  void _persistSessions() {
+    final sessions = List<PracticeSession>.of(_sessions);
+    final selectedId = _selectedSessionId;
+    _sessionPersistenceQueue = _sessionPersistenceQueue
+        .then((_) => _sessionStore.save(sessions, selectedId))
+        .then<void>((_) => _sessionPersistenceError = null)
+        .onError((error, _) {
+          _sessionPersistenceError = error;
+        });
   }
 
   @override
@@ -969,4 +1166,50 @@ final class PracticeController extends ChangeNotifier {
     _clockTicks.dispose();
     super.dispose();
   }
+}
+
+Duration? _bestTime(List<SolveRecord> solves) {
+  final reliable = solves.where((solve) => solve.isTimingReliable).toList();
+  if (reliable.isEmpty) return null;
+  return reliable
+      .map((solve) => solve.elapsed)
+      .reduce((first, second) => first <= second ? first : second);
+}
+
+Duration? _meanTime(List<SolveRecord> solves) {
+  final reliable = solves.where((solve) => solve.isTimingReliable).toList();
+  if (reliable.isEmpty) return null;
+  final microseconds = reliable.fold<int>(
+    0,
+    (sum, solve) => sum + solve.elapsed.inMicroseconds,
+  );
+  return Duration(microseconds: microseconds ~/ reliable.length);
+}
+
+Duration? _lastAverage(List<SolveRecord> solves, int count) {
+  if (solves.length < count) return null;
+  return _wcaAverage(solves.take(count));
+}
+
+Duration? _bestAverage(List<SolveRecord> solves, int count) {
+  if (solves.length < count) return null;
+  Duration? best;
+  for (var start = 0; start <= solves.length - count; start++) {
+    final average = _wcaAverage(solves.skip(start).take(count));
+    if (average != null && (best == null || average < best)) best = average;
+  }
+  return best;
+}
+
+Duration? _wcaAverage(Iterable<SolveRecord> values) {
+  final solves = values.toList();
+  if (solves.length < 3 || solves.any((solve) => !solve.isTimingReliable)) {
+    return null;
+  }
+  final times = solves.map((solve) => solve.elapsed.inMicroseconds).toList()
+    ..sort();
+  final discardCount = math.max(1, (times.length * 0.05).ceil());
+  final included = times.sublist(discardCount, times.length - discardCount);
+  final total = included.fold<int>(0, (sum, value) => sum + value);
+  return Duration(microseconds: total ~/ included.length);
 }

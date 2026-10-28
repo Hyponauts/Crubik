@@ -31,8 +31,8 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('finish-card')), findsOneWidget);
     expect(find.byKey(const Key('timer-display')), findsNothing);
-    expect(find.text('DISMISS'), findsOneWidget);
-    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+    expect(find.byKey(const Key('continue-after-solve')), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('continue-after-solve')));
     await tester.pump();
