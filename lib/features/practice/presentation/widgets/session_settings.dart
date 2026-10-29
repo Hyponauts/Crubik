@@ -135,24 +135,27 @@ class _PracticeSessionDialogState extends State<_PracticeSessionDialog> {
               Row(
                 children: [
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      key: const Key('session-selector'),
-                      isExpanded: true,
-                      initialValue: session.id,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                    child: KeyedSubtree(
+                      key: ValueKey('session-selector-${session.id}'),
+                      child: DropdownButtonFormField<String>(
+                        key: const Key('session-selector'),
+                        isExpanded: true,
+                        initialValue: session.id,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final item in practice.sessions)
+                            DropdownMenuItem(
+                              value: item.id,
+                              child: Text(item.name),
+                            ),
+                        ],
+                        onChanged: (id) {
+                          if (id != null) practice.selectSession(id);
+                        },
                       ),
-                      items: [
-                        for (final item in practice.sessions)
-                          DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.name),
-                          ),
-                      ],
-                      onChanged: (id) {
-                        if (id != null) practice.selectSession(id);
-                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -232,17 +235,19 @@ class _PracticeSessionDialogState extends State<_PracticeSessionDialog> {
   }
 
   Future<void> _createSession() async {
-    final controller = TextEditingController(text: 'New session');
+    var inputName = 'New session';
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('CREATE SESSION'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          key: const Key('create-session-name'),
+          initialValue: inputName,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(labelText: 'NAME'),
-          onSubmitted: (value) => Navigator.of(context).pop(value),
+          onChanged: (value) => inputName = value,
+          onFieldSubmitted: (value) => Navigator.of(context).pop(value),
         ),
         actions: [
           TextButton(
@@ -250,14 +255,14 @@ class _PracticeSessionDialogState extends State<_PracticeSessionDialog> {
             child: const Text('CANCEL'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
+            key: const Key('confirm-create-session'),
+            onPressed: () => Navigator.of(context).pop(inputName),
             child: const Text('CREATE'),
           ),
         ],
       ),
     );
-    controller.dispose();
-    if (name == null || name.trim().isEmpty) return;
+    if (!mounted || name == null || name.trim().isEmpty) return;
     practice.createSession(name: name);
   }
 
@@ -338,7 +343,9 @@ class _CustomStagesEditor extends StatelessWidget {
         const SizedBox(height: 4),
         Flexible(
           child: ReorderableListView.builder(
+            key: const Key('custom-stages-list'),
             shrinkWrap: true,
+            buildDefaultDragHandles: false,
             itemCount: stages.length,
             onReorderItem: (oldIndex, newIndex) {
               final reordered = List<SolveStageKind>.of(stages);
@@ -352,7 +359,14 @@ class _CustomStagesEditor extends StatelessWidget {
                 key: ValueKey(stage),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.drag_handle, size: 18),
+                leading: ReorderableDragStartListener(
+                  key: Key('stage-drag-${stage.serializedValue}'),
+                  index: index,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.drag_handle, size: 18),
+                  ),
+                ),
                 title: Text(stage.label),
                 trailing: IconButton(
                   onPressed: stages.length > 1

@@ -360,7 +360,15 @@ class _SolveRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
         child: Row(
           children: [
+            Icon(
+              expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+              key: Key('solve-expand-${solve.id}'),
+              size: 18,
+              color: CrubikColors.muted,
+            ),
+            const SizedBox(width: 4),
             SizedBox(
+              key: Key('solve-position-${solve.id}'),
               width: 36,
               child: Text(
                 '#$position',
@@ -402,11 +410,6 @@ class _SolveRow extends StatelessWidget {
               value: solve.turnsPerSecond?.toStringAsFixed(1) ?? '—',
             ),
             const SizedBox(width: 4),
-            Icon(
-              expanded ? Icons.expand_less : Icons.expand_more,
-              size: 18,
-              color: CrubikColors.muted,
-            ),
             IconButton(
               onPressed: onDelete,
               icon: const Icon(Icons.delete_outline, size: 18),

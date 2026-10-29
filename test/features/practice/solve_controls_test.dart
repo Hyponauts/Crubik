@@ -105,10 +105,39 @@ void main() {
     expect(crossBar, findsOneWidget);
     final tooltip = tester.widget<Tooltip>(crossBar);
     expect(tooltip.triggerMode, TooltipTriggerMode.tap);
-    expect(tooltip.message, contains('STEP'));
-    expect(tooltip.message, contains('RECOGNITION AO100'));
-    expect(find.text('RECOGNITION'), findsOneWidget);
-    expect(find.text('RECOGNITION AO100'), findsOneWidget);
+    expect(tooltip.message, contains('Step'));
+    expect(tooltip.message, contains('Recognition Ao100'));
+    expect(tooltip.message, isNot(contains('STEP')));
+    expect(find.text('Recognition'), findsOneWidget);
+    expect(find.text('Recognition Ao100'), findsOneWidget);
+    final currentBar = find.byKey(const Key('stage-current-cross'));
+    final averageBar = find.byKey(const Key('stage-average-cross'));
+    final currentRect = tester.getRect(currentBar);
+    final averageRect = tester.getRect(averageBar);
+    expect(currentRect.width, 18);
+    expect(averageRect.width, 6);
+    expect(averageRect.left, closeTo(currentRect.right, 0.01));
+    final currentSegments = find.descendant(
+      of: currentBar,
+      matching: find.byType(ColoredBox),
+    );
+    final averageSegments = find.descendant(
+      of: averageBar,
+      matching: find.byType(ColoredBox),
+    );
+    expect(currentSegments, findsWidgets);
+    expect(averageSegments, findsWidgets);
+    for (final segment in currentSegments.evaluate()) {
+      expect(
+        tester.getSize(find.byWidget(segment.widget)).width,
+        greaterThan(0),
+      );
+    }
+    for (final segment in averageSegments.evaluate()) {
+      final coloredBox = segment.widget as ColoredBox;
+      expect(tester.getSize(find.byWidget(coloredBox)).width, greaterThan(0));
+      expect(coloredBox.color.a, lessThan(1));
+    }
     final tabs = tester.widget<TabBar>(find.byType(TabBar));
     expect(tabs.labelStyle?.fontSize, tabs.unselectedLabelStyle?.fontSize);
     expect(tabs.labelStyle?.fontSize, 9);

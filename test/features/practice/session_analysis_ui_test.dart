@@ -48,6 +48,82 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('custom solve stages can be reordered from their drag handles', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+    final practice = createTestPracticeController()..activateDemoInput();
+    final connection = CubeConnectionController(gateway: _SilentGateway());
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('session-settings-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('solve-method-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom').last);
+    await tester.pumpAndSettle();
+
+    expect(practice.selectedSession.method.stages.take(2), [
+      SolveStageKind.cross,
+      SolveStageKind.f2lPair1,
+    ]);
+
+    final dragHandle = find.byKey(const Key('stage-drag-cross'));
+    final thirdStage = find.text('F2L pair 2');
+    final gesture = await tester.startGesture(tester.getCenter(dragHandle));
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(thirdStage) + const Offset(0, 24));
+    await tester.pump(const Duration(milliseconds: 500));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(practice.selectedSession.method.stages.take(2), [
+      SolveStageKind.f2lPair1,
+      SolveStageKind.cross,
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('creates a session without disposing dialog dependencies early', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+    final practice = createTestPracticeController()..activateDemoInput();
+    final connection = CubeConnectionController(gateway: _SilentGateway());
+    addTearDown(practice.dispose);
+    addTearDown(connection.dispose);
+
+    await tester.pumpWidget(
+      CrubikApp(practiceController: practice, connectionController: connection),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('session-settings-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('create-session-button')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('create-session-name')),
+      'Blind practice',
+    );
+    await tester.tap(find.byKey(const Key('confirm-create-session')));
+    await tester.pumpAndSettle();
+
+    expect(practice.sessions, hasLength(2));
+    expect(practice.selectedSession.name, 'Blind practice');
+    expect(find.text('Blind practice'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Analyze expands tabs inline without duplicating solve summary', (
     tester,
   ) async {
@@ -75,9 +151,17 @@ void main() {
     );
     await tester.tap(find.text('Analyze'));
     await tester.pump();
+    final expandIcon = find.byKey(Key('solve-expand-${solve.id}'));
+    final solvePosition = find.byKey(Key('solve-position-${solve.id}'));
+    expect(
+      tester.getCenter(expandIcon).dx,
+      lessThan(tester.getCenter(solvePosition).dx),
+    );
+    expect(tester.widget<Icon>(expandIcon).icon, Icons.keyboard_arrow_right);
     await tester.tap(find.byKey(Key('solve-row-${solve.id}')));
     await tester.pump();
 
+    expect(tester.widget<Icon>(expandIcon).icon, Icons.keyboard_arrow_down);
     expect(find.byKey(const Key('historical-solve-analysis')), findsOneWidget);
     expect(find.byKey(const Key('solve-analysis-panel')), findsOneWidget);
     final solveRow = find.byKey(Key('solve-row-${solve.id}'));

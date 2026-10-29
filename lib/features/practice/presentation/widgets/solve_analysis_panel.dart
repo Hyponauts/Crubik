@@ -11,6 +11,9 @@ import '../../domain/solve_record.dart';
 import 'practice_formatters.dart';
 import 'practice_panel.dart';
 
+const _averageRecognitionColor = Color(0x7AFF6B6B);
+const _averageExecutionColor = Color(0x7AB388FF);
+
 class SolveAnalysisPanel extends StatefulWidget {
   const SolveAnalysisPanel({
     required this.practice,
@@ -430,10 +433,10 @@ class _ChartLegend extends StatelessWidget {
     spacing: 10,
     runSpacing: 3,
     children: const [
-      _LegendItem(color: CrubikColors.primaryAccent, label: 'RECOGNITION'),
-      _LegendItem(color: CrubikColors.secondaryAccent, label: 'EXEC'),
-      _LegendItem(color: CrubikColors.warning, label: 'RECOGNITION AO100'),
-      _LegendItem(color: CrubikColors.danger, label: 'EXEC AO100'),
+      _LegendItem(color: CrubikColors.primaryAccent, label: 'Recognition'),
+      _LegendItem(color: CrubikColors.secondaryAccent, label: 'Execution'),
+      _LegendItem(color: _averageRecognitionColor, label: 'Recognition Ao100'),
+      _LegendItem(color: _averageExecutionColor, label: 'Execution Ao100'),
     ],
   );
 }
@@ -535,11 +538,11 @@ class _StageBar extends StatelessWidget {
     final averageRecognition = average?.recognitionTime.inMicroseconds ?? 0;
     final averageExecution = average?.executionTime.inMicroseconds ?? 0;
     final tooltip =
-        '${stage.kind.label.toUpperCase()}\n'
-        'STEP ${_preciseDuration(stage.stepTime)}\n'
-        'RECOGNITION ${_preciseDuration(stage.recognitionTime)}\n'
-        'EXEC ${_preciseDuration(stage.executionTime)}'
-        '${average == null ? '' : '\nRECOGNITION AO100 ${_preciseDuration(average.recognitionTime)}\nEXEC AO100 ${_preciseDuration(average.executionTime)}\n${average.sampleCount} SOLVES'}';
+        '${stage.kind.label}\n'
+        'Step ${_preciseDuration(stage.stepTime)}\n'
+        'Recognition ${_preciseDuration(stage.recognitionTime)}\n'
+        'Execution ${_preciseDuration(stage.executionTime)}'
+        '${average == null ? '' : '\nRecognition Ao100 ${_preciseDuration(average.recognitionTime)}\nExecution Ao100 ${_preciseDuration(average.executionTime)}\n${average.sampleCount} ${average.sampleCount == 1 ? 'solve' : 'solves'}'}';
     return Tooltip(
       key: Key('stage-bar-${stage.kind.serializedValue}'),
       message: tooltip,
@@ -562,6 +565,9 @@ class _StageBar extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         _StackedTimingBar(
+                          key: Key(
+                            'stage-current-${stage.kind.serializedValue}',
+                          ),
                           recognitionMicroseconds: recognition,
                           executionMicroseconds: execution,
                           maximumMicroseconds: maximumMicroseconds,
@@ -571,22 +577,20 @@ class _StageBar extends StatelessWidget {
                           executionColor: CrubikColors.secondaryAccent,
                           showBorder: true,
                         ),
-                        if (average != null) ...[
-                          const SizedBox(width: 2),
-                          Opacity(
-                            opacity: 0.48,
-                            child: _StackedTimingBar(
-                              recognitionMicroseconds: averageRecognition,
-                              executionMicroseconds: averageExecution,
-                              maximumMicroseconds: maximumMicroseconds,
-                              availableHeight: constraints.maxHeight,
-                              width: 6,
-                              recognitionColor: CrubikColors.warning,
-                              executionColor: CrubikColors.danger,
-                              showBorder: false,
+                        if (average != null)
+                          _StackedTimingBar(
+                            key: Key(
+                              'stage-average-${stage.kind.serializedValue}',
                             ),
+                            recognitionMicroseconds: averageRecognition,
+                            executionMicroseconds: averageExecution,
+                            maximumMicroseconds: maximumMicroseconds,
+                            availableHeight: constraints.maxHeight,
+                            width: 6,
+                            recognitionColor: _averageRecognitionColor,
+                            executionColor: _averageExecutionColor,
+                            showBorder: false,
                           ),
-                        ],
                       ],
                     ),
                   ),
@@ -622,6 +626,7 @@ class _StackedTimingBar extends StatelessWidget {
     required this.recognitionColor,
     required this.executionColor,
     required this.showBorder,
+    super.key,
   });
 
   final int recognitionMicroseconds;
@@ -651,6 +656,7 @@ class _StackedTimingBar extends StatelessWidget {
         border: showBorder ? Border.all(color: CrubikColors.border) : null,
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (executionMicroseconds > 0)
             Expanded(
@@ -1260,7 +1266,7 @@ String _shortDuration(Duration? value) {
 
 String _preciseDuration(Duration? value) {
   if (value == null) return '—';
-  return '${(value.inMicroseconds / Duration.microsecondsPerSecond).toStringAsFixed(3)}S';
+  return '${(value.inMicroseconds / Duration.microsecondsPerSecond).toStringAsFixed(3)}s';
 }
 
 String _decimal(double? value) => value?.toStringAsFixed(1) ?? '—';
