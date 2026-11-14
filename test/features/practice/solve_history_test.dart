@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:crubik/features/cube/domain/smart_cube_device.dart';
 import 'package:crubik/features/practice/application/solve_history.dart';
+import 'package:crubik/features/practice/domain/practice_session.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,62 @@ void main() {
 
     expect(history.records, isEmpty);
     expect(repository.stored, isEmpty);
+  });
+
+  test(
+    'preserves a session deletion requested while history is loading',
+    () async {
+      final repository = _DelayedSolveHistoryRepository([
+        _solve('target', 1, sessionId: 'target'),
+        _solve('kept', 2, sessionId: 'kept'),
+      ]);
+      final history = SolveHistory(
+        repository: repository,
+        now: () => DateTime.utc(2026),
+      );
+
+      final initialization = history.initialize();
+      await repository.loadStarted.future;
+      history.deleteSession('target');
+      repository.completeLoad();
+
+      await initialization;
+      await history.flush();
+
+      expect(history.records.map((solve) => solve.id), ['kept']);
+      expect(repository.stored.map((solve) => solve.id), ['kept']);
+    },
+  );
+
+  test('deletes a large session in one storage operation', () async {
+    final repository = _ControlledRepository();
+    for (var index = 0; index < 1000; index++) {
+      await repository._memory.add(
+        _solve('target-$index', index, sessionId: 'target'),
+      );
+    }
+    for (var index = 0; index < 6; index++) {
+      await repository._memory.add(
+        _solve('kept-$index', index, sessionId: 'kept'),
+      );
+    }
+    final history = SolveHistory(
+      repository: repository,
+      now: () => DateTime.utc(2026),
+    );
+    await history.initialize();
+
+    history.deleteSession('target');
+    await history.flush();
+
+    expect(repository.deleteSessionCalls, 1);
+    expect(repository.deleteCalls, 0);
+    expect(history.records, hasLength(6));
+    expect(
+      history.averages.every((average) => average.sessionId == 'kept'),
+      isTrue,
+    );
+    expect((await repository.load()).length, 6);
   });
 
   test('flush waits for an in-flight history initialization', () async {
@@ -124,6 +181,31 @@ void main() {
       expect(await repository.loadRecording('one'), isNull);
     },
   );
+
+  test('session deletion waits behind an export snapshot', () async {
+    final repository = _ControlledRepository();
+    final history = SolveHistory(
+      repository: repository,
+      now: () => DateTime.utc(2026),
+    );
+    history.add(
+      _solve('target', 1, sessionId: 'target'),
+      recording: _recording(),
+    );
+    await history.flush();
+    repository.readGate = Completer<void>();
+
+    final export = history.exportJson();
+    await repository.readStarted.future;
+    history.deleteSession('target');
+    expect(history.records, isEmpty);
+    repository.readGate!.complete();
+
+    expect(await export, contains('target'));
+    await history.flush();
+    expect(await repository.load(), isEmpty);
+    expect(repository.deleteSessionCalls, 1);
+  });
 
   test('queued exports retain their own records and recordings', () async {
     final repository = _ControlledRepository();
@@ -223,12 +305,13 @@ SolveRecording _recording() => SolveRecording(
   events: const [],
 );
 
-SolveRecord _solve(String id, int second) => SolveRecord(
+SolveRecord _solve(String id, int second, {String? sessionId}) => SolveRecord(
   id: id,
   scramble: 'R U',
   elapsed: const Duration(seconds: 10),
   moveCount: 2,
-  createdAt: DateTime.utc(2026, 1, 1, 0, 0, second),
+  createdAt: DateTime.utc(2026, 1, 1).add(Duration(seconds: second)),
+  sessionId: sessionId ?? defaultPracticeSessionId,
 );
 
 final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
@@ -264,12 +347,30 @@ final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
   }
 
   @override
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  }) async {
+    await saveSessionSettings?.call();
+    final deletedIds = {
+      for (final solve in stored)
+        if (solve.sessionId == sessionId) solve.id,
+    };
+    stored.removeWhere((solve) => solve.sessionId == sessionId);
+    for (final id in deletedIds) {
+      recordingsBySolveId.remove(id);
+    }
+  }
+
+  @override
   Future<SolveRecording?> loadRecording(String solveId) async =>
       recordingsBySolveId[solveId];
 }
 
 final class _ControlledRepository implements SolveHistoryRepository {
   final _memory = MemorySolveHistoryRepository();
+  int deleteCalls = 0;
+  int deleteSessionCalls = 0;
   bool failWrites = false;
   int _activeWrites = 0;
   int maximumConcurrentWrites = 0;
@@ -310,5 +411,20 @@ final class _ControlledRepository implements SolveHistoryRepository {
   }
 
   @override
-  Future<void> delete(String id) => _memory.delete(id);
+  Future<void> delete(String id) {
+    deleteCalls++;
+    return _memory.delete(id);
+  }
+
+  @override
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  }) {
+    deleteSessionCalls++;
+    return _memory.deleteSession(
+      sessionId,
+      saveSessionSettings: saveSessionSettings,
+    );
+  }
 }

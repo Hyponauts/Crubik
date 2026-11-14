@@ -7,6 +7,7 @@ import '../../features/cube/application/remembered_cube_store.dart';
 import '../../features/cube/application/scramble_cache.dart';
 import '../../features/cube/domain/cube_model.dart';
 import '../../features/practice/domain/practice_session.dart';
+import '../../features/practice/domain/solve_average.dart';
 import '../../features/practice/domain/solve_analysis.dart';
 import '../../features/practice/domain/solve_method.dart';
 import '../../features/practice/domain/solve_record.dart';
@@ -26,6 +27,8 @@ class SolveEntries extends Table {
 
   BoolColumn get timingReliable =>
       boolean().withDefault(const Constant(true))();
+
+  TextColumn get outcome => text().withDefault(const Constant('completed'))();
 
   DateTimeColumn get createdAt => dateTime()();
 
@@ -86,8 +89,34 @@ class SolveAnalyses extends Table {
   Set<Column<Object>> get primaryKey => {solveId};
 }
 
+@DataClassName('SolveAverageRow')
+@TableIndex(name: 'solve_averages_end_solve_id', columns: {#endSolveId})
+class SolveAverages extends Table {
+  TextColumn get kind => text()();
+
+  TextColumn get endSolveId =>
+      text().references(SolveEntries, #id, onDelete: KeyAction.cascade)();
+
+  TextColumn get sessionId => text()();
+
+  DateTimeColumn get createdAt => dateTime()();
+
+  TextColumn get status => text()();
+
+  IntColumn get elapsedMs => integer().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {kind, endSolveId};
+}
+
 @DriftDatabase(
-  tables: [SolveEntries, AppSettings, SolveRecordings, SolveAnalyses],
+  tables: [
+    SolveEntries,
+    AppSettings,
+    SolveRecordings,
+    SolveAnalyses,
+    SolveAverages,
+  ],
 )
 final class CrubikDatabase extends _$CrubikDatabase {
   CrubikDatabase([QueryExecutor? executor])
@@ -103,7 +132,7 @@ final class CrubikDatabase extends _$CrubikDatabase {
       );
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -127,6 +156,13 @@ final class CrubikDatabase extends _$CrubikDatabase {
         await migrator.addColumn(solveEntries, solveEntries.sessionName);
         await migrator.addColumn(solveEntries, solveEntries.methodJson);
         await migrator.createTable(solveAnalyses);
+      }
+      if (from < 6) {
+        await migrator.addColumn(solveEntries, solveEntries.outcome);
+        await migrator.createTable(solveAverages);
+      }
+      if (from < 7) {
+        await migrator.createIndex(solveAveragesEndSolveId);
       }
     },
     beforeOpen: (_) async {
@@ -265,7 +301,10 @@ final class DriftScrambleCacheStore implements ScrambleCacheStore {
 }
 
 final class DriftSolveHistoryRepository
-    implements SolveHistoryRepository, SolveAnalysisRepository {
+    implements
+        SolveHistoryRepository,
+        SolveAnalysisRepository,
+        SolveAverageRepository {
   const DriftSolveHistoryRepository(this._database);
 
   final CrubikDatabase _database;
@@ -282,6 +321,10 @@ final class DriftSolveHistoryRepository
             scramble: row.scramble,
             elapsed: Duration(milliseconds: row.elapsedMs),
             isTimingReliable: row.timingReliable,
+            outcome: SolveOutcome.values.firstWhere(
+              (value) => value.name == row.outcome,
+              orElse: () => SolveOutcome.completed,
+            ),
             moveCount: row.moveCount,
             createdAt: row.createdAt.toUtc(),
             inputSource: SolveInputSource.fromSerializedValue(row.inputSource),
@@ -336,6 +379,7 @@ final class DriftSolveHistoryRepository
                 createdAt: solve.createdAt,
                 inputSource: solve.inputSource.serializedValue,
                 timingReliable: Value(solve.isTimingReliable),
+                outcome: Value(solve.outcome.name),
                 inspectionElapsedMs: Value(
                   solve.inspectionElapsed?.inMilliseconds,
                 ),
@@ -361,6 +405,73 @@ final class DriftSolveHistoryRepository
       });
 
   @override
+  Future<List<SolveAverageRecord>> loadAverages() async {
+    final rows = await _database.select(_database.solveAverages).get();
+    return [
+      for (final row in rows)
+        SolveAverageRecord(
+          kind: SolveAverageKind.values.byName(row.kind),
+          endSolveId: row.endSolveId,
+          sessionId: row.sessionId,
+          createdAt: row.createdAt.toUtc(),
+          status: SolveAverageStatus.values.byName(row.status),
+          elapsed: row.elapsedMs == null
+              ? null
+              : Duration(milliseconds: row.elapsedMs!),
+        ),
+    ];
+  }
+
+  @override
+  Future<void> addWithAverages(
+    SolveRecord solve, {
+    SolveRecording? recording,
+    required List<SolveAverageRecord> averages,
+  }) => _database.transaction(() async {
+    await add(solve, recording: recording);
+    await _insertAverages(averages);
+  });
+
+  @override
+  Future<void> deleteWithAverages(
+    String solveId, {
+    required Set<String> affectedEndSolveIds,
+    required List<SolveAverageRecord> replacements,
+  }) => _database.transaction(() async {
+    if (affectedEndSolveIds.isNotEmpty) {
+      await (_database.delete(
+        _database.solveAverages,
+      )..where((entry) => entry.endSolveId.isIn(affectedEndSolveIds))).go();
+    }
+    await delete(solveId);
+    await _insertAverages(replacements);
+  });
+
+  @override
+  Future<void> replaceAllAverages(List<SolveAverageRecord> averages) =>
+      _database.transaction(() async {
+        await _database.delete(_database.solveAverages).go();
+        await _insertAverages(averages);
+      });
+
+  Future<void> _insertAverages(List<SolveAverageRecord> averages) async {
+    if (averages.isEmpty) return;
+    await _database.batch((batch) {
+      batch.insertAllOnConflictUpdate(_database.solveAverages, [
+        for (final average in averages)
+          SolveAveragesCompanion.insert(
+            kind: average.kind.name,
+            endSolveId: average.endSolveId,
+            sessionId: average.sessionId,
+            createdAt: average.createdAt,
+            status: average.status.name,
+            elapsedMs: Value(average.elapsed?.inMilliseconds),
+          ),
+      ]);
+    });
+  }
+
+  @override
   Future<void> saveAnalysis(String solveId, SolveAnalysis analysis) async {
     await _database
         .into(_database.solveAnalyses)
@@ -379,6 +490,20 @@ final class DriftSolveHistoryRepository
       _database.solveEntries,
     )..where((entry) => entry.id.equals(id))).go();
   }
+
+  @override
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  }) => _database.transaction(() async {
+    await (_database.delete(
+      _database.solveAverages,
+    )..where((entry) => entry.sessionId.equals(sessionId))).go();
+    await (_database.delete(
+      _database.solveEntries,
+    )..where((entry) => entry.sessionId.equals(sessionId))).go();
+    await saveSessionSettings?.call();
+  });
 }
 
 SolveMethodConfig _decodeMethod(String value) {

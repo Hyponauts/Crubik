@@ -74,6 +74,10 @@ final class CubeConnectionController extends ChangeNotifier {
   int? get batteryLevel => _batteryLevel;
   String? get errorMessage => _errorMessage;
   bool get isConnected => _status == CubeConnectionStatus.connected;
+  bool get canResetCubeState =>
+      isConnected &&
+      _connectedCube?.vendor == CubeVendor.gan &&
+      _session is ResettableSmartCubeSession;
   AutomaticReconnectPhase get automaticReconnectPhase =>
       _automaticReconnectPhase;
   String? get automaticReconnectDeviceName => _automaticReconnectDeviceName;
@@ -414,6 +418,47 @@ final class CubeConnectionController extends ChangeNotifier {
     _status = CubeConnectionStatus.disconnected;
     notifyListeners();
     await _releaseActiveSession();
+  }
+
+  /// Resets the cube's own facelet state and waits for a fresh solved report.
+  /// A successful BLE write alone does not prove that the cube accepted it.
+  Future<void> resetCubeStateToSolved() async {
+    final session = _session;
+    if (!canResetCubeState || session is! ResettableSmartCubeSession) {
+      throw const CubeConnectionFailure(
+        CubeConnectionFailureCode.unsupportedProtocol,
+        'This cube does not support state reset.',
+      );
+    }
+    final resettableSession = session as ResettableSmartCubeSession;
+
+    final confirmed = Completer<void>();
+    final subscription = events.listen((event) {
+      if (!identical(_session, session) || confirmed.isCompleted) return;
+      if (event case SmartCubeStateEvent(:final state) when state.isSolved) {
+        confirmed.complete();
+      }
+    });
+    _diagnostics.add('protocol.reset.started');
+    try {
+      await resettableSession.resetStateToSolved();
+      await confirmed.future.timeout(const Duration(seconds: 4));
+      if (!identical(_session, session)) {
+        throw const CubeConnectionFailure(
+          CubeConnectionFailureCode.connectionFailed,
+          'The cube disconnected before state reset was confirmed.',
+        );
+      }
+      _diagnostics.add('protocol.reset.confirmed');
+    } on TimeoutException {
+      _diagnostics.add('protocol.reset.unconfirmed');
+      throw const CubeConnectionFailure(
+        CubeConnectionFailureCode.handshakeFailed,
+        'The cube did not confirm a solved state. Try again.',
+      );
+    } finally {
+      await subscription.cancel();
+    }
   }
 
   Future<void> _handleLinkLoss(SmartCubeSession session) async {

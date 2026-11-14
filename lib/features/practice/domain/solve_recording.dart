@@ -36,6 +36,7 @@ CubeProtocolFamily cubeProtocolFamilyFromRecordingValue(String value) =>
 
 enum RecordingGapReason {
   missedMoves('missed_moves'),
+  recoveryTimeout('recovery_timeout'),
   malformedPacket('malformed_packet'),
   connectionDiscontinuity('connection_discontinuity'),
   stateTransition('state_transition'),

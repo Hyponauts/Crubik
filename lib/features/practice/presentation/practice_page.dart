@@ -103,11 +103,10 @@ class _PracticePageState extends State<PracticePage> {
               title: const FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: PracticeBrand(compact: true),
+                child: PracticeBrand(),
               ),
               actions: [
                 PracticeConnectionButton(
-                  practice: widget.practiceController,
                   connection: widget.connectionController,
                   onPressed: _showConnectionDialog,
                   compact: true,
@@ -361,7 +360,6 @@ class _InputModeChooser extends StatelessWidget {
             children: [
               const Expanded(child: PracticeBrand()),
               PracticeConnectionButton(
-                practice: practice,
                 connection: connection,
                 onPressed: onConnectPressed,
               ),

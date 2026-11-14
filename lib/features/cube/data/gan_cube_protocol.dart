@@ -90,6 +90,10 @@ abstract interface class GanPacketDecoder {
 
   Uint8List get requestHardwareCommand;
 
+  Uint8List get resetToSolvedCommand;
+
+  void resetTracking();
+
   GanDecodedPacket decode(
     Uint8List packet,
     DateTime receivedAt, {
@@ -229,6 +233,36 @@ final class GanGen2PacketDecoder implements GanPacketDecoder {
   Uint8List get requestHardwareCommand => Uint8List(20)..[0] = 0x05;
 
   @override
+  Uint8List get resetToSolvedCommand => Uint8List.fromList([
+    0x0a,
+    0x05,
+    0x39,
+    0x77,
+    0,
+    0,
+    0x01,
+    0x23,
+    0x45,
+    0x67,
+    0x89,
+    0xab,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ]);
+
+  @override
+  void resetTracking() {
+    _lastSerial = -1;
+    _cubeTimestampMs = 0;
+  }
+
+  @override
   GanDecodedPacket decode(
     Uint8List packet,
     DateTime receivedAt, {
@@ -364,8 +398,50 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
   final _GanModernPacketLayout _layout;
   int _serial = -1;
   int _lastSerial = -1;
-  DateTime? _lastLocalTimestamp;
   final List<SmartCubeMoveEvent> _moveBuffer = [];
+  SmartCubeStateEvent? _pendingState;
+  int _recoveryStalls = 0;
+
+  bool get hasPendingRecovery => _pendingState != null;
+
+  GanDecodedPacket expirePendingRecovery(
+    DateTime receivedAt,
+    Duration hostTimestamp,
+  ) {
+    final pending = _pendingState;
+    if (pending == null) {
+      return const GanDecodedPacket(kind: GanPacketKind.ignored);
+    }
+    _pendingState = null;
+    _recoveryStalls = 0;
+    _lastSerial = pending.serial;
+    _moveBuffer.clear();
+    return GanDecodedPacket(
+      kind: GanPacketKind.state,
+      events: [
+        SmartCubeDataGapEvent(
+          reason: SmartCubeDataGapReason.recoveryTimeout,
+          receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
+        ),
+        pending,
+      ],
+    );
+  }
+
+  @override
+  Uint8List get resetToSolvedCommand => Uint8List(
+    _layout.commandLength,
+  )..setRange(0, _layout.resetCommandPrefix.length, _layout.resetCommandPrefix);
+
+  @override
+  void resetTracking() {
+    _serial = -1;
+    _lastSerial = -1;
+    _moveBuffer.clear();
+    _pendingState = null;
+    _recoveryStalls = 0;
+  }
 
   @override
   Uint8List get requestFaceletsCommand {
@@ -455,7 +531,6 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     if (_lastSerial == -1) {
       return const GanDecodedPacket(kind: GanPacketKind.move);
     }
-    _lastLocalTimestamp = receivedAt;
     final base = _layout.dataStart;
     final cubeTimestamp = message.getBitWord(base, 32, littleEndian: true);
     final serial = message.getBitWord(base + 32, 16, littleEndian: true);
@@ -503,9 +578,48 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
         ),
       );
     }
-    return _evictMoveBuffer(
+    final decoded = _evictMoveBuffer(
       kind: GanPacketKind.moveHistory,
       requestMissing: false,
+    );
+    final pending = _pendingState;
+    if (pending == null) {
+      return decoded;
+    }
+    if (decoded.moves.isNotEmpty) _recoveryStalls = 0;
+    if (decoded.moves.isEmpty) _recoveryStalls++;
+    if (_recoveryStalls < 2) {
+      final head = _moveBuffer.firstOrNull;
+      final startSerial = head?.serial ?? ((pending.serial + 1) & 0xff);
+      final count = head == null
+          ? ((pending.serial - _lastSerial) & 0xff) + 1
+          : (head.serial - _lastSerial) & 0xff;
+      return GanDecodedPacket(
+        kind: GanPacketKind.moveHistory,
+        events: decoded.events,
+        commands: [
+          ...decoded.commands,
+          _requestMoveHistory(startSerial, count),
+        ],
+      );
+    }
+    // Two history replies without progress leave no reliable move sequence.
+    _pendingState = null;
+    _recoveryStalls = 0;
+    _lastSerial = pending.serial;
+    _moveBuffer.clear();
+    return GanDecodedPacket(
+      kind: GanPacketKind.moveHistory,
+      events: [
+        ...decoded.events,
+        SmartCubeDataGapEvent(
+          reason: SmartCubeDataGapReason.missedMoves,
+          receivedAt: receivedAt,
+          hostTimestamp: hostTimestamp,
+        ),
+        pending,
+      ],
+      commands: decoded.commands,
     );
   }
 
@@ -529,15 +643,26 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
       _lastSerial = _serial;
       return GanDecodedPacket(kind: GanPacketKind.state, events: [state]);
     }
-    final quietFor = receivedAt.difference(_lastLocalTimestamp ?? receivedAt);
     final difference = (_serial - _lastSerial) & 0xff;
-    if (difference > 0 && quietFor > const Duration(milliseconds: 500)) {
+    if (difference > 0) {
+      if (_pendingState?.serial != state.serial) _recoveryStalls = 0;
+      _pendingState = state;
       final bufferHead = _moveBuffer.firstOrNull;
       final startSerial = bufferHead?.serial ?? ((_serial + 1) & 0xff);
       return GanDecodedPacket(
         kind: GanPacketKind.state,
-        events: [state],
         commands: [_requestMoveHistory(startSerial, difference + 1)],
+      );
+    }
+    if (_moveBuffer.isNotEmpty) {
+      if (_pendingState?.serial != state.serial) _recoveryStalls = 0;
+      _pendingState = state;
+      final head = _moveBuffer.first;
+      return GanDecodedPacket(
+        kind: GanPacketKind.state,
+        commands: [
+          _requestMoveHistory(head.serial, (head.serial - _lastSerial) & 0xff),
+        ],
       );
     }
     return GanDecodedPacket(kind: GanPacketKind.state, events: [state]);
@@ -558,8 +683,18 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
     required GanPacketKind kind,
     required bool requestMissing,
   }) {
-    final moves = <SmartCubeMoveEvent>[];
+    final events = <SmartCubeEvent>[];
     final commands = <Uint8List>[];
+    void appendReachedState() {
+      final pending = _pendingState;
+      if (pending != null && ((pending.serial - _lastSerial) & 0xff) == 0) {
+        _pendingState = null;
+        _recoveryStalls = 0;
+        events.add(pending);
+      }
+    }
+
+    appendReachedState();
     while (_moveBuffer.isNotEmpty) {
       final head = _moveBuffer.first;
       final difference = _lastSerial == -1
@@ -571,10 +706,11 @@ final class GanModernPacketDecoder implements GanPacketDecoder {
         }
         break;
       }
-      moves.add(_moveBuffer.removeAt(0));
+      events.add(_moveBuffer.removeAt(0));
       _lastSerial = head.serial;
+      appendReachedState();
     }
-    return GanDecodedPacket(kind: kind, events: moves, commands: commands);
+    return GanDecodedPacket(kind: kind, events: events, commands: commands);
   }
 
   void _injectRecoveredMove(SmartCubeMoveEvent move) {
@@ -628,6 +764,7 @@ final class _GanModernPacketLayout {
     required this.faceletsCommandPrefix,
     required this.hardwareCommandPrefix,
     required this.moveHistoryCommandPrefix,
+    required this.resetCommandPrefix,
     required this.eventTypeStart,
     required this.dataLengthStart,
     required this.dataStart,
@@ -646,6 +783,7 @@ final class _GanModernPacketLayout {
   final List<int> faceletsCommandPrefix;
   final List<int> hardwareCommandPrefix;
   final List<int> moveHistoryCommandPrefix;
+  final List<int> resetCommandPrefix;
   final int eventTypeStart;
   final int dataLengthStart;
   final int dataStart;
@@ -665,6 +803,24 @@ const _ganGen3Layout = _GanModernPacketLayout(
   faceletsCommandPrefix: [0x68, 0x01],
   hardwareCommandPrefix: [0x68, 0x04],
   moveHistoryCommandPrefix: [0x68, 0x03],
+  resetCommandPrefix: [
+    0x68,
+    0x05,
+    0x05,
+    0x39,
+    0x77,
+    0,
+    0,
+    0x01,
+    0x23,
+    0x45,
+    0x67,
+    0x89,
+    0xab,
+    0,
+    0,
+    0,
+  ],
   eventTypeStart: 8,
   dataLengthStart: 16,
   dataStart: 24,
@@ -683,6 +839,24 @@ const _ganGen4Layout = _GanModernPacketLayout(
   faceletsCommandPrefix: [0xdd, 0x04, 0x00, 0xed, 0, 0],
   hardwareCommandPrefix: [0xdf, 0x03, 0, 0, 0],
   moveHistoryCommandPrefix: [0xd1, 0x04],
+  resetCommandPrefix: [
+    0xd2,
+    0x0d,
+    0x05,
+    0x39,
+    0x77,
+    0,
+    0,
+    0x01,
+    0x23,
+    0x45,
+    0x67,
+    0x89,
+    0xab,
+    0,
+    0,
+    0,
+  ],
   eventTypeStart: 0,
   dataLengthStart: 8,
   dataStart: 16,

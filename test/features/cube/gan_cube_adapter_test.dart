@@ -47,6 +47,38 @@ void main() {
   });
 
   test(
+    'GAN adapter sends hardware reset then requests fresh facelets',
+    () async {
+      final cipher = GanCubeCipher(macSalt: cubeMacSalt(_macAddress));
+      final facelets = Uint8List(20);
+      _setBits(facelets, 0, 4, 0x04);
+      _setBits(facelets, 4, 8, 10);
+      _setSolvedCubies(facelets, 12, 33, 47, 91);
+      final central = _FakeBleCentral(
+        services: const [ganGen2Service],
+        responsePacket: cipher.encrypt(facelets),
+      );
+      final session = await const GanCubeAdapter().connect(
+        central,
+        _supportedGanCandidate(),
+        monotonicClock: StopwatchMonotonicClock(),
+      );
+      await session.start();
+
+      expect(session, isA<ResettableSmartCubeSession>());
+      await (session as ResettableSmartCubeSession).resetStateToSolved();
+
+      final decoder = createGanPacketDecoder(GanProtocolGeneration.gen2);
+      expect(central.writes, hasLength(4));
+      expect(cipher.decrypt(central.writes[2]), decoder.resetToSolvedCommand);
+      expect(cipher.decrypt(central.writes[3]), decoder.requestFaceletsCommand);
+
+      await session.close();
+      await central.close();
+    },
+  );
+
+  test(
     'GAN12 ui Maglev uses advertised hardware MAC instead of platform id',
     () async {
       const hardwareMac = '11:22:33:44:55:66';

@@ -11,6 +11,165 @@ import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('presets end in their named last-layer stage', () {
+    expect(
+      SolveMethodConfig.preset(SolveMethodPreset.cfop).stages.last,
+      SolveStageKind.lastLayerPermuted,
+    );
+    expect(
+      SolveMethodConfig.preset(SolveMethodPreset.twoLookCfop).stages.skip(5),
+      [
+        SolveStageKind.lastLayerEdgesOriented,
+        SolveStageKind.lastLayerCornersOriented,
+        SolveStageKind.lastLayerPermuted,
+      ],
+    );
+    expect(
+      SolveMethodConfig.preset(SolveMethodPreset.fourLookCfop).stages.skip(5),
+      [
+        SolveStageKind.lastLayerEdgesOriented,
+        SolveStageKind.lastLayerCornersOriented,
+        SolveStageKind.lastLayerCornersPermuted,
+        SolveStageKind.lastLayerEdgesPermuted,
+      ],
+    );
+    expect(SolveStageKind.lastLayerCornersOriented.shortLabel, 'COLL');
+    expect(SolveStageKind.lastLayerPermuted.shortLabel, 'PLL');
+  });
+
+  test('legacy solved stage is read as the named PLL stage', () {
+    final method = SolveMethodConfig.fromJson({
+      'preset': 'custom',
+      'stages': ['cross', 'solved'],
+    });
+
+    expect(method.stages.last, SolveStageKind.lastLayerPermuted);
+    expect(method.toJson()['stages'], ['cross', 'last_layer_permuted']);
+  });
+
+  test(
+    'last-layer stage predicates distinguish orientation and permutation',
+    () {
+      const orientation = SolveOrientation(crossFace: CubeFace.up);
+      final cornerTwist = CubeState.fromCubieCoordinates(
+        cornerPermutation: List.generate(8, (index) => index),
+        cornerOrientations: [0, 0, 0, 0, 1, 2, 0, 0],
+        edgePermutation: List.generate(12, (index) => index),
+        edgeOrientations: List.filled(12, 0),
+      );
+      final edgeFlip = CubeState.fromCubieCoordinates(
+        cornerPermutation: List.generate(8, (index) => index),
+        cornerOrientations: List.filled(8, 0),
+        edgePermutation: List.generate(12, (index) => index),
+        edgeOrientations: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
+      );
+      final cornerCycle = CubeState.fromCubieCoordinates(
+        cornerPermutation: [0, 1, 2, 3, 4, 6, 7, 5],
+        cornerOrientations: List.filled(8, 0),
+        edgePermutation: List.generate(12, (index) => index),
+        edgeOrientations: List.filled(12, 0),
+      );
+      final edgeCycle = CubeState.fromCubieCoordinates(
+        cornerPermutation: List.generate(8, (index) => index),
+        cornerOrientations: List.filled(8, 0),
+        edgePermutation: [0, 1, 2, 3, 5, 6, 4, 7, 8, 9, 10, 11],
+        edgeOrientations: List.filled(12, 0),
+      );
+
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerEdgesOriented,
+        ).isAchieved(cornerTwist, orientation),
+        isTrue,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerCornersOriented,
+        ).isAchieved(cornerTwist, orientation),
+        isFalse,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerEdgesOriented,
+        ).isAchieved(edgeFlip, orientation),
+        isFalse,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerCornersOriented,
+        ).isAchieved(edgeFlip, orientation),
+        isTrue,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerEdgesPermuted,
+        ).isAchieved(cornerCycle, orientation),
+        isTrue,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerCornersPermuted,
+        ).isAchieved(cornerCycle, orientation),
+        isFalse,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerCornersPermuted,
+        ).isAchieved(edgeCycle, orientation),
+        isTrue,
+      );
+      expect(
+        descriptorFor(
+          SolveStageKind.lastLayerEdgesPermuted,
+        ).isAchieved(edgeCycle, orientation),
+        isFalse,
+      );
+    },
+  );
+
+  test('implicit solved check closes the last named custom stage', () {
+    final solve = SolveRecord(
+      id: 'implicit-solved',
+      scramble: 'D',
+      elapsed: const Duration(seconds: 1),
+      moveCount: 1,
+      createdAt: DateTime.utc(2026, 10, 28),
+      inputSource: SolveInputSource.smartCube,
+      method: SolveMethodConfig(
+        preset: SolveMethodPreset.custom,
+        customStages: const [
+          SolveStageKind.cross,
+          SolveStageKind.lastLayerEdgesOriented,
+        ],
+      ),
+    );
+    SolveAnalysis analyze(String notation) => const SolveAnalyzer().analyze(
+      solve: solve,
+      recording: SolveRecording(
+        protocolFamily: CubeProtocolFamily.gan,
+        cubeTimestampsAvailable: false,
+        orientationAvailable: false,
+        events: [
+          RecordedMove(
+            sequence: 0,
+            hostOffset: const Duration(seconds: 1),
+            move: CubeMove.parse(notation),
+            serial: 1,
+            recovered: false,
+          ),
+        ],
+      ),
+    );
+
+    final complete = analyze("D'");
+    final incomplete = analyze('D');
+
+    expect(complete.isComplete, isTrue);
+    expect(complete.stages.last.kind, SolveStageKind.lastLayerEdgesOriented);
+    expect(complete.stages.last.moves.single.notation, "D'");
+    expect(incomplete.isComplete, isFalse);
+  });
+
   test('detects all CFOP milestones including four separate F2L pairs', () {
     final solve = _solve(scramble: 'R');
     final recording = SolveRecording(
@@ -45,12 +204,57 @@ void main() {
         SolveStageKind.f2lPair3,
         SolveStageKind.f2lPair4,
         SolveStageKind.lastLayerOriented,
-        SolveStageKind.solved,
+        SolveStageKind.lastLayerPermuted,
       ]),
     );
     expect(analysis.stages.first.moves.single.notation, "R'");
     expect(analysis.stages.skip(1).every((stage) => stage.skipped), isTrue);
     expect(analysis.stages.first.regripCount, isNull);
+  });
+
+  test('analyzes a double quarter turn as one turn with full step TPS', () {
+    final solve = SolveRecord(
+      id: 'double-turn',
+      scramble: 'B2',
+      elapsed: const Duration(seconds: 2),
+      moveCount: 1,
+      createdAt: DateTime.utc(2026, 10, 29),
+      inputSource: SolveInputSource.smartCube,
+      method: SolveMethodConfig(
+        preset: SolveMethodPreset.custom,
+        customStages: const [SolveStageKind.lastLayerPermuted],
+      ),
+    );
+    final recording = SolveRecording(
+      protocolFamily: CubeProtocolFamily.gan,
+      cubeTimestampsAvailable: false,
+      orientationAvailable: false,
+      events: [
+        for (var index = 0; index < 2; index++)
+          RecordedMove(
+            sequence: index,
+            hostOffset: Duration(seconds: index + 1),
+            move: CubeMove.parse('B'),
+            serial: index,
+            recovered: false,
+          ),
+      ],
+    );
+
+    final analysis = const SolveAnalyzer().analyze(
+      solve: solve,
+      recording: recording,
+    );
+    final stage = analysis.stages.single;
+
+    expect(analysis.isComplete, isTrue);
+    expect(analysis.moveCount, 1);
+    expect(stage.moves.single.notation, 'B2');
+    expect(stage.recognitionTime, const Duration(seconds: 1));
+    expect(stage.executionTime, const Duration(seconds: 1));
+    expect(stage.stepTime, const Duration(seconds: 2));
+    expect(stage.turnsPerSecond, 0.5);
+    expect(solve.turnsPerSecond, 0.5);
   });
 
   test('marks analysis unavailable when telemetry contains a gap', () {
@@ -75,7 +279,10 @@ void main() {
 
     expect(analysis.isComplete, isFalse);
     expect(analysis.stages, isEmpty);
-    expect(analysis.failureReason, contains('telemetry gap'));
+    expect(
+      analysis.failureReason,
+      contains('telemetry gap (missed_moves, 1 missing moves)'),
+    );
   });
 
   test('keeps the first Cross boundary when later turns break it', () {
@@ -88,7 +295,10 @@ void main() {
       inputSource: SolveInputSource.smartCube,
       method: SolveMethodConfig(
         preset: SolveMethodPreset.custom,
-        customStages: const [SolveStageKind.cross, SolveStageKind.solved],
+        customStages: const [
+          SolveStageKind.cross,
+          SolveStageKind.lastLayerPermuted,
+        ],
       ),
     );
     final moves = ["R'", 'R', "R'", "D'"];
@@ -134,7 +344,10 @@ void main() {
         inputSource: SolveInputSource.smartCube,
         method: SolveMethodConfig(
           preset: SolveMethodPreset.custom,
-          customStages: const [SolveStageKind.cross, SolveStageKind.solved],
+          customStages: const [
+            SolveStageKind.cross,
+            SolveStageKind.lastLayerPermuted,
+          ],
         ),
       );
       final recording = SolveRecording(
@@ -193,6 +406,34 @@ void main() {
     );
 
     expect(analysis.stages.first.regripCount, 1);
+  });
+
+  test('gyro capability without two samples does not report zero regrips', () {
+    final analysis = const SolveAnalyzer().analyze(
+      solve: _solve(scramble: 'R'),
+      recording: SolveRecording(
+        protocolFamily: CubeProtocolFamily.gan,
+        cubeTimestampsAvailable: false,
+        orientationAvailable: true,
+        events: [
+          RecordedOrientation(
+            sequence: 0,
+            hostOffset: Duration.zero,
+            orientation: _orientationForDegrees(0),
+          ),
+          RecordedMove(
+            sequence: 1,
+            hostOffset: const Duration(seconds: 1),
+            move: CubeMove.parse("R'"),
+            serial: 1,
+            recovered: false,
+          ),
+        ],
+      ),
+    );
+
+    expect(analysis.isComplete, isTrue);
+    expect(analysis.stages.first.regripCount, isNull);
   });
 
   test('round trips versioned analysis JSON', () {

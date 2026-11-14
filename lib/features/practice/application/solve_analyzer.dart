@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../cube/domain/cube_model.dart';
 import '../../cube/domain/smart_cube_event.dart';
+import '../domain/countable_solve.dart';
 import '../domain/solve_analysis.dart';
 import '../domain/solve_method.dart';
 import '../domain/solve_record.dart';
@@ -26,12 +27,13 @@ final class SolveAnalyzer {
     required SolveRecording recording,
     DateTime? analyzedAt,
   }) {
-    if (recording.events.any((event) => event is RecordedDataGap)) {
+    final gap = recording.events.whereType<RecordedDataGap>().firstOrNull;
+    if (gap != null) {
       return _unavailable(
         solve,
         recording,
         analyzedAt,
-        'The recording contains a telemetry gap.',
+        'The recording contains a telemetry gap (${gap.reason.serializedValue}${gap.missingMoveCount == null ? '' : ', ${gap.missingMoveCount} missing moves'}).',
       );
     }
     if (recording.moves.isEmpty) {
@@ -56,10 +58,13 @@ final class SolveAnalyzer {
     }
 
     final descriptors = solve.method.stages.map(descriptorFor).toList();
+    final countableSolve = CountableSolve.fromMoves(
+      recording.moves.map((move) => move.move),
+    );
     final initialState = state.copy();
     final statesAfterMove = <CubeState>[];
-    for (final move in recording.moves) {
-      state.apply(move.move);
+    for (final move in countableSolve.moves) {
+      state.apply(move);
       statesAfterMove.add(state.copy());
     }
     final regripTimes = recording.orientationAvailable
@@ -70,12 +75,15 @@ final class SolveAnalyzer {
         : [orientation!];
     List<SolveStageAnalysis>? stages;
     for (final candidateOrientation in orientations) {
-      final reachesEveryStage = descriptors.every(
-        (descriptor) => descriptor.isAchieved(state, candidateOrientation),
-      );
+      final reachesEveryStage =
+          state.isSolved &&
+          descriptors.every(
+            (descriptor) => descriptor.isAchieved(state, candidateOrientation),
+          );
       if (!reachesEveryStage) continue;
       final candidate = _buildStages(
         recording,
+        countableSolve,
         initialState,
         statesAfterMove,
         descriptors,
@@ -102,6 +110,7 @@ final class SolveAnalyzer {
 
   List<SolveStageAnalysis>? _buildStages(
     SolveRecording recording,
+    CountableSolve countableSolve,
     CubeState initialState,
     List<CubeState> statesAfterMove,
     List<StateDescriptor> descriptors,
@@ -113,11 +122,15 @@ final class SolveAnalyzer {
 
     for (var index = 0; index < descriptors.length; index++) {
       final descriptor = descriptors[index];
-      if (descriptor.isAchieved(initialState, orientation)) continue;
+      final isFinalStage = index == descriptors.length - 1;
+      bool isAchieved(CubeState state) =>
+          descriptor.isAchieved(state, orientation) &&
+          (!isFinalStage || state.isSolved);
+      if (isAchieved(initialState)) continue;
 
       var boundary = earliestBoundary;
       while (boundary < statesAfterMove.length &&
-          !descriptor.isAchieved(statesAfterMove[boundary], orientation)) {
+          !isAchieved(statesAfterMove[boundary])) {
         boundary++;
       }
       if (boundary == statesAfterMove.length) return null;
@@ -136,6 +149,7 @@ final class SolveAnalyzer {
       stages.add(
         _analyzeStage(
           recording,
+          countableSolve,
           descriptors[index].kind,
           firstMoveIndex,
           boundary,
@@ -164,21 +178,28 @@ final class SolveAnalyzer {
 
   SolveStageAnalysis _analyzeStage(
     SolveRecording recording,
+    CountableSolve countableSolve,
     SolveStageKind kind,
     int firstMoveIndex,
     int lastMoveIndex,
     List<Duration>? regripTimes,
   ) {
-    final moves = recording.moves
-        .sublist(firstMoveIndex, lastMoveIndex + 1)
-        .map((move) => move.move)
-        .toList();
-    final recognition = firstMoveIndex == 0
+    final moves = countableSolve.moves.sublist(
+      firstMoveIndex,
+      lastMoveIndex + 1,
+    );
+    final firstRawMoveIndex = countableSolve.rawMoveSpans[firstMoveIndex].first;
+    final lastRawMoveIndex = countableSolve.rawMoveSpans[lastMoveIndex].last;
+    final recognition = firstRawMoveIndex == 0
         ? recording.firstMoveFromSolveStart.duration
-        : recording.intervalForMove(firstMoveIndex).duration;
+        : recording.intervalForMove(firstRawMoveIndex).duration;
 
     Duration? execution = Duration.zero;
-    for (var index = firstMoveIndex + 1; index <= lastMoveIndex; index++) {
+    for (
+      var index = firstRawMoveIndex + 1;
+      index <= lastRawMoveIndex;
+      index++
+    ) {
       final interval = recording.intervalForMove(index).duration;
       if (interval == null) {
         execution = null;
@@ -187,10 +208,10 @@ final class SolveAnalyzer {
       execution = execution! + interval;
     }
 
-    final finalMove = recording.moves[lastMoveIndex];
-    final stageStartedAt = firstMoveIndex == 0
+    final finalMove = recording.moves[lastRawMoveIndex];
+    final stageStartedAt = firstRawMoveIndex == 0
         ? Duration.zero
-        : recording.moves[firstMoveIndex - 1].hostOffset;
+        : recording.moves[firstRawMoveIndex - 1].hostOffset;
     return SolveStageAnalysis(
       kind: kind,
       recognitionTime: recognition,
@@ -232,7 +253,7 @@ final class SolveAnalyzer {
     return candidateCrossMoves < currentCrossMoves;
   }
 
-  List<Duration> _detectRegripTimes(SolveRecording recording) {
+  List<Duration>? _detectRegripTimes(SolveRecording recording) {
     final samples = recording.events
         .whereType<RecordedOrientation>()
         .map((event) {
@@ -243,7 +264,7 @@ final class SolveAnalyzer {
         })
         .whereType<({Duration time, CubeOrientation orientation})>()
         .toList();
-    if (samples.length < 2) return const [];
+    if (samples.length < 2) return null;
 
     final regripTimes = <Duration>[];
     var baseline = samples.first.orientation;

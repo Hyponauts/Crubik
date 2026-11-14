@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../application/practice_controller.dart';
+import '../../domain/solve_average.dart';
+import '../../domain/solve_record.dart';
 import 'practice_formatters.dart';
 import 'practice_panel.dart';
 
@@ -42,10 +44,16 @@ class SessionSummaryPanel extends StatelessWidget {
           TableRow(
             children: [
               _Cell('LAST', style: labelStyle, alignment: Alignment.centerLeft),
-              _TimeCell(practice.lastTime),
-              _TimeCell(practice.averageOfFive),
-              _TimeCell(practice.averageOfTwelve),
-              _TimeCell(practice.averageOfOneHundred),
+              _SingleCell(practice.solves.firstOrNull),
+              _AverageCell(
+                practice.averagesFor(SolveAverageKind.ao5).firstOrNull,
+              ),
+              _AverageCell(
+                practice.averagesFor(SolveAverageKind.ao12).firstOrNull,
+              ),
+              _AverageCell(
+                practice.averagesFor(SolveAverageKind.ao100).firstOrNull,
+              ),
             ],
           ),
           TableRow(
@@ -58,6 +66,45 @@ class SessionSummaryPanel extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SingleCell extends StatelessWidget {
+  const _SingleCell(this.solve);
+
+  final SolveRecord? solve;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentSolve = solve;
+    final value = currentSolve == null ? '—' : formatSolveResult(currentSolve);
+    return _Cell(
+      value,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: CrubikColors.text,
+        fontFeatures: const [FontFeature.tabularFigures()],
+        fontSize: 11,
+      ),
+    );
+  }
+}
+
+class _AverageCell extends StatelessWidget {
+  const _AverageCell(this.average);
+
+  final SolveAverageRecord? average;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = formatAverageResult(average);
+    return _Cell(
+      value,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: CrubikColors.text,
+        fontFeatures: const [FontFeature.tabularFigures()],
+        fontSize: 11,
       ),
     );
   }

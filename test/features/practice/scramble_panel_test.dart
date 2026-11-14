@@ -233,14 +233,14 @@ void main() {
         ),
       ),
     );
-    final headerBefore = tester.getRect(find.text('PRACTICE SCRAMBLE'));
+    final headerBefore = tester.getRect(find.text('SCRAMBLE'));
 
     await tester.tap(find.byKey(const Key('new-scramble')));
     await tester.pump();
 
     expect(practice.scramble, same(replacement));
     expect(find.byKey(const Key('scramble-loading')), findsNothing);
-    expect(tester.getRect(find.text('PRACTICE SCRAMBLE')), headerBefore);
+    expect(tester.getRect(find.text('SCRAMBLE')), headerBefore);
   });
 
   for (final viewport in [const Size(320, 568), const Size(1440, 900)]) {

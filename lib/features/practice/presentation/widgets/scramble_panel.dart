@@ -127,11 +127,7 @@ class PracticeScramblePanel extends StatelessWidget {
           : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        PracticeSectionHeader(
-          practice.pendingSolveReview == null
-              ? 'PRACTICE SCRAMBLE'
-              : 'NEXT PRACTICE SCRAMBLE',
-        ),
+        const PracticeSectionHeader('SCRAMBLE'),
         SizedBox(height: density.layoutSize(dense: 3, compact: 7, full: 14)),
         scrambleBody,
       ],

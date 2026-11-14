@@ -30,11 +30,11 @@ class PracticeSessionButton extends StatelessWidget {
           vertical: 11,
         ),
       ),
-      icon: const Icon(Icons.settings_outlined, size: 18),
+      icon: const Icon(Icons.tune, size: 18),
       label: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: compact ? 104 : 180),
         child: Text(
-          practice.selectedSession.name.toUpperCase(),
+          practice.selectedSession.name,
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -267,13 +267,12 @@ class _PracticeSessionDialogState extends State<_PracticeSessionDialog> {
   }
 
   Future<void> _deleteSession() async {
+    final session = practice.selectedSession;
     final delete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('DELETE SESSION?'),
-        content: Text(
-          'This removes “${practice.selectedSession.name}” and all of its solves.',
-        ),
+        content: Text('This removes “${session.name}” and all of its solves.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -287,7 +286,11 @@ class _PracticeSessionDialogState extends State<_PracticeSessionDialog> {
         ],
       ),
     );
-    if (delete == true) practice.deleteSelectedSession();
+    if (mounted &&
+        delete == true &&
+        practice.selectedSession.id == session.id) {
+      practice.deleteSelectedSession();
+    }
   }
 }
 

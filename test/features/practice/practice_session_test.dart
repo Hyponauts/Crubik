@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:crubik/features/cube/domain/cube_model.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/domain/practice_session.dart';
@@ -64,7 +66,46 @@ void main() {
     expect(controller.sessions.map((session) => session.id), [speed.id]);
     expect(controller.solves.single.id, 'speed');
     expect((await repository.load()).map((solve) => solve.id), ['speed']);
+    expect((await sessionStore.load())?.selectedId, speed.id);
     controller.dispose();
+  });
+
+  test('exports only the selected session and its rolling averages', () async {
+    final repository = MemorySolveHistoryRepository();
+    final sessionStore = MemoryPracticeSessionStore();
+    final speed = PracticeSession.defaultSession();
+    final other = PracticeSession(
+      id: 'other',
+      name: 'Other',
+      method: speed.method,
+    );
+    await sessionStore.save([speed, other], speed.id);
+    for (final session in [speed, other]) {
+      for (var index = 1; index <= 5; index++) {
+        await repository.add(_solve('${session.id}-$index', session, index));
+      }
+    }
+    final controller = PracticeController(
+      nextScramble: () => CubeScramble.parse('R U'),
+      repository: repository,
+      sessionStore: sessionStore,
+    );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    controller.selectSession(other.id);
+
+    final export = controller.exportJson();
+    controller.selectSession(speed.id);
+    final payload = jsonDecode(await export) as Map<String, dynamic>;
+
+    expect(payload['solves'], hasLength(5));
+    expect(payload['averages'], hasLength(1));
+    for (final entry in [
+      ...payload['solves'] as List,
+      ...payload['averages'] as List,
+    ]) {
+      expect(entry['session_id'], other.id);
+    }
   });
 }
 

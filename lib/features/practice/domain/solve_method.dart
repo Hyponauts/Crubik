@@ -6,16 +6,30 @@ enum SolveStageKind {
   f2lPair2('f2l_pair_2', 'F2L pair 2', 'F2L 2'),
   f2lPair3('f2l_pair_3', 'F2L pair 3', 'F2L 3'),
   f2lPair4('f2l_pair_4', 'F2L pair 4', 'F2L 4'),
-  firstLayer('first_layer', 'First layer', 'LAYER 1'),
-  secondLayer('second_layer', 'Second layer', 'LAYER 2'),
-  lastLayerEdgesOriented('last_layer_edges_oriented', 'Edge orientation', 'EO'),
-  lastLayerOriented('last_layer_oriented', 'Last-layer orientation', 'OLL'),
+  firstLayer('first_layer', 'First Layer (FL)', 'FL'),
+  secondLayer('second_layer', 'Second Layer (SL)', 'SL'),
+  lastLayerEdgesOriented(
+    'last_layer_edges_oriented',
+    'Last-layer edges oriented (EOLL)',
+    'EOLL',
+  ),
+  lastLayerCornersOriented(
+    'last_layer_corners_oriented',
+    'Last-layer corners oriented (COLL)',
+    'COLL',
+  ),
+  lastLayerOriented('last_layer_oriented', 'Oriented last layer (OLL)', 'OLL'),
   lastLayerCornersPermuted(
     'last_layer_corners_permuted',
-    'Corner permutation',
+    'Last-layer corners permuted (CPLL)',
     'CPLL',
   ),
-  solved('solved', 'Solved', 'PLL');
+  lastLayerEdgesPermuted(
+    'last_layer_edges_permuted',
+    'Last-layer edges permuted (EPLL)',
+    'EPLL',
+  ),
+  lastLayerPermuted('last_layer_permuted', 'Permuted last layer (PLL)', 'PLL');
 
   const SolveStageKind(this.serializedValue, this.label, this.shortLabel);
 
@@ -23,10 +37,12 @@ enum SolveStageKind {
   final String label;
   final String shortLabel;
 
-  static SolveStageKind fromSerializedValue(String value) => values.firstWhere(
-    (stage) => stage.serializedValue == value,
-    orElse: () => throw FormatException('Unknown solve stage: $value'),
-  );
+  static SolveStageKind fromSerializedValue(String value) => value == 'solved'
+      ? SolveStageKind.lastLayerPermuted
+      : values.firstWhere(
+          (stage) => stage.serializedValue == value,
+          orElse: () => throw FormatException('Unknown solve stage: $value'),
+        );
 }
 
 enum SolveMethodPreset {
@@ -104,7 +120,7 @@ final class SolveMethodConfig {
     SolveStageKind.f2lPair3,
     SolveStageKind.f2lPair4,
     SolveStageKind.lastLayerOriented,
-    SolveStageKind.solved,
+    SolveStageKind.lastLayerPermuted,
   ];
 
   static const _twoLookCfopStages = [
@@ -114,8 +130,8 @@ final class SolveMethodConfig {
     SolveStageKind.f2lPair3,
     SolveStageKind.f2lPair4,
     SolveStageKind.lastLayerEdgesOriented,
-    SolveStageKind.lastLayerOriented,
-    SolveStageKind.solved,
+    SolveStageKind.lastLayerCornersOriented,
+    SolveStageKind.lastLayerPermuted,
   ];
 
   static const _fourLookCfopStages = [
@@ -125,9 +141,9 @@ final class SolveMethodConfig {
     SolveStageKind.f2lPair3,
     SolveStageKind.f2lPair4,
     SolveStageKind.lastLayerEdgesOriented,
-    SolveStageKind.lastLayerOriented,
+    SolveStageKind.lastLayerCornersOriented,
     SolveStageKind.lastLayerCornersPermuted,
-    SolveStageKind.solved,
+    SolveStageKind.lastLayerEdgesPermuted,
   ];
 
   static const _layerByLayerStages = [
@@ -135,9 +151,9 @@ final class SolveMethodConfig {
     SolveStageKind.firstLayer,
     SolveStageKind.secondLayer,
     SolveStageKind.lastLayerEdgesOriented,
-    SolveStageKind.lastLayerOriented,
+    SolveStageKind.lastLayerCornersOriented,
     SolveStageKind.lastLayerCornersPermuted,
-    SolveStageKind.solved,
+    SolveStageKind.lastLayerEdgesPermuted,
   ];
 }
 
@@ -179,10 +195,14 @@ StateDescriptor descriptorFor(SolveStageKind kind) => switch (kind) {
   SolveStageKind.secondLayer => const _SecondLayerDescriptor(),
   SolveStageKind.lastLayerEdgesOriented =>
     const _LastLayerEdgesOrientedDescriptor(),
+  SolveStageKind.lastLayerCornersOriented =>
+    const _LastLayerCornersOrientedDescriptor(),
   SolveStageKind.lastLayerOriented => const _LastLayerOrientedDescriptor(),
   SolveStageKind.lastLayerCornersPermuted =>
     const _LastLayerCornersPermutedDescriptor(),
-  SolveStageKind.solved => const _SolvedDescriptor(),
+  SolveStageKind.lastLayerEdgesPermuted =>
+    const _LastLayerEdgesPermutedDescriptor(),
+  SolveStageKind.lastLayerPermuted => const _LastLayerPermutedDescriptor(),
 };
 
 const _solvedFacelets =
@@ -190,6 +210,18 @@ const _solvedFacelets =
 
 const _upCross = [1, 3, 5, 7, 10, 19, 37, 46];
 const _downCross = [28, 30, 32, 34, 16, 25, 43, 52];
+const _upEdges = [
+  [5, 10],
+  [7, 19],
+  [3, 37],
+  [1, 46],
+];
+const _downEdges = [
+  [32, 16],
+  [28, 25],
+  [30, 43],
+  [34, 52],
+];
 const _upCorners = [
   [8, 9, 20],
   [6, 18, 38],
@@ -218,6 +250,12 @@ bool _positionsSolved(CubeState state, Iterable<int> positions) {
 
 List<List<int>> _firstLayerCorners(SolveOrientation orientation) =>
     orientation.crossFace == CubeFace.up ? _upCorners : _downCorners;
+
+List<List<int>> _lastLayerCorners(SolveOrientation orientation) =>
+    orientation.crossFace == CubeFace.up ? _downCorners : _upCorners;
+
+List<List<int>> _lastLayerEdges(SolveOrientation orientation) =>
+    orientation.crossFace == CubeFace.up ? _downEdges : _upEdges;
 
 CubeFace _lastLayerFace(SolveOrientation orientation) =>
     orientation.crossFace == CubeFace.up ? CubeFace.down : CubeFace.up;
@@ -318,6 +356,22 @@ final class _LastLayerOrientedDescriptor implements StateDescriptor {
   }
 }
 
+final class _LastLayerCornersOrientedDescriptor implements StateDescriptor {
+  const _LastLayerCornersOrientedDescriptor();
+
+  @override
+  SolveStageKind get kind => SolveStageKind.lastLayerCornersOriented;
+
+  @override
+  bool isAchieved(CubeState state, SolveOrientation orientation) {
+    if (!const _SecondLayerDescriptor().isAchieved(state, orientation)) {
+      return false;
+    }
+    final colors = state.colorsFor(_lastLayerFace(orientation));
+    return [0, 2, 6, 8].every((index) => colors[index] == colors[4]);
+  }
+}
+
 final class _LastLayerCornersPermutedDescriptor implements StateDescriptor {
   const _LastLayerCornersPermutedDescriptor();
 
@@ -329,18 +383,39 @@ final class _LastLayerCornersPermutedDescriptor implements StateDescriptor {
     if (!const _LastLayerOrientedDescriptor().isAchieved(state, orientation)) {
       return false;
     }
-    final positions = orientation.crossFace == CubeFace.up
-        ? _downCorners.expand((corner) => corner)
-        : _upCorners.expand((corner) => corner);
-    return _positionsSolved(state, positions);
+    return _positionsSolved(
+      state,
+      _lastLayerCorners(orientation).expand((corner) => corner),
+    );
   }
 }
 
-final class _SolvedDescriptor implements StateDescriptor {
-  const _SolvedDescriptor();
+final class _LastLayerEdgesPermutedDescriptor implements StateDescriptor {
+  const _LastLayerEdgesPermutedDescriptor();
 
   @override
-  SolveStageKind get kind => SolveStageKind.solved;
+  SolveStageKind get kind => SolveStageKind.lastLayerEdgesPermuted;
+
+  @override
+  bool isAchieved(CubeState state, SolveOrientation orientation) {
+    if (!const _LastLayerEdgesOrientedDescriptor().isAchieved(
+      state,
+      orientation,
+    )) {
+      return false;
+    }
+    return _positionsSolved(
+      state,
+      _lastLayerEdges(orientation).expand((edge) => edge),
+    );
+  }
+}
+
+final class _LastLayerPermutedDescriptor implements StateDescriptor {
+  const _LastLayerPermutedDescriptor();
+
+  @override
+  SolveStageKind get kind => SolveStageKind.lastLayerPermuted;
 
   @override
   bool isAchieved(CubeState state, SolveOrientation orientation) =>

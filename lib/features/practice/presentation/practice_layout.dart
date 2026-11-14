@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../cube/application/cube_connection_controller.dart';
 import '../application/practice_controller.dart';
-import 'sessions_view.dart';
 import 'widgets/cube_3d_view.dart';
 import 'widgets/manual_move_input.dart';
 import 'widgets/practice_brand.dart';
@@ -42,7 +41,6 @@ class DesktopPracticeLayout extends StatelessWidget {
             children: [
               const Expanded(child: PracticeBrand()),
               PracticeConnectionButton(
-                practice: practice,
                 connection: connection,
                 onPressed: onConnectPressed,
               ),
@@ -76,45 +74,45 @@ class DesktopPracticeLayout extends StatelessWidget {
                       );
                     },
                   )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: CrubikLayout.desktopContentMaxWidth,
-                              ),
-                              child: Column(
-                                children: [
-                                  if (reviewing)
-                                    SizedBox(
-                                      height: 480,
-                                      child: PracticeAccessoryPanel(
-                                        practice: practice,
-                                        contained: true,
-                                      ),
-                                    )
-                                  else
-                                    _DesktopPracticeHero(
-                                      practice: practice,
-                                      connection: connection,
-                                    ),
-                                  const SizedBox(height: 16),
-                                  PracticeScramblePanel(practice: practice),
-                                ],
-                              ),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxHeight < 520;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: math.min(constraints.maxWidth * 0.43, 480),
+                            child: Column(
+                              children: [
+                                Flexible(
+                                  child: PracticeScramblePanel(
+                                    practice: practice,
+                                    density: compact
+                                        ? ScramblePanelDensity.compact
+                                        : ScramblePanelDensity.full,
+                                    bounded: true,
+                                  ),
+                                ),
+                                SizedBox(height: compact ? 8 : 12),
+                                SessionSummaryPanel(practice: practice),
+                              ],
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      SizedBox(
-                        width: CrubikLayout.sessionSidebarWidth,
-                        child: SessionSidebar(practice: practice),
-                      ),
-                    ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: reviewing
+                                ? PracticeAccessoryPanel(
+                                    practice: practice,
+                                    contained: true,
+                                  )
+                                : _DesktopPracticeHero(
+                                    practice: practice,
+                                    connection: connection,
+                                  ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
           ),
         ],
@@ -186,6 +184,11 @@ class _MobilePreparationPortrait extends StatelessWidget {
         final compactHeight =
             constraints.maxHeight < CrubikLayout.compactPreparationHeight ||
             textScale >= CrubikLayout.largeTextScale;
+        final scrambleHeightFraction = textScale >= 2
+            ? 0.26
+            : compactHeight
+            ? 0.34
+            : 0.42;
         final showReadyAction =
             !reviewing &&
             practice.inputMode == PracticeInputMode.demo &&
@@ -193,8 +196,10 @@ class _MobilePreparationPortrait extends StatelessWidget {
         return Column(
           key: const Key('mobile-preparation-layout'),
           children: [
-            Flexible(
-              flex: compactHeight ? 3 : 4,
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * scrambleHeightFraction,
+              ),
               child: PracticeScramblePanel(
                 practice: practice,
                 density: ScramblePanelDensity.compact,
@@ -203,7 +208,6 @@ class _MobilePreparationPortrait extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Expanded(
-              flex: compactHeight ? 7 : 6,
               child: reviewing
                   ? PracticeMobileReviewPanel(practice: practice)
                   : _CompactCubePanel(
@@ -250,13 +254,6 @@ class _MobilePreparationLandscape extends StatelessWidget {
       key: const Key('mobile-preparation-landscape-layout'),
       children: [
         Expanded(
-          flex: 5,
-          child: reviewing
-              ? PracticeMobileReviewPanel(practice: practice)
-              : _CompactCubePanel(practice: practice, connection: connection),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
           flex: 6,
           child: Column(
             children: [
@@ -283,6 +280,13 @@ class _MobilePreparationLandscape extends StatelessWidget {
               ],
             ],
           ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 5,
+          child: reviewing
+              ? PracticeMobileReviewPanel(practice: practice)
+              : _CompactCubePanel(practice: practice, connection: connection),
         ),
       ],
     );
@@ -499,7 +503,6 @@ class _DesktopPracticeHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cube = _DesktopCubeStage(practice: practice);
     final showAccessory = showsPracticeAccessory(practice);
     return PracticePanel(
       key: const Key('cube-panel'),
@@ -516,21 +519,60 @@ class _DesktopPracticeHero extends StatelessWidget {
               connection: connection,
             ),
           ),
-          if (!showAccessory)
-            Center(child: cube)
-          else
-            Row(
-              children: [
-                Expanded(child: cube),
-                Container(width: 1, height: 280, color: CrubikColors.border),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: PracticeAccessoryPanel(practice: practice),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final dimension = math.min(
+                  280.0,
+                  math.min(
+                    constraints.maxHeight - 12,
+                    constraints.maxWidth * (showAccessory ? 0.45 : 0.8),
                   ),
-                ),
-              ],
+                );
+                final cube = _DesktopCubeStage(
+                  practice: practice,
+                  dimension: dimension,
+                );
+                if (!showAccessory) return Center(child: cube);
+                if (constraints.maxWidth < 440) {
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: _DesktopCubeStage(
+                            practice: practice,
+                            dimension: math.min(dimension, 170),
+                          ),
+                        ),
+                      ),
+                      PracticeAccessoryPanel(practice: practice, compact: true),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: cube),
+                    Container(
+                      width: 1,
+                      height: math.min(280, constraints.maxHeight),
+                      color: CrubikColors.border,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: constraints.maxWidth < 620 ? 12 : 24,
+                        ),
+                        child: PracticeAccessoryPanel(
+                          practice: practice,
+                          compact: constraints.maxWidth < 620,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
+          ),
         ],
       ),
     );
@@ -538,9 +580,10 @@ class _DesktopPracticeHero extends StatelessWidget {
 }
 
 class _DesktopCubeStage extends StatelessWidget {
-  const _DesktopCubeStage({required this.practice});
+  const _DesktopCubeStage({required this.practice, required this.dimension});
 
   final PracticeController practice;
+  final double dimension;
 
   @override
   Widget build(BuildContext context) {
@@ -548,7 +591,7 @@ class _DesktopCubeStage extends StatelessWidget {
       state: practice.cubeState,
       lastMove: practice.lastAppliedMove,
       moveRevision: practice.cubeMoveRevision,
-      dimension: 280,
+      dimension: dimension,
     );
   }
 }

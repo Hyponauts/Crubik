@@ -1,7 +1,7 @@
 import '../../cube/domain/cube_model.dart';
 import 'solve_method.dart';
 
-const currentSolveAnalyzerVersion = 3;
+const currentSolveAnalyzerVersion = 6;
 
 final class SolveStageAnalysis {
   SolveStageAnalysis({
@@ -31,11 +31,11 @@ final class SolveStageAnalysis {
   }
 
   double? get turnsPerSecond {
-    final execution = executionTime;
-    if (moves.isEmpty || execution == null || execution.inMicroseconds == 0) {
+    final duration = stepTime;
+    if (moves.isEmpty || duration == null || duration.inMicroseconds == 0) {
       return null;
     }
-    return moves.length / (execution.inMicroseconds / 1000000);
+    return moves.length / (duration.inMicroseconds / 1000000);
   }
 
   Map<String, Object?> toJson() => {
@@ -67,14 +67,16 @@ final class SolveStageTimingAverage {
   const SolveStageTimingAverage({
     required this.recognitionTime,
     required this.executionTime,
+    required this.stepTime,
     required this.sampleCount,
+    required this.turnsPerSecond,
   });
 
-  final Duration recognitionTime;
-  final Duration executionTime;
+  final Duration? recognitionTime;
+  final Duration? executionTime;
+  final Duration? stepTime;
   final int sampleCount;
-
-  Duration get stepTime => recognitionTime + executionTime;
+  final double? turnsPerSecond;
 }
 
 final class SolveAnalysis {
@@ -139,7 +141,7 @@ Duration? _sumAvailable(Iterable<Duration?> values) {
   var sum = Duration.zero;
   var hasValue = false;
   for (final value in values) {
-    if (value == null) continue;
+    if (value == null) return null;
     hasValue = true;
     sum += value;
   }

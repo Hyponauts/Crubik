@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -7,14 +6,17 @@ import '../../../core/time/monotonic_clock.dart';
 import '../../cube/domain/cube_model.dart';
 import '../../cube/domain/smart_cube_device.dart';
 import '../../cube/domain/smart_cube_event.dart';
+import '../domain/countable_solve.dart';
 import '../domain/practice_session.dart';
 import '../domain/solve_analysis.dart';
+import '../domain/solve_average.dart';
 import '../domain/solve_method.dart';
 import '../domain/solve_record.dart';
 import '../domain/solve_recording.dart';
 import 'solve_analyzer.dart';
 import 'solve_history.dart';
 import 'solve_recording_builder.dart';
+import 'solve_statistics.dart';
 
 enum PracticePhase {
   manualReady,
@@ -151,8 +153,6 @@ final class PracticeController extends ChangeNotifier {
   late String _selectedSessionId;
   final Map<String, SolveAnalysis> _analyses = {};
   final Map<String, Future<SolveAnalysis?>> _analysisRequests = {};
-  Future<void> _sessionPersistenceQueue = Future.value();
-  Object? _sessionPersistenceError;
   bool _sessionsInitialized = false;
   final Duration preInspectionDelay;
   final Duration inspectionDuration;
@@ -199,6 +199,49 @@ final class PracticeController extends ChangeNotifier {
   CubeState get cubeState => _cubeState;
   List<CubeMove> get currentMoves => List.unmodifiable(_currentMoves);
   List<SolveRecord> get allSolves => _history.records;
+  List<SolveAverageRecord> averagesFor(SolveAverageKind kind) =>
+      _history.averagesFor(_selectedSessionId, kind);
+  SolveAverageWindow? windowForAverage(SolveAverageRecord average) =>
+      _history.windowFor(average);
+
+  /// Loads only the trimmed window when an average is expanded.
+  Future<SolveAverageDetails?> detailsForAverage(
+    SolveAverageRecord average,
+  ) async {
+    final window = _history.windowFor(average);
+    if (window == null ||
+        window.record.status != SolveAverageStatus.completed) {
+      return null;
+    }
+    final anchor = _history.records.firstWhere(
+      (solve) => solve.id == average.endSolveId,
+    );
+    final sameMethodSolves = window.includedSolves
+        .where(
+          (solve) =>
+              solve.method.preset == anchor.method.preset &&
+              listEquals(solve.method.stages, anchor.method.stages),
+        )
+        .toList();
+    final analyses = await _analysesFor(window.includedSolves);
+    final analysesById = {
+      for (var index = 0; index < window.includedSolves.length; index++)
+        window.includedSolves[index].id: analyses[index],
+    };
+    return SolveAverageDetails(
+      eligibleSolveCount: sameMethodSolves.length,
+      stages: SolveStatistics.averageStages(
+        sameMethodSolves.map((solve) => analysesById[solve.id]),
+        order: anchor.method.stages,
+      ),
+      metrics: SolveStatistics.averageMetrics(
+        includedSolves: window.includedSolves,
+        sameMethodSolves: sameMethodSolves,
+        analysesById: analysesById,
+      ),
+    );
+  }
+
   List<SolveRecord> get solves => List.unmodifiable(
     _history.records.where((solve) => solve.sessionId == _selectedSessionId),
   );
@@ -219,8 +262,7 @@ final class PracticeController extends ChangeNotifier {
   int get cubeMoveRevision => _cubeMoveRevision;
   SolveRecord? get pendingSolveReview => _pendingSolveReview;
   Listenable get clockTicks => _clockTicks;
-  Object? get persistenceError =>
-      _history.persistenceError ?? _sessionPersistenceError;
+  Object? get persistenceError => _history.persistenceError;
 
   Duration get preInspectionRemaining {
     if (_phase != PracticePhase.inspectionDelay) return Duration.zero;
@@ -329,7 +371,11 @@ final class PracticeController extends ChangeNotifier {
 
   Duration? get lastTime {
     final solve = solves.firstOrNull;
-    if (solve == null || !solve.isTimingReliable) return null;
+    if (solve == null ||
+        solve.outcome != SolveOutcome.completed ||
+        !solve.isTimingReliable) {
+      return null;
+    }
     return solve.elapsed;
   }
 
@@ -337,17 +383,32 @@ final class PracticeController extends ChangeNotifier {
 
   Duration? get sessionAverage => _meanTime(solves);
 
-  Duration? get averageOfFive => _lastAverage(solves, 5);
+  Duration? get averageOfFive =>
+      averagesFor(SolveAverageKind.ao5).firstOrNull?.elapsed;
 
-  Duration? get averageOfTwelve => _lastAverage(solves, 12);
+  Duration? get averageOfTwelve =>
+      averagesFor(SolveAverageKind.ao12).firstOrNull?.elapsed;
 
-  Duration? get averageOfOneHundred => _lastAverage(solves, 100);
+  Duration? get averageOfOneHundred =>
+      averagesFor(SolveAverageKind.ao100).firstOrNull?.elapsed;
 
-  Duration? get bestAverageOfFive => _bestAverage(solves, 5);
+  Duration? get bestAverageOfFive => _bestAverage(SolveAverageKind.ao5);
 
-  Duration? get bestAverageOfTwelve => _bestAverage(solves, 12);
+  Duration? get bestAverageOfTwelve => _bestAverage(SolveAverageKind.ao12);
 
-  Duration? get bestAverageOfOneHundred => _bestAverage(solves, 100);
+  Duration? get bestAverageOfOneHundred => _bestAverage(SolveAverageKind.ao100);
+
+  Duration? _bestAverage(SolveAverageKind kind) {
+    final times = averagesFor(
+      kind,
+    ).where((average) => average.status == SolveAverageStatus.completed);
+    Duration? best;
+    for (final average in times) {
+      final elapsed = average.elapsed!;
+      if (best == null || elapsed < best) best = elapsed;
+    }
+    return best;
+  }
 
   SolveAnalysis? analysisForCached(String solveId) => _analyses[solveId];
 
@@ -367,60 +428,57 @@ final class PracticeController extends ChangeNotifier {
   /// Skipped and unavailable stages do not contribute to their stage mean.
   Future<Map<SolveStageKind, SolveStageTimingAverage>> stageTimingAverages({
     required String sessionId,
+    SolveMethodConfig? method,
     int maximumSolveCount = 100,
   }) async {
     assert(maximumSolveCount > 0);
     final recentSolves = _history.records
         .where((solve) => solve.sessionId == sessionId)
-        .take(maximumSolveCount);
-    final analyses = await Future.wait(recentSolves.map(analysisFor));
-    final totals =
-        <
-          SolveStageKind,
-          ({
-            int recognitionMicroseconds,
-            int executionMicroseconds,
-            int sampleCount,
-          })
-        >{};
-
-    for (final analysis in analyses.whereType<SolveAnalysis>()) {
-      for (final stage in analysis.stages) {
-        final recognition = stage.recognitionTime;
-        final execution = stage.executionTime;
-        if (stage.skipped || recognition == null || execution == null) continue;
-
-        final previous = totals[stage.kind];
-        totals[stage.kind] = (
-          recognitionMicroseconds:
-              (previous?.recognitionMicroseconds ?? 0) +
-              recognition.inMicroseconds,
-          executionMicroseconds:
-              (previous?.executionMicroseconds ?? 0) + execution.inMicroseconds,
-          sampleCount: (previous?.sampleCount ?? 0) + 1,
-        );
-      }
-    }
+        .take(maximumSolveCount)
+        .toList();
+    final included = maximumSolveCount == SolveAverageKind.ao100.windowSize
+        ? SolveAverageWindow.comparisonSolves(recentSolves)
+        : recentSolves;
+    final comparable = method == null
+        ? included
+        : included.where(
+            (solve) =>
+                solve.method.preset == method.preset &&
+                listEquals(solve.method.stages, method.stages),
+          );
+    final analyses = await _analysesFor(comparable.toList());
 
     return Map.unmodifiable({
-      for (final MapEntry(key: kind, value: total) in totals.entries)
-        kind: SolveStageTimingAverage(
-          recognitionTime: Duration(
-            microseconds: total.recognitionMicroseconds ~/ total.sampleCount,
-          ),
-          executionTime: Duration(
-            microseconds: total.executionMicroseconds ~/ total.sampleCount,
-          ),
-          sampleCount: total.sampleCount,
+      for (final stage in SolveStatistics.averageStages(analyses))
+        stage.kind: SolveStageTimingAverage(
+          recognitionTime: stage.recognitionTime,
+          executionTime: stage.executionTime,
+          stepTime: stage.stepTime,
+          sampleCount: stage.sampleCount,
+          turnsPerSecond: stage.turnsPerSecond,
         ),
     });
   }
 
-  Future<String> exportJson() => _history.exportJson();
-
-  Future<void> flushPersistence() async {
-    await Future.wait([_history.flush(), _sessionPersistenceQueue]);
+  Future<List<SolveAnalysis?>> _analysesFor(List<SolveRecord> solves) async {
+    final analyses = <SolveAnalysis?>[];
+    for (var start = 0; start < solves.length; start += 8) {
+      analyses.addAll(
+        await Future.wait(solves.skip(start).take(8).map(analysisFor)),
+      );
+    }
+    return analyses;
   }
+
+  Future<String> exportJson() =>
+      _history.exportJson(sessionId: _selectedSessionId);
+
+  Future<void> writeExportJson(
+    StringSink output, {
+    required String sessionId,
+  }) => _history.writeExportJson(output, sessionId: sessionId);
+
+  Future<void> flushPersistence() => _history.flush();
 
   Future<void> initialize() async {
     final results = await Future.wait([
@@ -496,14 +554,15 @@ final class PracticeController extends ChangeNotifier {
     final deletedId = _selectedSessionId;
     _sessions.removeWhere((session) => session.id == deletedId);
     _selectedSessionId = _sessions.first.id;
-    for (final solve
-        in _history.records
-            .where((solve) => solve.sessionId == deletedId)
-            .toList()) {
+    for (final solve in _history.records) {
+      if (solve.sessionId != deletedId) continue;
       _analyses.remove(solve.id);
-      _history.delete(solve.id);
     }
-    _persistSessions();
+    if (_pendingSolveReview?.sessionId == deletedId) _pendingSolveReview = null;
+    _history.deleteSession(
+      deletedId,
+      saveSessionSettings: _sessionSettingsWrite(),
+    );
     notifyListeners();
   }
 
@@ -589,6 +648,14 @@ final class PracticeController extends ChangeNotifier {
       case SmartCubeDataGapEvent():
         if (_phase == PracticePhase.solving) {
           _recordingBuilder.recordSmartCubeGap(event);
+          if (event.reason == SmartCubeDataGapReason.recoveryTimeout) {
+            _isTimingReliable = false;
+            _completeSolve(
+              inputSource: SolveInputSource.smartCube,
+              completedAtHostTimestamp: event.hostTimestamp,
+              outcome: SolveOutcome.dnf,
+            );
+          }
         } else if (_phase == PracticePhase.inspectionDelay ||
             _phase == PracticePhase.inspection) {
           _recordingBuilder.queueSmartCubeGap(event);
@@ -848,6 +915,7 @@ final class PracticeController extends ChangeNotifier {
   void _completeSolve({
     required SolveInputSource inputSource,
     required Duration completedAtHostTimestamp,
+    SolveOutcome outcome = SolveOutcome.completed,
   }) {
     if (_phase != PracticePhase.solving) return;
     if (completedAtHostTimestamp < _solveStartedAt!) {
@@ -863,12 +931,13 @@ final class PracticeController extends ChangeNotifier {
       id: createdAt.microsecondsSinceEpoch.toString(),
       scramble: _scramble!.toString(),
       elapsed: _clock.elapsed,
-      moveCount: _currentMoves.length,
+      moveCount: CountableSolve.fromMoves(_currentMoves).moves.length,
       createdAt: createdAt,
       inputSource: inputSource,
       inspectionElapsed: _inspectionElapsed,
       startTrigger: _startTrigger,
       isTimingReliable: _isTimingReliable,
+      outcome: outcome,
       sessionId: session.id,
       sessionName: session.name,
       method: session.method,
@@ -1200,15 +1269,13 @@ final class PracticeController extends ChangeNotifier {
     }
   }
 
-  void _persistSessions() {
+  void _persistSessions() =>
+      _history.saveSessionSettings(_sessionSettingsWrite());
+
+  Future<void> Function() _sessionSettingsWrite() {
     final sessions = List<PracticeSession>.of(_sessions);
     final selectedId = _selectedSessionId;
-    _sessionPersistenceQueue = _sessionPersistenceQueue
-        .then((_) => _sessionStore.save(sessions, selectedId))
-        .then<void>((_) => _sessionPersistenceError = null)
-        .onError((error, _) {
-          _sessionPersistenceError = error;
-        });
+    return () => _sessionStore.save(sessions, selectedId);
   }
 
   @override
@@ -1222,7 +1289,12 @@ final class PracticeController extends ChangeNotifier {
 }
 
 Duration? _bestTime(List<SolveRecord> solves) {
-  final reliable = solves.where((solve) => solve.isTimingReliable).toList();
+  final reliable = solves
+      .where(
+        (solve) =>
+            solve.outcome == SolveOutcome.completed && solve.isTimingReliable,
+      )
+      .toList();
   if (reliable.isEmpty) return null;
   return reliable
       .map((solve) => solve.elapsed)
@@ -1230,39 +1302,16 @@ Duration? _bestTime(List<SolveRecord> solves) {
 }
 
 Duration? _meanTime(List<SolveRecord> solves) {
-  final reliable = solves.where((solve) => solve.isTimingReliable).toList();
+  final reliable = solves
+      .where(
+        (solve) =>
+            solve.outcome == SolveOutcome.completed && solve.isTimingReliable,
+      )
+      .toList();
   if (reliable.isEmpty) return null;
   final microseconds = reliable.fold<int>(
     0,
     (sum, solve) => sum + solve.elapsed.inMicroseconds,
   );
   return Duration(microseconds: microseconds ~/ reliable.length);
-}
-
-Duration? _lastAverage(List<SolveRecord> solves, int count) {
-  if (solves.length < count) return null;
-  return _wcaAverage(solves.take(count));
-}
-
-Duration? _bestAverage(List<SolveRecord> solves, int count) {
-  if (solves.length < count) return null;
-  Duration? best;
-  for (var start = 0; start <= solves.length - count; start++) {
-    final average = _wcaAverage(solves.skip(start).take(count));
-    if (average != null && (best == null || average < best)) best = average;
-  }
-  return best;
-}
-
-Duration? _wcaAverage(Iterable<SolveRecord> values) {
-  final solves = values.toList();
-  if (solves.length < 3 || solves.any((solve) => !solve.isTimingReliable)) {
-    return null;
-  }
-  final times = solves.map((solve) => solve.elapsed.inMicroseconds).toList()
-    ..sort();
-  final discardCount = math.max(1, (times.length * 0.05).ceil());
-  final included = times.sublist(discardCount, times.length - discardCount);
-  final total = included.fold<int>(0, (sum, value) => sum + value);
-  return Duration(microseconds: total ~/ included.length);
 }

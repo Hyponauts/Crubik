@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,13 +7,22 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../application/practice_controller.dart';
 import '../../domain/solve_analysis.dart';
+import '../../domain/solve_average.dart';
 import '../../domain/solve_method.dart';
 import '../../domain/solve_record.dart';
 import 'practice_formatters.dart';
 import 'practice_panel.dart';
 
-const _averageRecognitionColor = Color(0x7AFF6B6B);
-const _averageExecutionColor = Color(0x7AB388FF);
+const _recognitionColor = Color(0xFFC0AAEC);
+const _executionColor = Color(0xFF62C7D4);
+const _tpsColor = Color(0xFF79CFA8);
+final _averageRecognitionColor = _averageColor(_recognitionColor);
+final _averageExecutionColor = _averageColor(_executionColor);
+
+Color _averageColor(Color color) {
+  final hsv = HSVColor.fromColor(color);
+  return hsv.withHue((hsv.hue + 10) % 360).withAlpha(0.5).toColor();
+}
 
 class SolveAnalysisPanel extends StatefulWidget {
   const SolveAnalysisPanel({
@@ -82,7 +92,10 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
     final solveId = widget.solve.id;
     unawaited(
       widget.practice
-          .stageTimingAverages(sessionId: widget.solve.sessionId)
+          .stageTimingAverages(
+            sessionId: widget.solve.sessionId,
+            method: widget.solve.method,
+          )
           .then((averages) {
             if (mounted && widget.solve.id == solveId) {
               setState(() => _stageAverages = averages);
@@ -101,43 +114,29 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
   Widget build(BuildContext context) {
     final solve = widget.solve;
     final analysis = widget.practice.analysisForCached(solve.id) ?? _analysis;
-    final tabStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      fontSize: 9,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 0.4,
-    );
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!widget.embedded) ...[
           _SolveSummary(
             solve: solve,
+            analysis: analysis,
             historical: widget.historical,
-            onContinue: widget.onContinue,
             onDelete: () => unawaited(_deleteSolve()),
           ),
           const SizedBox(height: 6),
           Container(height: 1, color: CrubikColors.border),
         ],
-        SizedBox(
-          height: 40,
-          child: TabBar(
-            controller: _tabs,
-            dividerColor: CrubikColors.border,
-            labelColor: CrubikColors.text,
-            unselectedLabelColor: CrubikColors.muted,
-            labelPadding: const EdgeInsets.symmetric(horizontal: 1),
-            labelStyle: tabStyle,
-            unselectedLabelStyle: tabStyle,
-            tabs: const [
-              _AnalysisTabLabel('OVERVIEW'),
-              _AnalysisTabLabel('STEPS'),
-              _AnalysisTabLabel('SOLUTION'),
-              _AnalysisTabLabel('STATS'),
-              _AnalysisTabLabel('TPS'),
-              _AnalysisTabLabel('INFO'),
-            ],
-          ),
+        _AnalysisTabBar(
+          controller: _tabs,
+          labels: const [
+            'OVERVIEW',
+            'STEPS',
+            'SOLUTION',
+            'STATS',
+            'TPS',
+            'INFO',
+          ],
         ),
         const SizedBox(height: 4),
         Expanded(
@@ -148,11 +147,26 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
               _StepsTab(analysis: analysis),
               _SolutionTab(analysis: analysis),
               _StatsTab(solve: solve, analysis: analysis),
-              _TpsTab(analysis: analysis),
+              _TpsTab(analysis: analysis, stageAverages: _stageAverages),
               _InfoTab(solve: solve, analysis: analysis),
             ],
           ),
         ),
+        if (widget.onContinue != null) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const Key('continue-after-solve'),
+              onPressed: widget.onContinue,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('DISMISS'),
+            ),
+          ),
+        ],
       ],
     );
     if (widget.embedded) {
@@ -161,9 +175,13 @@ class _SolveAnalysisPanelState extends State<SolveAnalysisPanel>
         child: content,
       );
     }
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width >= CrubikLayout.desktopBreakpoint
+        ? 18.0
+        : 12.0;
     return PracticePanel(
       key: const Key('solve-analysis-panel'),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 8),
       child: content,
     );
   }
@@ -179,17 +197,388 @@ class _AnalysisTabLabel extends StatelessWidget {
       Tab(height: 38, child: Text(label, maxLines: 1, softWrap: false));
 }
 
+class _AnalysisTabBar extends StatelessWidget {
+  const _AnalysisTabBar({required this.labels, this.controller});
+
+  final TabController? controller;
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+      fontSize: 9,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.4,
+    );
+    return SizedBox(
+      height: 40,
+      child: TabBar(
+        controller: controller,
+        dividerColor: CrubikColors.border,
+        labelColor: CrubikColors.text,
+        unselectedLabelColor: CrubikColors.muted,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 1),
+        labelStyle: style,
+        unselectedLabelStyle: style,
+        tabs: [for (final label in labels) _AnalysisTabLabel(label)],
+      ),
+    );
+  }
+}
+
+class AverageAnalysisPanel extends StatefulWidget {
+  const AverageAnalysisPanel({
+    required this.practice,
+    required this.average,
+    required this.onOpenSolve,
+    super.key,
+  });
+
+  final PracticeController practice;
+  final SolveAverageRecord average;
+  final ValueChanged<String> onOpenSolve;
+
+  @override
+  State<AverageAnalysisPanel> createState() => _AverageAnalysisPanelState();
+}
+
+class _AverageAnalysisPanelState extends State<AverageAnalysisPanel> {
+  late Future<SolveAverageDetails?> _details;
+
+  @override
+  void initState() {
+    super.initState();
+    _details = widget.practice.detailsForAverage(widget.average);
+  }
+
+  @override
+  void didUpdateWidget(covariant AverageAnalysisPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Recalculating a window replaces its record even when the anchor and time stay the same.
+    if (!identical(oldWidget.average, widget.average)) {
+      _details = widget.practice.detailsForAverage(widget.average);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 6,
+    child: Column(
+      children: [
+        const _AnalysisTabBar(
+          labels: ['OVERVIEW', 'STEPS', 'STATS', 'TPS', 'SOLVES', 'INFO'],
+        ),
+        Expanded(
+          child: FutureBuilder<SolveAverageDetails?>(
+            future: _details,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final details = snapshot.data;
+              return TabBarView(
+                children: [
+                  _AverageOverview(details: details),
+                  _AverageSteps(details: details),
+                  _AverageStats(details: details, average: widget.average),
+                  _AverageTps(details: details),
+                  _AverageSolves(
+                    window: widget.practice.windowForAverage(widget.average),
+                    sessionSolves: widget.practice.solves,
+                    onOpenSolve: widget.onOpenSolve,
+                  ),
+                  _AverageInfo(details: details, average: widget.average),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _AverageSolves extends StatelessWidget {
+  const _AverageSolves({
+    required this.window,
+    required this.sessionSolves,
+    required this.onOpenSolve,
+  });
+
+  final SolveAverageWindow? window;
+  final List<SolveRecord> sessionSolves;
+  final ValueChanged<String> onOpenSolve;
+
+  @override
+  Widget build(BuildContext context) {
+    final window = this.window;
+    if (window == null) {
+      return const Center(child: Text('SOLVES UNAVAILABLE'));
+    }
+    final bestIds = window.excludedBest.map((solve) => solve.id).toSet();
+    final worstIds = window.excludedWorst.map((solve) => solve.id).toSet();
+    return ListView.separated(
+      key: const Key('average-member-solves'),
+      itemCount: window.solves.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final solve = window.solves[index];
+        final isBest = bestIds.contains(solve.id);
+        final isWorst = worstIds.contains(solve.id);
+        final position =
+            sessionSolves.length -
+            sessionSolves.indexWhere((item) => item.id == solve.id);
+        final status = isBest
+            ? 'BEST OUT'
+            : isWorst
+            ? 'WORST OUT'
+            : null;
+        final statusColor = isBest
+            ? CrubikColors.primaryAccent
+            : CrubikColors.danger;
+        final time = formatSolveResult(solve);
+        return InkWell(
+          key: Key('average-member-${solve.id}'),
+          onTap: () => onOpenSolve(solve.id),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+            color: status == null ? null : statusColor.withValues(alpha: 0.12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '#$position · ${formatSolveDateTime(solve.createdAt, includeYear: false)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+                if (status != null) ...[
+                  Text(
+                    status,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: statusColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Text(time),
+                const SizedBox(width: 6),
+                const Icon(Icons.arrow_forward, size: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AverageOverview extends StatelessWidget {
+  const _AverageOverview({required this.details});
+
+  final SolveAverageDetails? details;
+
+  @override
+  Widget build(BuildContext context) {
+    final stages = details?.stages ?? const <SolveAverageStage>[];
+    if (stages.isEmpty) {
+      return const Center(child: Text('STAGE DATA UNAVAILABLE'));
+    }
+    final maximum = stages
+        .map(
+          (stage) =>
+              (stage.recognitionTime?.inMicroseconds ?? 0) +
+              (stage.executionTime?.inMicroseconds ?? 0),
+        )
+        .reduce(math.max);
+    final axis = _ChartAxis.forMaximum(maximum / 1000000);
+    return _StageColumnChart(
+      axis: axis,
+      suffix: 's',
+      legend: const _ChartLegend(
+        items: [
+          (color: _recognitionColor, label: 'Recognition'),
+          (color: _executionColor, label: 'Execution'),
+        ],
+      ),
+      columns: [
+        for (final stage in stages)
+          _ChartStageColumn(
+            shortLabel: stage.kind.shortLabel,
+            tooltip:
+                '${stage.kind.label}\nRecognition ${_preciseDuration(stage.recognitionTime)}\nExecution ${_preciseDuration(stage.executionTime)}\n${stage.sampleCount} solves',
+            barBuilder: (height) => _StackedTimingBar(
+              recognitionMicroseconds:
+                  stage.recognitionTime?.inMicroseconds ?? 0,
+              executionMicroseconds: stage.executionTime?.inMicroseconds ?? 0,
+              maximumMicroseconds: axis.maximum * 1000000,
+              availableHeight: height,
+              width: 18,
+              recognitionColor: _recognitionColor,
+              executionColor: _executionColor,
+              showBorder: true,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AverageSteps extends StatelessWidget {
+  const _AverageSteps({required this.details});
+
+  final SolveAverageDetails? details;
+
+  @override
+  Widget build(BuildContext context) {
+    final stages = details?.stages ?? const <SolveAverageStage>[];
+    if (stages.isEmpty) {
+      return const Center(child: Text('STAGE DATA UNAVAILABLE'));
+    }
+    return _StageMetricsTable(
+      rows: [
+        for (final stage in stages)
+          _StageMetricRow(
+            label: stage.kind.label,
+            shortLabel: stage.kind.shortLabel,
+            recognition: stage.recognitionTime,
+            execution: stage.executionTime,
+            stepTime: stage.stepTime,
+            turns: stage.turns,
+            tps: stage.turnsPerSecond,
+            regrips: stage.regrips,
+          ),
+      ],
+    );
+  }
+}
+
+class _AverageStats extends StatelessWidget {
+  const _AverageStats({required this.details, required this.average});
+
+  final SolveAverageDetails? details;
+  final SolveAverageRecord average;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = details?.metrics;
+    return _StatsGrid(
+      values: [
+        (
+          Icons.visibility_outlined,
+          'INSPECTION',
+          _duration(metrics?.inspectionTime),
+        ),
+        (
+          Icons.timer_outlined,
+          'SOLVING TIME',
+          switch (average.status) {
+            SolveAverageStatus.completed => _duration(average.elapsed),
+            SolveAverageStatus.dnf => 'DNF',
+            SolveAverageStatus.unavailable => '—',
+          },
+        ),
+        (
+          Icons.psychology_outlined,
+          'RECOGNITION',
+          _duration(metrics?.recognitionTime),
+        ),
+        (
+          Icons.touch_app_outlined,
+          'EXECUTION',
+          _duration(metrics?.executionTime),
+        ),
+        (Icons.sync_alt, 'TURNS', _decimal(metrics?.turns)),
+        (Icons.speed, 'TPS', _decimal(metrics?.turnsPerSecond)),
+        (
+          Icons.fast_forward_outlined,
+          'STEPS SKIPPED',
+          _decimal(metrics?.skippedStages),
+        ),
+        (
+          Icons.rotate_90_degrees_ccw_outlined,
+          'REGRIPS',
+          _decimal(metrics?.regrips),
+        ),
+      ],
+    );
+  }
+}
+
+class _AverageTps extends StatelessWidget {
+  const _AverageTps({required this.details});
+
+  final SolveAverageDetails? details;
+
+  @override
+  Widget build(BuildContext context) {
+    final stages = details?.stages ?? const <SolveAverageStage>[];
+    if (stages.isEmpty) {
+      return const Center(child: Text('STAGE DATA UNAVAILABLE'));
+    }
+    return _StageTpsChart(
+      stages: [
+        for (final stage in stages)
+          (
+            label: stage.kind.label,
+            shortLabel: stage.kind.shortLabel,
+            value: stage.turnsPerSecond,
+            average: null,
+          ),
+      ],
+    );
+  }
+}
+
+class _AverageInfo extends StatelessWidget {
+  const _AverageInfo({required this.details, required this.average});
+
+  final SolveAverageDetails? details;
+  final SolveAverageRecord average;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    children: [
+      _AverageInfoRow('RESULT', formatAverageResult(average)),
+      _AverageInfoRow('WINDOW', '${average.kind.windowSize} SOLVES'),
+      _AverageInfoRow(
+        'TRIMMED',
+        '${average.kind.trimCount} BEST + ${average.kind.trimCount} WORST',
+      ),
+      _AverageInfoRow(
+        'SAME METHOD',
+        details == null ? '—' : '${details!.eligibleSolveCount} SOLVES',
+      ),
+      _AverageInfoRow('LAST SOLVE', formatSolveDateTime(average.createdAt)),
+    ],
+  );
+}
+
+class _AverageInfoRow extends StatelessWidget {
+  const _AverageInfoRow(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) =>
+      ListTile(dense: true, title: Text(label), trailing: Text(value));
+}
+
 class _SolveSummary extends StatelessWidget {
   const _SolveSummary({
     required this.solve,
+    required this.analysis,
     required this.historical,
-    required this.onContinue,
     required this.onDelete,
   });
 
   final SolveRecord solve;
+  final SolveAnalysis? analysis;
   final bool historical;
-  final VoidCallback? onContinue;
   final VoidCallback onDelete;
 
   @override
@@ -197,9 +586,9 @@ class _SolveSummary extends StatelessWidget {
     return Semantics(
       liveRegion: !historical,
       label: historical
-          ? 'Solve from ${_formatDate(solve.createdAt)}'
-          : 'Solve complete. Time ${solve.isTimingReliable ? formatPracticeDuration(solve.elapsed) : 'unavailable'}. '
-                '${solve.moveCount} moves. TPS ${solve.turnsPerSecond?.toStringAsFixed(1) ?? 'unavailable'}.',
+          ? 'Solve from ${formatSolveDateTime(solve.createdAt)}'
+          : 'Solve complete. Time ${formatSolveResult(solve, unavailableLabel: 'unavailable')}. '
+                '${solve.turnCountFor(analysis)} turns. TPS ${solve.turnsPerSecondFor(analysis)?.toStringAsFixed(1) ?? 'unavailable'}.',
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -207,33 +596,46 @@ class _SolveSummary extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    historical
-                        ? _formatDate(solve.createdAt).toUpperCase()
-                        : 'SOLVE COMPLETE',
-                    maxLines: 1,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: CrubikColors.primaryAccent,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
+                SizedBox(
+                  height: 18,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        historical
+                            ? formatSolveDateTime(solve.createdAt).toUpperCase()
+                            : 'SOLVE COMPLETE',
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: CrubikColors.primaryAccent,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.35,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    solve.isTimingReliable
-                        ? formatPracticeDuration(solve.elapsed)
-                        : 'Timing unavailable',
-                    key: const Key('finish-time'),
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      fontSize: 34,
+                SizedBox(
+                  height: 44,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        formatSolveResult(
+                          solve,
+                          unavailableLabel: 'Timing unavailable',
+                        ),
+                        key: const Key('finish-time'),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                              fontSize: 34,
+                            ),
+                      ),
                     ),
                   ),
                 ),
@@ -243,36 +645,23 @@ class _SolveSummary extends StatelessWidget {
           _SummaryMetric(
             icon: Icons.speed,
             label: 'TPS',
-            value: solve.turnsPerSecond?.toStringAsFixed(1) ?? '—',
+            value: solve.turnsPerSecondFor(analysis)?.toStringAsFixed(1) ?? '—',
             valueKey: const Key('finish-tps'),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 8),
           _SummaryMetric(
             icon: Icons.sync_alt,
             label: 'TURNS',
-            value: solve.moveCount.toString(),
+            value: solve.turnCountFor(analysis).toString(),
             valueKey: const Key('finish-moves'),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           IconButton(
             key: const Key('delete-solve-button'),
             onPressed: onDelete,
             icon: const Icon(Icons.delete_outline, size: 20),
             tooltip: 'Delete solve',
           ),
-          if (onContinue != null) ...[
-            const SizedBox(width: 2),
-            FilledButton(
-              key: const Key('continue-after-solve'),
-              onPressed: onContinue,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(48, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('OK'),
-            ),
-          ],
         ],
       ),
     );
@@ -295,36 +684,43 @@ class _SummaryMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 44,
+      width: 48,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 12, color: CrubikColors.muted),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: CrubikColors.muted,
-                    fontSize: 10,
+          SizedBox(
+            height: 18,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 11, color: CrubikColors.muted),
+                  const SizedBox(width: 3),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: CrubikColors.muted,
+                      fontSize: 10,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              key: valueKey,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontFeatures: const [FontFeature.tabularFigures()],
+          SizedBox(
+            height: 44,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  key: valueKey,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
             ),
           ),
@@ -343,7 +739,7 @@ Future<bool> confirmSolveDeletion(
     builder: (context) => AlertDialog(
       title: const Text('Delete solve?'),
       content: Text(
-        'Delete ${formatPracticeDuration(solve.elapsed)} from ${_formatDate(solve.createdAt)}? This cannot be undone.',
+        'Delete ${formatSolveResult(solve, unavailableLabel: 'a solve with unavailable timing')} from ${formatSolveDateTime(solve.createdAt)}? This cannot be undone.',
       ),
       actions: [
         TextButton(
@@ -373,70 +769,54 @@ class _OverviewTab extends StatelessWidget {
     if (analysis == null || analysis.stages.isEmpty) {
       return _AnalysisUnavailable(analysis: analysis);
     }
-    final maximum = analysis.stages
+    final maximumMicroseconds = analysis.stages
         .map(
           (stage) => [
             stage.stepTime?.inMicroseconds ?? 0,
-            stageAverages[stage.kind]?.stepTime.inMicroseconds ?? 0,
+            stageAverages[stage.kind]?.stepTime?.inMicroseconds ?? 0,
           ].reduce((current, value) => value > current ? value : current),
         )
         .fold<int>(1, (current, value) => value > current ? value : current);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
-      child: Column(
-        children: [
-          const Align(alignment: Alignment.centerRight, child: _ChartLegend()),
-          const SizedBox(height: 6),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _ChartScale(maximumMicroseconds: maximum),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      const Positioned.fill(
-                        child: CustomPaint(painter: _OverviewGridPainter()),
-                      ),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final stage in analysis.stages)
-                            Expanded(
-                              child: _StageBar(
-                                stage: stage,
-                                average: stageAverages[stage.kind],
-                                maximumMicroseconds: maximum,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+    final axis = _ChartAxis.forMaximum(
+      maximumMicroseconds / Duration.microsecondsPerSecond,
+    );
+    return _StageColumnChart(
+      axis: axis,
+      axisKey: const Key('overview-axis'),
+      suffix: 's',
+      legend: _ChartLegend(
+        items: [
+          (color: _recognitionColor, label: 'Recognition'),
+          (color: _executionColor, label: 'Execution'),
+          (color: _averageRecognitionColor, label: 'Recognition Ao100'),
+          (color: _averageExecutionColor, label: 'Execution Ao100'),
         ],
       ),
+      columns: [
+        for (final stage in analysis.stages)
+          _StageBar(
+            stage: stage,
+            average: stageAverages[stage.kind],
+            maximumMicroseconds: axis.maximum * Duration.microsecondsPerSecond,
+          ),
+      ],
     );
   }
 }
 
 class _ChartLegend extends StatelessWidget {
-  const _ChartLegend();
+  const _ChartLegend({required this.items});
+
+  final List<({Color color, String label})> items;
 
   @override
   Widget build(BuildContext context) => Wrap(
     alignment: WrapAlignment.end,
     spacing: 10,
     runSpacing: 3,
-    children: const [
-      _LegendItem(color: CrubikColors.primaryAccent, label: 'Recognition'),
-      _LegendItem(color: CrubikColors.secondaryAccent, label: 'Execution'),
-      _LegendItem(color: _averageRecognitionColor, label: 'Recognition Ao100'),
-      _LegendItem(color: _averageExecutionColor, label: 'Execution Ao100'),
+    children: [
+      for (final item in items)
+        _LegendItem(color: item.color, label: item.label),
     ],
   );
 }
@@ -469,30 +849,59 @@ class _LegendItem extends StatelessWidget {
   );
 }
 
-class _ChartScale extends StatelessWidget {
-  const _ChartScale({required this.maximumMicroseconds});
+final class _ChartAxis {
+  const _ChartAxis({required this.maximum, required this.step});
 
-  final int maximumMicroseconds;
+  factory _ChartAxis.forMaximum(double value) {
+    final desiredStep = math.max(1.0, value / 6);
+    var magnitude = 1;
+    while (desiredStep > magnitude * 10) {
+      magnitude *= 10;
+    }
+    final step = [1, 2, 5, 10]
+        .map((factor) => factor * magnitude)
+        .firstWhere((candidate) => candidate >= desiredStep);
+    return _ChartAxis(
+      maximum: step * math.max(3, (value / step).ceil()),
+      step: step,
+    );
+  }
+
+  final int maximum;
+  final int step;
+
+  int get tickCount => maximum ~/ step;
+}
+
+class _ChartScale extends StatelessWidget {
+  const _ChartScale({
+    required this.axis,
+    required this.suffix,
+    required this.bottomPadding,
+    super.key,
+  });
+
+  final _ChartAxis axis;
+  final String suffix;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
-    final maximumSeconds = maximumMicroseconds / Duration.microsecondsPerSecond;
     final style = Theme.of(context).textTheme.labelSmall?.copyWith(
       color: CrubikColors.muted,
-      fontSize: 8,
+      fontSize: 9,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
     return SizedBox(
       width: 30,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 20),
+        padding: EdgeInsets.only(bottom: bottomPadding),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(maximumSeconds.toStringAsFixed(1), style: style),
-            Text((maximumSeconds / 2).toStringAsFixed(1), style: style),
-            Text('0', style: style),
+            for (var value = axis.maximum; value >= 0; value -= axis.step)
+              Text('$value$suffix', style: style),
           ],
         ),
       ),
@@ -500,23 +909,149 @@ class _ChartScale extends StatelessWidget {
   }
 }
 
-class _OverviewGridPainter extends CustomPainter {
-  const _OverviewGridPainter();
+class _ChartGridPainter extends CustomPainter {
+  const _ChartGridPainter({
+    required this.tickCount,
+    required this.bottomPadding,
+  });
+
+  final int tickCount;
+  final double bottomPadding;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = CrubikColors.border
       ..strokeWidth = 1;
-    final chartHeight = size.height - 20;
-    for (final fraction in const [0.0, 0.5, 1.0]) {
-      final y = chartHeight * fraction;
+    final chartHeight = size.height - bottomPadding;
+    for (var tick = 0; tick <= tickCount; tick++) {
+      final y = chartHeight * tick / tickCount;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _OverviewGridPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ChartGridPainter oldDelegate) =>
+      oldDelegate.tickCount != tickCount ||
+      oldDelegate.bottomPadding != bottomPadding;
+}
+
+class _StageColumnChart extends StatelessWidget {
+  const _StageColumnChart({
+    required this.axis,
+    required this.suffix,
+    required this.legend,
+    required this.columns,
+    this.axisKey,
+  });
+
+  final _ChartAxis axis;
+  final String suffix;
+  final Widget legend;
+  final List<Widget> columns;
+  final Key? axisKey;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
+    child: Column(
+      children: [
+        Align(alignment: Alignment.centerRight, child: legend),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Row(
+            children: [
+              _ChartScale(
+                key: axisKey,
+                axis: axis,
+                suffix: suffix,
+                bottomPadding: 20,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _ChartGridPainter(
+                          tickCount: axis.tickCount,
+                          bottomPadding: 20,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final column in columns) Expanded(child: column),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChartStageColumn extends StatelessWidget {
+  const _ChartStageColumn({
+    required this.shortLabel,
+    required this.tooltip,
+    required this.barBuilder,
+    this.tooltipKey,
+  });
+
+  final String shortLabel;
+  final String tooltip;
+  final Widget Function(double availableHeight) barBuilder;
+  final Key? tooltipKey;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    key: tooltipKey,
+    message: tooltip,
+    triggerMode: TooltipTriggerMode.tap,
+    showDuration: const Duration(seconds: 4),
+    child: Semantics(
+      button: true,
+      label: tooltip.replaceAll('\n', '. '),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) => Align(
+                  alignment: Alignment.bottomCenter,
+                  child: barBuilder(constraints.maxHeight),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 20,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    shortLabel,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: CrubikColors.muted,
+                      fontSize: 9,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _StageBar extends StatelessWidget {
@@ -535,82 +1070,46 @@ class _StageBar extends StatelessWidget {
     final recognition = stage.recognitionTime?.inMicroseconds ?? 0;
     final execution = stage.executionTime?.inMicroseconds ?? 0;
     final average = this.average;
-    final averageRecognition = average?.recognitionTime.inMicroseconds ?? 0;
-    final averageExecution = average?.executionTime.inMicroseconds ?? 0;
+    final averageRecognition = average?.recognitionTime?.inMicroseconds ?? 0;
+    final averageExecution = average?.executionTime?.inMicroseconds ?? 0;
     final tooltip =
         '${stage.kind.label}\n'
         'Step ${_preciseDuration(stage.stepTime)}\n'
         'Recognition ${_preciseDuration(stage.recognitionTime)}\n'
         'Execution ${_preciseDuration(stage.executionTime)}'
         '${average == null ? '' : '\nRecognition Ao100 ${_preciseDuration(average.recognitionTime)}\nExecution Ao100 ${_preciseDuration(average.executionTime)}\n${average.sampleCount} ${average.sampleCount == 1 ? 'solve' : 'solves'}'}';
-    return Tooltip(
-      key: Key('stage-bar-${stage.kind.serializedValue}'),
-      message: tooltip,
-      triggerMode: TooltipTriggerMode.tap,
-      showDuration: const Duration(seconds: 4),
-      child: Semantics(
-        button: true,
-        label: tooltip.replaceAll('\n', '. '),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) => Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _StackedTimingBar(
-                          key: Key(
-                            'stage-current-${stage.kind.serializedValue}',
-                          ),
-                          recognitionMicroseconds: recognition,
-                          executionMicroseconds: execution,
-                          maximumMicroseconds: maximumMicroseconds,
-                          availableHeight: constraints.maxHeight,
-                          width: 18,
-                          recognitionColor: CrubikColors.primaryAccent,
-                          executionColor: CrubikColors.secondaryAccent,
-                          showBorder: true,
-                        ),
-                        if (average != null)
-                          _StackedTimingBar(
-                            key: Key(
-                              'stage-average-${stage.kind.serializedValue}',
-                            ),
-                            recognitionMicroseconds: averageRecognition,
-                            executionMicroseconds: averageExecution,
-                            maximumMicroseconds: maximumMicroseconds,
-                            availableHeight: constraints.maxHeight,
-                            width: 6,
-                            recognitionColor: _averageRecognitionColor,
-                            executionColor: _averageExecutionColor,
-                            showBorder: false,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 5),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  stage.kind.shortLabel,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: CrubikColors.muted,
-                    fontSize: 9,
-                  ),
-                ),
-              ),
-            ],
+    return _ChartStageColumn(
+      tooltipKey: Key('stage-bar-${stage.kind.serializedValue}'),
+      shortLabel: stage.kind.shortLabel,
+      tooltip: tooltip,
+      barBuilder: (height) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _StackedTimingBar(
+            key: Key('stage-current-${stage.kind.serializedValue}'),
+            recognitionMicroseconds: recognition,
+            executionMicroseconds: execution,
+            maximumMicroseconds: maximumMicroseconds,
+            availableHeight: height,
+            width: 18,
+            recognitionColor: _recognitionColor,
+            executionColor: _executionColor,
+            showBorder: true,
           ),
-        ),
+          if (average != null)
+            _StackedTimingBar(
+              key: Key('stage-average-${stage.kind.serializedValue}'),
+              recognitionMicroseconds: averageRecognition,
+              executionMicroseconds: averageExecution,
+              maximumMicroseconds: maximumMicroseconds,
+              availableHeight: height,
+              width: 6,
+              recognitionColor: _averageRecognitionColor,
+              executionColor: _averageExecutionColor,
+              showBorder: false,
+            ),
+        ],
       ),
     );
   }
@@ -652,7 +1151,9 @@ class _StackedTimingBar extends StatelessWidget {
       height: height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(showBorder ? 4 : 2),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(showBorder ? 4 : 2),
+        ),
         border: showBorder ? Border.all(color: CrubikColors.border) : null,
       ),
       child: Column(
@@ -661,12 +1162,18 @@ class _StackedTimingBar extends StatelessWidget {
           if (executionMicroseconds > 0)
             Expanded(
               flex: executionMicroseconds,
-              child: ColoredBox(color: executionColor),
+              child: ColoredBox(
+                key: const Key('execution-segment'),
+                color: executionColor,
+              ),
             ),
           if (recognitionMicroseconds > 0)
             Expanded(
               flex: recognitionMicroseconds,
-              child: ColoredBox(color: recognitionColor),
+              child: ColoredBox(
+                key: const Key('recognition-segment'),
+                color: recognitionColor,
+              ),
             ),
         ],
       ),
@@ -681,108 +1188,161 @@ class _StepsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final analysis = this.analysis;
-    if (analysis == null || analysis.stages.isEmpty) {
-      return _AnalysisUnavailable(analysis: analysis);
-    }
-    return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth < 620
-          ? _CompactSteps(stages: analysis.stages)
-          : _WideSteps(stages: analysis.stages),
+    final stages = analysis?.stages ?? const <SolveStageAnalysis>[];
+    if (stages.isEmpty) return _AnalysisUnavailable(analysis: analysis);
+    return _StageMetricsTable(
+      includeTotal: true,
+      rows: [for (final stage in stages) _StageMetricRow.fromSolve(stage)],
     );
   }
 }
 
-class _CompactSteps extends StatelessWidget {
-  const _CompactSteps({required this.stages});
+class _StageMetricRow {
+  const _StageMetricRow({
+    required this.label,
+    required this.shortLabel,
+    required this.recognition,
+    required this.execution,
+    required this.stepTime,
+    required this.turns,
+    required this.tps,
+    required this.regrips,
+    this.totalTime,
+    this.skipped = false,
+    this.isAverage = true,
+  });
 
-  final List<SolveStageAnalysis> stages;
+  factory _StageMetricRow.fromSolve(SolveStageAnalysis stage) =>
+      _StageMetricRow(
+        label: stage.kind.label,
+        shortLabel: stage.kind.shortLabel,
+        recognition: stage.recognitionTime,
+        execution: stage.executionTime,
+        stepTime: stage.stepTime,
+        totalTime: stage.totalTime,
+        turns: stage.moves.length.toDouble(),
+        tps: stage.turnsPerSecond,
+        regrips: stage.regripCount?.toDouble(),
+        skipped: stage.skipped,
+        isAverage: false,
+      );
+
+  final String label;
+  final String shortLabel;
+  final Duration? recognition;
+  final Duration? execution;
+  final Duration? stepTime;
+  final Duration? totalTime;
+  final double turns;
+  final double? tps;
+  final double? regrips;
+  final bool skipped;
+  final bool isAverage;
+}
+
+class _StageMetricsTable extends StatelessWidget {
+  const _StageMetricsTable({required this.rows, this.includeTotal = false});
+
+  final List<_StageMetricRow> rows;
+  final bool includeTotal;
 
   @override
-  Widget build(BuildContext context) {
-    final headerStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: CrubikColors.muted,
-      fontSize: 8,
-      fontWeight: FontWeight.w700,
-    );
-    final valueStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      fontSize: 9,
-      fontFeatures: const [FontFeature.tabularFigures()],
-    );
-    const columnWidths = <int, TableColumnWidth>{
-      0: FlexColumnWidth(1.4),
-      1: FlexColumnWidth(),
-      2: FlexColumnWidth(),
-      3: FlexColumnWidth(),
-      4: FlexColumnWidth(),
-      5: FlexColumnWidth(0.7),
-      6: FlexColumnWidth(0.8),
-    };
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      children: [
-        Table(
-          key: const Key('compact-steps-table'),
-          columnWidths: columnWidths,
-          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          border: const TableBorder(
-            horizontalInside: BorderSide(color: CrubikColors.border),
-            bottom: BorderSide(color: CrubikColors.border),
-          ),
-          children: [
-            TableRow(
-              decoration: const BoxDecoration(color: CrubikColors.elevated),
-              children: [
-                for (final label in const [
-                  'STEP',
-                  'RECOG',
-                  'EXEC',
-                  'TIME',
-                  'TOTAL',
-                  'TURN',
-                  'TPS',
-                ])
-                  _StepCell(label, style: headerStyle),
-              ],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 620;
+      final headerStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: CrubikColors.muted,
+        fontSize: wide ? 10 : 8,
+        fontWeight: FontWeight.w700,
+      );
+      final valueStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+        fontSize: wide ? 12 : 11,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
+      final headings = [
+        'STEP',
+        'RECOG',
+        'EXEC',
+        'TIME',
+        if (includeTotal) 'TOTAL',
+        'TURNS',
+        'TPS',
+        'REGRIP',
+      ];
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          Table(
+            key: const Key('compact-steps-table'),
+            columnWidths: {
+              0: FlexColumnWidth(wide ? 2.4 : 1.4),
+              for (var index = 1; index < headings.length; index++)
+                index: FlexColumnWidth(index >= headings.length - 3 ? 0.8 : 1),
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            border: const TableBorder(
+              horizontalInside: BorderSide(color: CrubikColors.border),
+              bottom: BorderSide(color: CrubikColors.border),
             ),
-            for (final stage in stages)
+            children: [
               TableRow(
+                decoration: const BoxDecoration(color: CrubikColors.elevated),
                 children: [
-                  _StepCell(
-                    stage.kind.shortLabel,
-                    style: valueStyle?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : _shortDuration(stage.recognitionTime),
-                    style: valueStyle,
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : _shortDuration(stage.executionTime),
-                    style: valueStyle,
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : _shortDuration(stage.stepTime),
-                    style: valueStyle,
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : _shortDuration(stage.totalTime),
-                    style: valueStyle,
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : stage.moves.length.toString(),
-                    style: valueStyle,
-                  ),
-                  _StepCell(
-                    stage.skipped ? '—' : _decimal(stage.turnsPerSecond),
-                    style: valueStyle,
-                  ),
+                  for (final heading in headings)
+                    _StepCell(heading, style: headerStyle),
                 ],
               ),
-          ],
-        ),
-      ],
-    );
-  }
+              for (final row in rows)
+                TableRow(
+                  children: [
+                    _StepCell(
+                      wide ? row.label.toUpperCase() : row.shortLabel,
+                      style: valueStyle?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    _StepCell(
+                      row.skipped ? '—' : _shortDuration(row.recognition),
+                      style: valueStyle,
+                    ),
+                    _StepCell(
+                      row.skipped ? '—' : _shortDuration(row.execution),
+                      style: valueStyle,
+                    ),
+                    _StepCell(
+                      row.skipped ? '—' : _shortDuration(row.stepTime),
+                      style: valueStyle,
+                    ),
+                    if (includeTotal)
+                      _StepCell(
+                        row.skipped ? '—' : _shortDuration(row.totalTime),
+                        style: valueStyle,
+                      ),
+                    _StepCell(
+                      row.skipped
+                          ? '—'
+                          : row.turns.toStringAsFixed(row.isAverage ? 1 : 0),
+                      style: valueStyle,
+                    ),
+                    _StepCell(
+                      row.skipped ? '—' : _decimal(row.tps),
+                      style: valueStyle,
+                    ),
+                    _StepCell(
+                      row.skipped
+                          ? '—'
+                          : row.regrips?.toStringAsFixed(
+                                  row.isAverage ? 1 : 0,
+                                ) ??
+                                '—',
+                      style: valueStyle,
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _StepCell extends StatelessWidget {
@@ -800,74 +1360,6 @@ class _StepCell extends StatelessWidget {
       child: Text(value, maxLines: 1, style: style),
     ),
   );
-}
-
-class _WideSteps extends StatelessWidget {
-  const _WideSteps({required this.stages});
-
-  final List<SolveStageAnalysis> stages;
-
-  @override
-  Widget build(BuildContext context) {
-    const headerStyle = TextStyle(
-      color: CrubikColors.muted,
-      fontSize: 10,
-      fontWeight: FontWeight.w700,
-    );
-    return Column(
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Expanded(flex: 3, child: Text('STEP', style: headerStyle)),
-              Expanded(child: Text('RECOG', style: headerStyle)),
-              Expanded(child: Text('EXEC', style: headerStyle)),
-              Expanded(child: Text('STEP TIME', style: headerStyle)),
-              Expanded(child: Text('TOTAL', style: headerStyle)),
-              Expanded(child: Text('TURNS', style: headerStyle)),
-              Expanded(child: Text('TPS', style: headerStyle)),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.separated(
-            itemCount: stages.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final stage = stages[index];
-              final values = [
-                stage.kind.label.toUpperCase(),
-                _duration(stage.recognitionTime),
-                _duration(stage.executionTime),
-                _duration(stage.stepTime),
-                _duration(stage.totalTime),
-                stage.moves.length.toString(),
-                _decimal(stage.turnsPerSecond),
-              ];
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                child: Row(
-                  children: [
-                    Expanded(flex: 3, child: Text(values.first, maxLines: 1)),
-                    for (final value in values.skip(1))
-                      Expanded(
-                        child: Text(
-                          value,
-                          style: const TextStyle(
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _SolutionTab extends StatelessWidget {
@@ -937,7 +1429,11 @@ class _StatsTab extends StatelessWidget {
       (
         Icons.timer_outlined,
         'SOLVING TIME',
-        solve.isTimingReliable ? _duration(solve.elapsed) : '—',
+        switch (solve.outcome) {
+          SolveOutcome.completed when solve.isTimingReliable =>
+            '${formatPracticeDuration(solve.elapsed)}S',
+          _ => formatSolveResult(solve),
+        },
       ),
       (
         Icons.psychology_outlined,
@@ -949,8 +1445,8 @@ class _StatsTab extends StatelessWidget {
         'EXECUTION',
         _duration(analysis?.totalExecutionTime),
       ),
-      (Icons.sync_alt, 'TURNS', solve.moveCount.toString()),
-      (Icons.speed, 'TPS', _decimal(solve.turnsPerSecond)),
+      (Icons.sync_alt, 'TURNS', solve.turnCountFor(analysis).toString()),
+      (Icons.speed, 'TPS', _decimal(solve.turnsPerSecondFor(analysis))),
       (
         Icons.fast_forward_outlined,
         'STEPS SKIPPED',
@@ -958,96 +1454,55 @@ class _StatsTab extends StatelessWidget {
       ),
       (Icons.rotate_90_degrees_ccw_outlined, 'REGRIPS', _regrips(analysis)),
     ];
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 2.8,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: values.length,
-      itemBuilder: (context, index) {
-        final value = values[index];
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: CrubikColors.elevated,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: CrubikColors.border),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  value.$3,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(value.$1, size: 12, color: CrubikColors.muted),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        value.$2,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: CrubikColors.muted,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    return _StatsGrid(values: values);
   }
 }
 
-class _TpsTab extends StatelessWidget {
-  const _TpsTab({required this.analysis});
+class _StatsGrid extends StatelessWidget {
+  const _StatsGrid({required this.values});
 
-  final SolveAnalysis? analysis;
+  final List<(IconData, String, String)> values;
 
   @override
-  Widget build(BuildContext context) {
-    final analysis = this.analysis;
-    if (analysis == null || analysis.stages.isEmpty) {
-      return _AnalysisUnavailable(analysis: analysis);
-    }
-    final values = analysis.stages
-        .map((stage) => stage.turnsPerSecond ?? 0)
-        .toList();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 18, 8, 4),
-      child: Column(
-        children: [
-          Expanded(
-            child: CustomPaint(
-              key: const Key('tps-chart'),
-              painter: _TpsChartPainter(values),
-              child: const SizedBox.expand(),
+  Widget build(BuildContext context) => GridView.builder(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      childAspectRatio: 2.8,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+    ),
+    itemCount: values.length,
+    itemBuilder: (context, index) {
+      final value = values[index];
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: CrubikColors.elevated,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: CrubikColors.border),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value.$3,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              for (final stage in analysis.stages)
-                Expanded(
+            const SizedBox(height: 2),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(value.$1, size: 12, color: CrubikColors.muted),
+                const SizedBox(width: 4),
+                Flexible(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      stage.kind.shortLabel,
+                      value.$2,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: CrubikColors.muted,
                         fontSize: 9,
@@ -1055,56 +1510,136 @@ class _TpsTab extends StatelessWidget {
                     ),
                   ),
                 ),
-            ],
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _TpsTab extends StatelessWidget {
+  const _TpsTab({required this.analysis, required this.stageAverages});
+
+  final SolveAnalysis? analysis;
+  final Map<SolveStageKind, SolveStageTimingAverage> stageAverages;
+
+  @override
+  Widget build(BuildContext context) {
+    final analysis = this.analysis;
+    if (analysis == null || analysis.stages.isEmpty) {
+      return _AnalysisUnavailable(analysis: analysis);
+    }
+    return _StageTpsChart(
+      stages: [
+        for (final stage in analysis.stages)
+          (
+            label: stage.kind.label,
+            shortLabel: stage.kind.shortLabel,
+            value: stage.turnsPerSecond,
+            average: stageAverages[stage.kind]?.turnsPerSecond,
           ),
-        ],
-      ),
+      ],
+      showAverage: true,
     );
   }
 }
 
-class _TpsChartPainter extends CustomPainter {
-  const _TpsChartPainter(this.values);
+class _StageTpsChart extends StatelessWidget {
+  const _StageTpsChart({required this.stages, this.showAverage = false});
 
-  final List<double> values;
+  final List<
+    ({String label, String shortLabel, double? value, double? average})
+  >
+  stages;
+  final bool showAverage;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final grid = Paint()
-      ..color = CrubikColors.border
-      ..strokeWidth = 1;
-    for (var index = 0; index < 4; index++) {
-      final y = size.height * index / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-    if (values.isEmpty) return;
-    final maximum = values.fold<double>(1, (a, b) => b > a ? b : a);
-    final path = Path();
-    for (var index = 0; index < values.length; index++) {
-      final x = values.length == 1
-          ? size.width / 2
-          : size.width * index / (values.length - 1);
-      final y = size.height - (values[index] / maximum * size.height * 0.9);
-      if (index == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = CrubikColors.primaryAccent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
+  Widget build(BuildContext context) {
+    final maximum = stages.fold<double>(1, (current, stage) {
+      return math.max(current, math.max(stage.value ?? 0, stage.average ?? 0));
+    });
+    final axis = _ChartAxis.forMaximum(maximum);
+    final averageColor = _averageColor(_tpsColor);
+    return _StageColumnChart(
+      axis: axis,
+      axisKey: const Key('tps-axis'),
+      suffix: '',
+      legend: _ChartLegend(
+        items: [
+          (color: _tpsColor, label: 'TPS'),
+          if (showAverage) (color: averageColor, label: 'TPS Ao100'),
+        ],
+      ),
+      columns: [
+        for (final stage in stages)
+          _ChartStageColumn(
+            tooltipKey: Key('tps-bar-${stage.shortLabel}'),
+            shortLabel: stage.shortLabel,
+            tooltip:
+                '${stage.label}\nTPS ${_decimal(stage.value)}'
+                '${stage.average == null ? '' : '\nTPS Ao100 ${_decimal(stage.average)}'}',
+            barBuilder: (height) => Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _TpsBar(
+                  key: Key('tps-current-${stage.shortLabel}'),
+                  value: stage.value ?? 0,
+                  maximum: axis.maximum,
+                  availableHeight: height,
+                  width: 18,
+                  color: _tpsColor,
+                  showBorder: true,
+                ),
+                if (stage.average != null)
+                  _TpsBar(
+                    key: Key('tps-average-${stage.shortLabel}'),
+                    value: stage.average!,
+                    maximum: axis.maximum,
+                    availableHeight: height,
+                    width: 6,
+                    color: averageColor,
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
+}
+
+class _TpsBar extends StatelessWidget {
+  const _TpsBar({
+    required this.value,
+    required this.maximum,
+    required this.availableHeight,
+    required this.width,
+    required this.color,
+    this.showBorder = false,
+    super.key,
+  });
+
+  final double value;
+  final int maximum;
+  final double availableHeight;
+  final double width;
+  final Color color;
+  final bool showBorder;
 
   @override
-  bool shouldRepaint(covariant _TpsChartPainter oldDelegate) =>
-      oldDelegate.values != values;
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: availableHeight * (value / maximum).clamp(0.0, 1.0),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(showBorder ? 4 : 2),
+      ),
+      border: showBorder ? Border.all(color: CrubikColors.border) : null,
+    ),
+  );
 }
 
 class _InfoTab extends StatelessWidget {
@@ -1115,91 +1650,121 @@ class _InfoTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _InfoValue(label: 'SESSION', value: solve.sessionName),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _InfoValue(
-                  label: 'METHOD',
-                  value: solve.method.displayName,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _InfoValue(
-                  label: 'INPUT',
-                  value: solve.inputSource.displayLabel,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _InfoValue(
-                  label: 'CUBE',
-                  value: _protocolName(analysis?.protocolFamily),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _InfoValue(label: 'SOLVED', value: _formatDate(solve.createdAt)),
-          const SizedBox(height: 10),
-          const Divider(height: 1),
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Text(
-                'SCRAMBLE',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: CrubikColors.muted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                key: const Key('copy-completed-scramble'),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
-                ),
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: solve.scramble));
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Scramble copied')),
-                  );
-                },
-                icon: const Icon(Icons.copy, size: 14),
-                tooltip: 'Copy scramble',
-              ),
-            ],
-          ),
-          Text(
-            solve.scramble,
-            key: const Key('completed-scramble'),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: CrubikColors.text,
-              fontFeatures: const [FontFeature.tabularFigures()],
+    final session = _InfoValue(label: 'SESSION', value: solve.sessionName);
+    final method = _InfoValue(label: 'METHOD', value: solve.method.displayName);
+    final input = _InfoValue(
+      label: 'INPUT',
+      value: solve.inputSource.displayLabel,
+    );
+    final cube = _InfoValue(
+      label: 'CUBE',
+      value: _protocolName(analysis?.protocolFamily),
+    );
+    final solved = _InfoValue(
+      label: 'SOLVED',
+      value: formatSolveDateTime(solve.createdAt),
+    );
+    final scrambleLabel = Text(
+      'SCRAMBLE',
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: CrubikColors.muted,
+        fontSize: 9,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    final copyButton = IconButton(
+      key: const Key('copy-completed-scramble'),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      onPressed: () async {
+        await Clipboard.setData(ClipboardData(text: solve.scramble));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Scramble copied')));
+      },
+      icon: const Icon(Icons.copy, size: 14),
+      tooltip: 'Copy scramble',
+    );
+    final scrambleText = Text(
+      solve.scramble,
+      key: const Key('completed-scramble'),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        color: CrubikColors.text,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxHeight < 300 && constraints.maxWidth >= 420;
+        return SingleChildScrollView(
+          key: const Key('solve-info-scroll'),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: compact ? 2 : 7),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: compact
+                  ? [
+                      Row(
+                        children: [
+                          for (final field in [
+                            session,
+                            method,
+                            input,
+                            cube,
+                          ]) ...[
+                            Expanded(child: field),
+                            if (field != cube) const SizedBox(width: 8),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(child: solved),
+                          scrambleLabel,
+                          const SizedBox(width: 4),
+                          copyButton,
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      scrambleText,
+                    ]
+                  : [
+                      Row(
+                        children: [
+                          Expanded(child: session),
+                          const SizedBox(width: 14),
+                          Expanded(child: method),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(child: input),
+                          const SizedBox(width: 14),
+                          Expanded(child: cube),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      solved,
+                      const SizedBox(height: 10),
+                      const Divider(height: 1),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [scrambleLabel, const Spacer(), copyButton],
+                      ),
+                      scrambleText,
+                    ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1272,7 +1837,9 @@ String _preciseDuration(Duration? value) {
 String _decimal(double? value) => value?.toStringAsFixed(1) ?? '—';
 
 String _regrips(SolveAnalysis? analysis) {
-  if (analysis == null) return '—';
+  if (analysis == null || !analysis.isComplete || analysis.stages.isEmpty) {
+    return '—';
+  }
   final values = analysis.stages.map((stage) => stage.regripCount);
   if (values.any((value) => value == null)) return '—';
   return values.fold<int>(0, (sum, value) => sum + value!).toString();
@@ -1286,12 +1853,3 @@ String _protocolName(String? value) => switch (value) {
   'unknown' || null => 'Not recorded',
   final String value => value.replaceAll('_', ' '),
 };
-
-String _formatDate(DateTime value) {
-  final local = value.toLocal();
-  final day = local.day.toString().padLeft(2, '0');
-  final month = local.month.toString().padLeft(2, '0');
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$day.$month.${local.year} · $hour:$minute';
-}

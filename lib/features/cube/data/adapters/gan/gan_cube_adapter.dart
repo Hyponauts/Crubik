@@ -103,7 +103,8 @@ final class GanCubeAdapter implements SmartCubeAdapter {
   }
 }
 
-final class _GanCubeSession extends BleSmartCubeSession {
+final class _GanCubeSession extends BleSmartCubeSession
+    implements ResettableSmartCubeSession {
   _GanCubeSession(
     super.central, {
     required super.deviceId,
@@ -124,6 +125,8 @@ final class _GanCubeSession extends BleSmartCubeSession {
   final GanProtocolDefinition protocol;
   final GanPacketDecoder decoder;
   final GanCubeCipher cipher;
+  Future<void> _commandTail = Future.value();
+  Timer? _recoveryTimer;
   CubeCapabilities _capabilities = const CubeCapabilities(
     initialState: true,
     moveHistory: true,
@@ -176,12 +179,7 @@ final class _GanCubeSession extends BleSmartCubeSession {
             'commands=${packet.commands.length}',
       );
       for (final event in packet.events) {
-        if (isClosed) return;
-        if (event case SmartCubeCapabilitiesEvent(:final capabilities)) {
-          _capabilities = capabilities;
-        }
-        emitEvent(event);
-        if (event is SmartCubeStateEvent) handshake.completeState();
+        _publishEvent(event);
       }
       for (final command in packet.commands) {
         unawaited(
@@ -204,6 +202,7 @@ final class _GanCubeSession extends BleSmartCubeSession {
           }),
         );
       }
+      _syncRecoveryTimer();
     } catch (error, stackTrace) {
       if (isStarted) {
         emitEvent(
@@ -227,17 +226,73 @@ final class _GanCubeSession extends BleSmartCubeSession {
     }
   }
 
-  Future<void> _sendProtocolCommand(Uint8List command) => central.write(
-    deviceId,
-    protocol.service,
-    protocol.commandCharacteristic,
-    cipher.encrypt(command),
-  );
+  void _publishEvent(SmartCubeEvent event) {
+    if (isClosed) return;
+    if (event case SmartCubeCapabilitiesEvent(:final capabilities)) {
+      _capabilities = capabilities;
+    }
+    emitEvent(event);
+    if (event is SmartCubeStateEvent) handshake.completeState();
+  }
+
+  void _syncRecoveryTimer() {
+    final modern = decoder;
+    if (modern is! GanModernPacketDecoder || !modern.hasPendingRecovery) {
+      _recoveryTimer?.cancel();
+      _recoveryTimer = null;
+      return;
+    }
+    _recoveryTimer ??= Timer(const Duration(minutes: 2), () {
+      _recoveryTimer = null;
+      if (isClosed || !modern.hasPendingRecovery) return;
+      final packet = modern.expirePendingRecovery(
+        DateTime.now().toUtc(),
+        monotonicClock.now,
+      );
+      onDiagnostic?.call('protocol.recovery.timed-out', null);
+      for (final event in packet.events) {
+        _publishEvent(event);
+      }
+    });
+  }
+
+  Future<void> _sendProtocolCommand(Uint8List command) {
+    // History recovery and state requests can be issued by adjacent packets.
+    // BLE writes must stay ordered even when their callers do not await them.
+    final write = _commandTail.then(
+      (_) => central.write(
+        deviceId,
+        protocol.service,
+        protocol.commandCharacteristic,
+        cipher.encrypt(command),
+      ),
+    );
+    _commandTail = write.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return write;
+  }
 
   @override
   Future<void> requestState() {
     ensureStartedForStateRequest();
     return _sendProtocolCommand(decoder.requestFaceletsCommand);
+  }
+
+  @override
+  Future<void> resetStateToSolved() async {
+    ensureStartedForStateRequest();
+    await _sendProtocolCommand(decoder.resetToSolvedCommand);
+    decoder.resetTracking();
+    _syncRecoveryTimer();
+    await _sendProtocolCommand(decoder.requestFaceletsCommand);
+  }
+
+  @override
+  Future<void> closeAdditionalResources() async {
+    _recoveryTimer?.cancel();
+    _recoveryTimer = null;
   }
 }
 

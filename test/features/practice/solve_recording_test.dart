@@ -213,7 +213,7 @@ void main() {
       );
       expect(recording.moves.map((event) => event.move), solution);
       expect(recording.moves.first.hostOffset, Duration.zero);
-      expect(exported['version'], 4);
+      expect(exported['version'], 5);
       expect(exportedSolve['recording'], recording.toJson());
     },
   );
