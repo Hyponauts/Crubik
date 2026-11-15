@@ -101,5 +101,6 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for complete CI
 - [Product vision](docs/crubik-product-vision.md)
 - [Cube device compatibility](docs/cube-device-compatibility.md)
 - [Architecture overview](docs/architecture.md)
+- [Algorithm training mode design](docs/algorithm-training-mode.md) (proposal)
 
 Third-party protocol attribution is documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
