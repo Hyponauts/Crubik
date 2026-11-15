@@ -251,6 +251,8 @@ final class SolveRecordingBuilder {
     SmartCubeDataGapReason reason,
   ) => switch (reason) {
     SmartCubeDataGapReason.missedMoves => RecordingGapReason.missedMoves,
+    SmartCubeDataGapReason.recoveryTimeout =>
+      RecordingGapReason.recoveryTimeout,
     SmartCubeDataGapReason.malformedPacket =>
       RecordingGapReason.malformedPacket,
     SmartCubeDataGapReason.connectionDiscontinuity =>

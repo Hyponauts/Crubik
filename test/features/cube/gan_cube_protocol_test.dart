@@ -45,6 +45,35 @@ void main() {
     }
   });
 
+  test('reset commands match each GAN generation and clear move tracking', () {
+    final gen2 = GanGen2PacketDecoder();
+    final gen3 = GanModernPacketDecoder.gen3();
+    final gen4 = GanModernPacketDecoder.gen4();
+    expect(gen2.resetToSolvedCommand, hasLength(20));
+    expect(gen2.resetToSolvedCommand.take(4), [0x0a, 0x05, 0x39, 0x77]);
+    expect(gen3.resetToSolvedCommand, hasLength(16));
+    expect(gen3.resetToSolvedCommand.take(5), [0x68, 0x05, 0x05, 0x39, 0x77]);
+    expect(gen4.resetToSolvedCommand, hasLength(20));
+    expect(gen4.resetToSolvedCommand.take(5), [0xd2, 0x0d, 0x05, 0x39, 0x77]);
+
+    final receivedAt = DateTime.utc(2026);
+    final state = Uint8List(20)
+      ..[0] = 0xed
+      ..[1] = 1
+      ..[2] = 20;
+    _setSolvedCubies(state, 32, 53, 69, 113);
+    gen4.decode(state, receivedAt, hostTimestamp: Duration.zero);
+    gen4.resetTracking();
+    state[2] = 0;
+    final afterReset = gen4.decode(
+      state,
+      receivedAt,
+      hostTimestamp: Duration.zero,
+    );
+    expect(afterReset.states.single.state.isSolved, isTrue);
+    expect(afterReset.commands, isEmpty);
+  });
+
   test('Gen2 decoder initializes from facelets and decodes live moves', () {
     final decoder = GanGen2PacketDecoder();
     final receivedAt = DateTime.utc(2026);
@@ -395,6 +424,180 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'Gen4 applies a state after its recovered moves, without a false gap',
+    () {
+      final decoder = GanModernPacketDecoder.gen4();
+      final receivedAt = DateTime.utc(2026);
+      final state = Uint8List(20)
+        ..[0] = 0xed
+        ..[1] = 1
+        ..[2] = 20;
+      _setSolvedCubies(state, 32, 53, 69, 113);
+      decoder.decode(state, receivedAt, hostTimestamp: Duration.zero);
+
+      final live = Uint8List(20)
+        ..[0] = 1
+        ..[1] = 8
+        ..[6] = 22
+        ..[8] = 1;
+      expect(
+        decoder
+            .decode(live, receivedAt, hostTimestamp: const Duration(seconds: 1))
+            .events,
+        isEmpty,
+      );
+      state[2] = 22;
+      final pending = decoder.decode(
+        state,
+        receivedAt,
+        hostTimestamp: const Duration(milliseconds: 1500),
+      );
+      expect(pending.events, isEmpty);
+      expect(pending.commands, isNotEmpty);
+
+      final history = Uint8List(20)
+        ..[0] = 0xd1
+        ..[1] = 2
+        ..[2] = 21
+        ..[3] = 0xa0;
+      final recovered = decoder.decode(
+        history,
+        receivedAt,
+        hostTimestamp: const Duration(seconds: 2),
+      );
+      expect(
+        recovered.events.whereType<SmartCubeMoveEvent>().map(
+          (move) => move.serial,
+        ),
+        [21, 22],
+      );
+      expect(recovered.events.last, isA<SmartCubeStateEvent>());
+      expect(recovered.events.whereType<SmartCubeDataGapEvent>(), isEmpty);
+    },
+  );
+
+  test('Gen4 keeps a pending state across partial history replies', () {
+    final decoder = GanModernPacketDecoder.gen4();
+    final receivedAt = DateTime.utc(2026);
+    final state = Uint8List(20)
+      ..[0] = 0xed
+      ..[1] = 1
+      ..[2] = 20;
+    _setSolvedCubies(state, 32, 53, 69, 113);
+    decoder.decode(state, receivedAt, hostTimestamp: Duration.zero);
+
+    final live = Uint8List(20)
+      ..[0] = 1
+      ..[1] = 8
+      ..[6] = 24
+      ..[8] = 1;
+    decoder.decode(live, receivedAt, hostTimestamp: const Duration(seconds: 1));
+    state[2] = 22;
+    decoder.decode(
+      state,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 2),
+    );
+
+    final newestHistory = Uint8List(20)
+      ..[0] = 0xd1
+      ..[1] = 2
+      ..[2] = 24
+      ..[3] = 0xa0;
+    final partial = decoder.decode(
+      newestHistory,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 3),
+    );
+    expect(partial.events, isEmpty);
+    expect(partial.commands, isNotEmpty);
+
+    final olderHistory = Uint8List.fromList(newestHistory)..[2] = 22;
+    final recovered = decoder.decode(
+      olderHistory,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 4),
+    );
+    expect(recovered.moves.map((move) => move.serial), [21, 22, 23, 24]);
+    expect(recovered.events[2], isA<SmartCubeStateEvent>());
+    expect(recovered.events.whereType<SmartCubeDataGapEvent>(), isEmpty);
+  });
+
+  test('Gen4 reports a genuine gap when history cannot recover moves', () {
+    final decoder = GanModernPacketDecoder.gen4();
+    final receivedAt = DateTime.utc(2026);
+    final state = Uint8List(20)
+      ..[0] = 0xed
+      ..[1] = 1
+      ..[2] = 20;
+    _setSolvedCubies(state, 32, 53, 69, 113);
+    decoder.decode(state, receivedAt, hostTimestamp: Duration.zero);
+    state[2] = 22;
+    decoder.decode(
+      state,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 1),
+    );
+
+    final unrelatedHistory = Uint8List(20)
+      ..[0] = 0xd1
+      ..[1] = 2
+      ..[2] = 30
+      ..[3] = 0xa0;
+    final first = decoder.decode(
+      unrelatedHistory,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 2),
+    );
+    expect(first.events, isEmpty);
+    expect(first.commands, isNotEmpty);
+
+    final second = decoder.decode(
+      unrelatedHistory,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 3),
+    );
+    expect(second.events.first, isA<SmartCubeDataGapEvent>());
+    expect(second.events.last, isA<SmartCubeStateEvent>());
+  });
+
+  test('Gen4 expires unresolved recovery without inventing missing moves', () {
+    final decoder = GanModernPacketDecoder.gen4();
+    final receivedAt = DateTime.utc(2026);
+    final state = Uint8List(20)
+      ..[0] = 0xed
+      ..[1] = 1
+      ..[2] = 20;
+    _setSolvedCubies(state, 32, 53, 69, 113);
+    decoder.decode(state, receivedAt, hostTimestamp: Duration.zero);
+
+    state[2] = 22;
+    final pending = decoder.decode(
+      state,
+      receivedAt,
+      hostTimestamp: const Duration(seconds: 1),
+    );
+    expect(pending.events, isEmpty);
+    expect(decoder.hasPendingRecovery, isTrue);
+
+    final expired = decoder.expirePendingRecovery(
+      receivedAt.add(const Duration(minutes: 2)),
+      const Duration(minutes: 2, seconds: 1),
+    );
+    expect(expired.events, hasLength(2));
+    expect(
+      (expired.events.first as SmartCubeDataGapEvent).reason,
+      SmartCubeDataGapReason.recoveryTimeout,
+    );
+    expect(expired.events.last, isA<SmartCubeStateEvent>());
+    expect(decoder.hasPendingRecovery, isFalse);
+    expect(
+      decoder.expirePendingRecovery(receivedAt, Duration.zero).events,
+      isEmpty,
+    );
+  });
 
   test('Gen4 decodes gyro packets and hardware capability', () {
     final decoder = GanModernPacketDecoder.gen4();

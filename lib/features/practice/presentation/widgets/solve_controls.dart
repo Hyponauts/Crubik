@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../application/practice_controller.dart';
-import '../../domain/solve_record.dart';
 import 'practice_panel.dart';
 import 'practice_formatters.dart';
 import 'practice_phase_presentation.dart';
+import 'solve_analysis_panel.dart';
 
 bool showsPracticeAccessory(PracticeController practice) =>
     practice.pendingSolveReview != null ||
@@ -29,18 +29,21 @@ class PracticeAccessoryPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final review = practice.pendingSolveReview;
-    final Widget content = review != null
-        ? _FinishCardContent(
-            onContinue: practice.continueAfterSolve,
-            solve: review,
-            compact: compact,
-            dense: dense,
-          )
-        : _ReadyActionContent(
-            onStart: practice.toggleTimer,
-            compact: compact,
-            dense: dense,
-          );
+    if (review != null) {
+      return KeyedSubtree(
+        key: const Key('finish-card'),
+        child: SolveAnalysisPanel(
+          practice: practice,
+          solve: review,
+          onContinue: practice.continueAfterSolve,
+        ),
+      );
+    }
+    final content = _ReadyActionContent(
+      onStart: practice.toggleTimer,
+      compact: compact,
+      dense: dense,
+    );
 
     if (!contained) return content;
     return PracticePanel(
@@ -58,50 +61,13 @@ class PracticeMobileReviewPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final solve = practice.pendingSolveReview!;
-    final review = _SolveReviewData(solve);
-    return PracticePanel(
-      key: const Key('mobile-review-layout'),
-      padding: const EdgeInsets.all(16),
-      child: Semantics(
-        key: const Key('finish-card'),
-        container: true,
-        liveRegion: true,
-        label: review.semanticsLabel,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SolveReviewHeader(expandTitle: true),
-            const SizedBox(height: 6),
-            _SolveReviewTime(
-              elapsed: review.elapsed,
-              fontSize: 56,
-              alignment: Alignment.centerLeft,
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: SingleChildScrollView(
-                key: const Key('review-details-scroll'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SolveReviewMetrics(solve: solve, review: review),
-                    const SizedBox(height: 12),
-                    const Divider(height: 1),
-                    const SizedBox(height: 12),
-                    _CompletedScramble(solve: solve, mobile: true),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: _DismissSolveButton(
-                onPressed: practice.continueAfterSolve,
-              ),
-            ),
-          ],
-        ),
+    return KeyedSubtree(
+      key: const Key('finish-card'),
+      child: SolveAnalysisPanel(
+        key: const Key('mobile-review-layout'),
+        practice: practice,
+        solve: solve,
+        onContinue: practice.continueAfterSolve,
       ),
     );
   }
@@ -355,348 +321,6 @@ class _ReadyActionContent extends StatelessWidget {
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _FinishCardContent extends StatelessWidget {
-  const _FinishCardContent({
-    required this.solve,
-    required this.onContinue,
-    required this.compact,
-    required this.dense,
-  });
-
-  final SolveRecord solve;
-  final VoidCallback onContinue;
-  final bool compact;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    final review = _SolveReviewData(solve);
-    final metrics = _SolveReviewMetrics(
-      solve: solve,
-      review: review,
-      dense: dense,
-    );
-    final header = _SolveReviewHeader(dense: dense);
-    final time = _SolveReviewTime(
-      elapsed: review.elapsed,
-      fontSize: dense
-          ? 29
-          : compact
-          ? 48
-          : 62,
-    );
-    final completedScramble = _CompletedScramble(solve: solve, dense: dense);
-    final dismissButton = _DismissSolveButton(
-      onPressed: onContinue,
-      dense: dense,
-    );
-
-    return Semantics(
-      key: const Key('finish-card'),
-      container: true,
-      liveRegion: true,
-      label: review.semanticsLabel,
-      child: dense
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: header),
-                    Flexible(child: time),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                metrics,
-                const SizedBox(height: 4),
-                completedScramble,
-                const SizedBox(height: 5),
-                SizedBox(width: double.infinity, child: dismissButton),
-              ],
-            )
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                header,
-                SizedBox(height: compact ? 5 : 8),
-                Align(alignment: Alignment.centerLeft, child: time),
-                SizedBox(height: compact ? 8 : 12),
-                metrics,
-                SizedBox(height: compact ? 8 : 12),
-                const Divider(height: 1),
-                SizedBox(height: compact ? 8 : 12),
-                completedScramble,
-                SizedBox(height: compact ? 9 : 14),
-                SizedBox(width: double.infinity, child: dismissButton),
-              ],
-            ),
-    );
-  }
-}
-
-final class _SolveReviewData {
-  const _SolveReviewData._({
-    required this.elapsed,
-    required this.inspection,
-    required this.tps,
-    required this.semanticsLabel,
-  });
-
-  factory _SolveReviewData(SolveRecord solve) {
-    final elapsed = solve.isTimingReliable
-        ? formatPracticeDuration(solve.elapsed)
-        : 'Timing unavailable';
-    final inspection = solve.inspectionElapsed == null
-        ? '—'
-        : formatPracticeDuration(solve.inspectionElapsed!);
-    final tps = solve.moveCount == 0 || solve.turnsPerSecond == null
-        ? '—'
-        : solve.turnsPerSecond!.toStringAsFixed(1);
-    return _SolveReviewData._(
-      elapsed: elapsed,
-      inspection: inspection,
-      tps: tps,
-      semanticsLabel:
-          'Solve complete. Time $elapsed. ${solve.moveCount} moves. '
-          'TPS $tps. Inspection $inspection. '
-          'Completed scramble ${solve.scramble}.',
-    );
-  }
-
-  final String elapsed;
-  final String inspection;
-  final String tps;
-  final String semanticsLabel;
-}
-
-class _SolveReviewHeader extends StatelessWidget {
-  const _SolveReviewHeader({this.dense = false, this.expandTitle = false});
-
-  final bool dense;
-  final bool expandTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: Text(
-        'SOLVE COMPLETE',
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: CrubikColors.primaryAccent,
-          fontWeight: FontWeight.w800,
-          letterSpacing: dense ? 1.1 : 1.6,
-          fontSize: dense ? 10 : null,
-        ),
-      ),
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.check_circle_rounded,
-          color: CrubikColors.primaryAccent,
-          size: dense ? 17 : 21,
-        ),
-        SizedBox(width: dense ? 5 : 7),
-        if (expandTitle) Expanded(child: title) else Flexible(child: title),
-      ],
-    );
-  }
-}
-
-class _SolveReviewTime extends StatelessWidget {
-  const _SolveReviewTime({
-    required this.elapsed,
-    required this.fontSize,
-    this.alignment = Alignment.center,
-  });
-
-  final String elapsed;
-  final double fontSize;
-  final Alignment alignment;
-
-  @override
-  Widget build(BuildContext context) {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: alignment,
-      child: Text(
-        elapsed,
-        key: const Key('finish-time'),
-        style: Theme.of(context).textTheme.displayLarge?.copyWith(
-          color: CrubikColors.text,
-          fontSize: fontSize,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
-      ),
-    );
-  }
-}
-
-class _SolveReviewMetrics extends StatelessWidget {
-  const _SolveReviewMetrics({
-    required this.solve,
-    required this.review,
-    this.dense = false,
-  });
-
-  final SolveRecord solve;
-  final _SolveReviewData review;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _FinishMetric(
-          label: 'MOVES',
-          value: solve.moveCount.toString(),
-          valueKey: const Key('finish-moves'),
-          dense: dense,
-        ),
-        _FinishMetric(
-          label: 'TPS',
-          value: review.tps,
-          valueKey: const Key('finish-tps'),
-          dense: dense,
-        ),
-        _FinishMetric(
-          label: 'INSPECTION',
-          value: review.inspection,
-          valueKey: const Key('finish-inspection'),
-          dense: dense,
-        ),
-      ],
-    );
-  }
-}
-
-class _CompletedScramble extends StatelessWidget {
-  const _CompletedScramble({
-    required this.solve,
-    this.dense = false,
-    this.mobile = false,
-  });
-
-  final SolveRecord solve;
-  final bool dense;
-  final bool mobile;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'COMPLETED SCRAMBLE',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: CrubikColors.muted,
-            fontWeight: FontWeight.w700,
-            letterSpacing: dense ? 0.8 : 1.1,
-            fontSize: dense ? 8 : null,
-          ),
-        ),
-        SizedBox(height: dense ? 1 : 4),
-        Text(
-          solve.scramble,
-          key: const Key('completed-scramble'),
-          style:
-              (mobile
-                      ? Theme.of(context).textTheme.bodyMedium
-                      : Theme.of(context).textTheme.bodySmall)
-                  ?.copyWith(
-                    color: CrubikColors.text,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w600,
-                    fontSize: dense ? 9 : null,
-                    height: mobile
-                        ? 1.35
-                        : dense
-                        ? 1.05
-                        : 1.3,
-                  ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DismissSolveButton extends StatelessWidget {
-  const _DismissSolveButton({required this.onPressed, this.dense = false});
-
-  final VoidCallback onPressed;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.icon(
-      key: const Key('continue-after-solve'),
-      onPressed: onPressed,
-      style: FilledButton.styleFrom(
-        backgroundColor: CrubikColors.primaryAccent,
-        foregroundColor: CrubikColors.background,
-        minimumSize: const Size(0, 48),
-        visualDensity: dense ? VisualDensity.compact : VisualDensity.standard,
-        padding: EdgeInsets.symmetric(vertical: dense ? 8 : 12),
-      ),
-      icon: Icon(Icons.close_rounded, size: dense ? 17 : 20),
-      label: const FittedBox(fit: BoxFit.scaleDown, child: Text('DISMISS')),
-    );
-  }
-}
-
-class _FinishMetric extends StatelessWidget {
-  const _FinishMetric({
-    required this.label,
-    required this.value,
-    required this.valueKey,
-    required this.dense,
-  });
-
-  final String label;
-  final String value;
-  final Key valueKey;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: CrubikColors.muted,
-              fontSize: dense ? 8 : null,
-              letterSpacing: dense ? 0.6 : 1,
-            ),
-          ),
-          SizedBox(height: dense ? 0 : 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              key: valueKey,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: CrubikColors.text,
-                fontSize: dense ? 13 : null,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

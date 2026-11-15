@@ -147,6 +147,7 @@ final class SmartCubeCapabilitiesEvent extends SmartCubeEvent {
 
 enum SmartCubeDataGapReason {
   missedMoves,
+  recoveryTimeout,
   malformedPacket,
   connectionDiscontinuity,
   cubeClockDiscontinuity,

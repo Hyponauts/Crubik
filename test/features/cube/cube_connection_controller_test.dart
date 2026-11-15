@@ -569,6 +569,49 @@ void main() {
     controller.dispose();
   });
 
+  test('GAN reset waits for the cube to report solved state', () async {
+    final gateway = _FakeCubeConnectionGateway();
+    final controller = CubeConnectionController(gateway: gateway);
+    const device = CubeDeviceCandidate(
+      id: 'gan-reset',
+      name: 'GAN12ui',
+      vendor: CubeVendor.gan,
+      protocolFamily: CubeProtocolFamily.gan,
+      supportStatus: CubeSupportStatus.supported,
+      adapterId: 'gan-family',
+    );
+    await controller.connect(device);
+    final session = gateway.sessionFor(device.id);
+    expect(controller.canResetCubeState, isTrue);
+
+    final resetting = controller.resetCubeStateToSolved();
+    await pumpEventQueue();
+    expect(session.resetCount, 1);
+    session.addEvent(
+      SmartCubeStateEvent(
+        state: CubeState.solved()..apply(CubeMove.parse('R')),
+        serial: 1,
+        receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
+      ),
+    );
+    await pumpEventQueue();
+    expect(controller.latestStateEvent?.state.isSolved, isFalse);
+    session.addEvent(
+      SmartCubeStateEvent(
+        state: CubeState.solved(),
+        serial: 2,
+        receivedAt: DateTime.utc(2026),
+        hostTimestamp: Duration.zero,
+      ),
+    );
+    await resetting;
+    expect(controller.latestStateEvent?.state.isSolved, isTrue);
+
+    await controller.close();
+    controller.dispose();
+  });
+
   test(
     'publishes battery snapshots and keeps data-loss errors nonfatal',
     () async {
@@ -584,6 +627,7 @@ void main() {
       );
       await controller.connect(device);
       final session = gateway.sessionFor(device.id);
+      expect(controller.canResetCubeState, isFalse);
 
       session.addBatteryLevel(72);
       session.addError(
@@ -853,7 +897,8 @@ final class _FakeCubeConnectionGateway implements CubeConnectionGateway {
   }
 }
 
-final class _FakeSmartCubeSession implements SmartCubeSession {
+final class _FakeSmartCubeSession
+    implements SmartCubeSession, ResettableSmartCubeSession {
   _FakeSmartCubeSession({this.startGate});
 
   final Completer<void>? startGate;
@@ -863,6 +908,7 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
   bool _closed = false;
   int startCount = 0;
   int stateRequestCount = 0;
+  int resetCount = 0;
 
   bool get isClosed => _closed;
 
@@ -901,6 +947,11 @@ final class _FakeSmartCubeSession implements SmartCubeSession {
   @override
   Future<void> requestState() async {
     stateRequestCount++;
+  }
+
+  @override
+  Future<void> resetStateToSolved() async {
+    resetCount++;
   }
 
   @override

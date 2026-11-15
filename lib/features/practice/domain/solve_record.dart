@@ -1,3 +1,7 @@
+import 'practice_session.dart';
+import 'solve_average.dart';
+import 'solve_analysis.dart';
+import 'solve_method.dart';
 import 'solve_recording.dart';
 
 enum SolveStartTrigger {
@@ -17,6 +21,8 @@ enum SolveStartTrigger {
     return null;
   }
 }
+
+enum SolveOutcome { completed, dnf, dns }
 
 /// The normalized source that completed a solve.
 ///
@@ -62,7 +68,7 @@ final class SolveInputSource {
 }
 
 final class SolveRecord {
-  const SolveRecord({
+  SolveRecord({
     required this.id,
     required this.scramble,
     required this.elapsed,
@@ -72,36 +78,63 @@ final class SolveRecord {
     this.inspectionElapsed,
     this.startTrigger,
     this.isTimingReliable = true,
-  });
+    this.outcome = SolveOutcome.completed,
+    this.sessionId = defaultPracticeSessionId,
+    this.sessionName = 'SpeedSolving',
+    SolveMethodConfig? method,
+  }) : method = method ?? SolveMethodConfig.preset(SolveMethodPreset.cfop);
 
   final String id;
   final String scramble;
 
   /// The host timer reading; meaningful only when [isTimingReliable] is true.
   final Duration elapsed;
+
+  /// Face-turn count for new solves; older saved summaries retain their count.
   final int moveCount;
   final DateTime createdAt;
   final SolveInputSource inputSource;
   final Duration? inspectionElapsed;
   final SolveStartTrigger? startTrigger;
+  final String sessionId;
+  final String sessionName;
+  final SolveMethodConfig method;
 
   /// False when recovery or a state report leaves a solve boundary unobserved.
   final bool isTimingReliable;
+  final SolveOutcome outcome;
 
-  double? get turnsPerSecond => !isTimingReliable || elapsed.inMilliseconds == 0
+  /// A current analysis can correct the count of an older recorded solve.
+  int turnCountFor(SolveAnalysis? analysis) =>
+      analysis != null && analysis.isComplete && !analysis.isOutdated
+      ? analysis.moveCount
+      : moveCount;
+
+  double? turnsPerSecondFor(SolveAnalysis? analysis) =>
+      outcome != SolveOutcome.completed ||
+          !isTimingReliable ||
+          elapsed.inMilliseconds == 0
       ? null
-      : moveCount / (elapsed.inMilliseconds / 1000);
+      : turnCountFor(analysis) / (elapsed.inMilliseconds / 1000);
+
+  double? get turnsPerSecond => turnsPerSecondFor(null);
 
   Map<String, Object?> toJson() => {
     'id': id,
     'scramble': scramble,
-    'elapsed_ms': isTimingReliable ? elapsed.inMilliseconds : null,
+    'elapsed_ms': outcome == SolveOutcome.completed && isTimingReliable
+        ? elapsed.inMilliseconds
+        : null,
     'timing_reliable': isTimingReliable,
+    'outcome': outcome.name,
     'move_count': moveCount,
     'created_at': createdAt.toIso8601String(),
     'input_source': inputSource.serializedValue,
     'inspection_elapsed_ms': inspectionElapsed?.inMilliseconds,
     'start_trigger': startTrigger?.serializedValue,
+    'session_id': sessionId,
+    'session_name': sessionName,
+    'method': method.toJson(),
   };
 
   factory SolveRecord.fromJson(Map<String, Object?> json) => SolveRecord(
@@ -110,6 +143,10 @@ final class SolveRecord {
     elapsed: Duration(milliseconds: (json['elapsed_ms'] as int?) ?? 0),
     isTimingReliable:
         (json['timing_reliable'] as bool?) ?? json['elapsed_ms'] != null,
+    outcome: SolveOutcome.values.firstWhere(
+      (value) => value.name == json['outcome'],
+      orElse: () => SolveOutcome.completed,
+    ),
     moveCount: json['move_count']! as int,
     createdAt: DateTime.parse(json['created_at']! as String),
     inputSource: SolveInputSource.fromSerializedValue(
@@ -123,6 +160,15 @@ final class SolveRecord {
     startTrigger: SolveStartTrigger.fromSerializedValue(
       json['start_trigger'] as String?,
     ),
+    sessionId: (json['session_id'] as String?) ?? defaultPracticeSessionId,
+    sessionName: (json['session_name'] as String?) ?? 'SpeedSolving',
+    method: switch (json['method']) {
+      final Map<String, Object?> value => SolveMethodConfig.fromJson(value),
+      final Map value => SolveMethodConfig.fromJson(
+        value.cast<String, Object?>(),
+      ),
+      _ => SolveMethodConfig.preset(SolveMethodPreset.cfop),
+    },
   );
 }
 
@@ -134,11 +180,89 @@ abstract interface class SolveHistoryRepository {
   Future<void> add(SolveRecord solve, {SolveRecording? recording});
 
   Future<void> delete(String id);
+
+  /// Deletes a session's solves and dependent data. A persistent implementation
+  /// runs [saveSessionSettings] in the same transaction; the callback must use
+  /// the same store and connection as the history repository.
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  });
 }
 
-final class MemorySolveHistoryRepository implements SolveHistoryRepository {
+abstract interface class SolveAnalysisRepository {
+  Future<SolveAnalysis?> loadAnalysis(String solveId);
+
+  Future<void> saveAnalysis(String solveId, SolveAnalysis analysis);
+}
+
+/// Keeps rolling averages and their anchor solve changes atomic with history.
+abstract interface class SolveAverageRepository {
+  Future<List<SolveAverageRecord>> loadAverages();
+
+  Future<void> addWithAverages(
+    SolveRecord solve, {
+    SolveRecording? recording,
+    required List<SolveAverageRecord> averages,
+  });
+
+  Future<void> deleteWithAverages(
+    String solveId, {
+    required Set<String> affectedEndSolveIds,
+    required List<SolveAverageRecord> replacements,
+  });
+
+  Future<void> replaceAllAverages(List<SolveAverageRecord> averages);
+}
+
+final class MemorySolveHistoryRepository
+    implements
+        SolveHistoryRepository,
+        SolveAnalysisRepository,
+        SolveAverageRepository {
   final List<SolveRecord> _solves = [];
   final Map<String, SolveRecording> _recordingsBySolveId = {};
+  final Map<String, SolveAnalysis> _analysesBySolveId = {};
+  final Map<String, SolveAverageRecord> _averagesById = {};
+
+  @override
+  Future<List<SolveAverageRecord>> loadAverages() async =>
+      List.unmodifiable(_averagesById.values);
+
+  @override
+  Future<void> addWithAverages(
+    SolveRecord solve, {
+    SolveRecording? recording,
+    required List<SolveAverageRecord> averages,
+  }) async {
+    await add(solve, recording: recording);
+    for (final average in averages) {
+      _averagesById[average.id] = average;
+    }
+  }
+
+  @override
+  Future<void> deleteWithAverages(
+    String solveId, {
+    required Set<String> affectedEndSolveIds,
+    required List<SolveAverageRecord> replacements,
+  }) async {
+    await delete(solveId);
+    _averagesById.removeWhere(
+      (_, average) => affectedEndSolveIds.contains(average.endSolveId),
+    );
+    for (final average in replacements) {
+      _averagesById[average.id] = average;
+    }
+  }
+
+  @override
+  Future<void> replaceAllAverages(List<SolveAverageRecord> averages) async {
+    _averagesById.clear();
+    for (final average in averages) {
+      _averagesById[average.id] = average;
+    }
+  }
 
   @override
   Future<List<SolveRecord>> load() async => List.unmodifiable(_solves);
@@ -146,6 +270,10 @@ final class MemorySolveHistoryRepository implements SolveHistoryRepository {
   @override
   Future<SolveRecording?> loadRecording(String solveId) async =>
       _recordingsBySolveId[solveId];
+
+  @override
+  Future<SolveAnalysis?> loadAnalysis(String solveId) async =>
+      _analysesBySolveId[solveId];
 
   @override
   Future<void> add(SolveRecord solve, {SolveRecording? recording}) async {
@@ -159,8 +287,33 @@ final class MemorySolveHistoryRepository implements SolveHistoryRepository {
   }
 
   @override
+  Future<void> saveAnalysis(String solveId, SolveAnalysis analysis) async {
+    _analysesBySolveId[solveId] = analysis;
+  }
+
+  @override
   Future<void> delete(String id) async {
     _solves.removeWhere((solve) => solve.id == id);
     _recordingsBySolveId.remove(id);
+    _analysesBySolveId.remove(id);
+    _averagesById.removeWhere((_, average) => average.endSolveId == id);
+  }
+
+  @override
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  }) async {
+    await saveSessionSettings?.call();
+    final deletedIds = {
+      for (final solve in _solves)
+        if (solve.sessionId == sessionId) solve.id,
+    };
+    _solves.removeWhere((solve) => solve.sessionId == sessionId);
+    for (final id in deletedIds) {
+      _recordingsBySolveId.remove(id);
+      _analysesBySolveId.remove(id);
+    }
+    _averagesById.removeWhere((_, average) => average.sessionId == sessionId);
   }
 }

@@ -7,6 +7,7 @@ import 'package:crubik/features/practice/application/practice_controller.dart';
 import 'package:crubik/features/practice/presentation/widgets/scramble_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/practice_controller_factory.dart';
@@ -202,6 +203,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('keeps progress and actions on one row and copies scramble', (
+    tester,
+  ) async {
+    String? copiedScramble;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedScramble =
+              (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final practice = createTestPracticeController(
+      scrambleGenerator: TestScrambleGenerator(random: Random(17)),
+    );
+    practice.activateSmartCubeInput();
+    practice.syncCubeState(CubeState.solved());
+    addTearDown(practice.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: CrubikTheme.dark,
+        home: Scaffold(
+          body: SizedBox(
+            width: 420,
+            child: PracticeScramblePanel(practice: practice),
+          ),
+        ),
+      ),
+    );
+
+    final guidanceCenter = tester.getCenter(
+      find.byKey(const Key('scramble-guidance')),
+    );
+    final newCenter = tester.getCenter(find.byKey(const Key('new-scramble')));
+    expect((guidanceCenter.dy - newCenter.dy).abs(), lessThan(1));
+    expect(find.textContaining('turns'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('copy-scramble')));
+    await tester.pump();
+
+    expect(copiedScramble, practice.scramble.toString());
+    expect(find.text('Scramble copied'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows preparation progress and retry without a type label', (
     tester,
   ) async {
@@ -276,14 +331,14 @@ void main() {
         ),
       ),
     );
-    final headerBefore = tester.getRect(find.text('PRACTICE SCRAMBLE'));
+    final headerBefore = tester.getRect(find.text('SCRAMBLE'));
 
     await tester.tap(find.byKey(const Key('new-scramble')));
     await tester.pump();
 
     expect(practice.scramble, same(replacement));
     expect(find.byKey(const Key('scramble-loading')), findsNothing);
-    expect(tester.getRect(find.text('PRACTICE SCRAMBLE')), headerBefore);
+    expect(tester.getRect(find.text('SCRAMBLE')), headerBefore);
   });
 
   for (final viewport in [const Size(320, 568), const Size(1440, 900)]) {

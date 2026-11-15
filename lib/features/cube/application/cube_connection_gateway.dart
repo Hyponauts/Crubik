@@ -49,6 +49,12 @@ abstract interface class SmartCubeSession {
   Future<void> close();
 }
 
+/// Optional hardware operation for cubes whose firmware can reset its
+/// internal facelet state to solved. The caller must confirm physical state.
+abstract interface class ResettableSmartCubeSession {
+  Future<void> resetStateToSolved();
+}
+
 /// Transport boundary used by [CubeConnectionController].
 ///
 /// BLE is the production implementation today, while tests and future input

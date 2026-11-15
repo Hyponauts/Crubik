@@ -16,13 +16,15 @@ Finding a cube, pairing with it, or recognizing its Bluetooth service does not p
 
 | Vendor/family | Protocols implemented for | Tests and results so far | Release support |
 | --- | --- | --- | --- |
-| GAN Gen2 | GAN Mini ui FreePlay, GAN12 ui/ui FreePlay, GAN356 i Carry/Carry S/i 3, and hardware using the same protocol service | Packet tests cover state, moves, packet sequence recovery, invalid-face gaps with preserved clock deltas, other invalid input, encryption, gyro availability, and `0x01` orientation and ODR-step rotation-speed decoding. Orientation capture has not been hardware-validated. | No hardware-validated combination documented |
-| GAN Gen3 | GAN356 i Carry 2 protocol | Packet decoding and adapter tests. Hardware information explicitly reports that orientation is unavailable. | No hardware-validated combination documented |
-| GAN Gen4 | GAN12 ui Maglev and GAN14 ui FreePlay protocols | Packet decoding, adapter, hardware-feature, and `0xEC` orientation and ODR-step rotation-speed tests. GAN12 ui Maglev practice was manually hardware-validated; orientation capture has not been separately hardware-validated. | GAN12 ui Maglev: Supported for release |
+| GAN Gen2 | GAN Mini ui FreePlay, GAN12 ui/ui FreePlay, GAN356 i Carry/Carry S/i 3, and hardware using the same protocol service | Packet tests cover state, moves, packet sequence recovery, invalid-face gaps with preserved clock deltas, other invalid input, encryption, gyro availability, and `0x01` orientation and ODR-step rotation-speed decoding. The internal-state reset command and subsequent state request are packet-tested, not hardware-validated. Orientation capture has not been hardware-validated. | No hardware-validated combination documented |
+| GAN Gen3 | GAN356 i Carry 2 protocol | Packet decoding and adapter tests. State reports ahead of recovered moves wait for history replay. The internal-state reset command is packet-tested, not hardware-validated. Hardware information explicitly reports that orientation is unavailable. | No hardware-validated combination documented |
+| GAN Gen4 | GAN12 ui Maglev and GAN14 ui FreePlay protocols | Packet decoding, adapter, state-before-history recovery (including two-minute expiry), hardware-feature, and `0xEC` orientation and ODR-step rotation-speed tests. GAN12 ui Maglev practice was manually hardware-validated; its internal-state reset command, recovery timeout, and orientation capture have not been separately hardware-validated. | GAN12 ui Maglev: Supported for release |
 | MoYu AI 2023 | GAN Gen2-compatible packet format with MoYu encryption keys | Encryption and adapter tests. Orientation is available only if the cube reports the Gen2 hardware feature; the protocol family alone is not enough. | No hardware-validated combination documented |
 | MoYu32 | `WCU_MY32` service: initial state, recovery of up to five moves, cube timestamps, and battery | Packet and adapter tests. Orientation is unavailable. MoYu32 practice was manually hardware-validated. | MoYu32 (`WCU_MY32`): Supported for release |
 
 The table lists the models targeted by the implemented protocols and the tests completed so far. A model name in the protocol column does not mean the model is supported for release.
+
+The LIVE connection dialog offers internal-state reset only for connected GAN Gen2–4 cubes, and only outside an active attempt. The user must first confirm that the physical cube is solved. Crubik sends the protocol reset command and requires a fresh solved-state report before showing success. This command has automated coverage but still needs physical-device validation; it is not offered for MoYu devices.
 
 ## Testing with a real cube
 

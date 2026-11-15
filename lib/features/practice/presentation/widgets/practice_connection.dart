@@ -28,14 +28,12 @@ Future<void> showPracticeConnectionDialog(
 
 class PracticeConnectionButton extends StatelessWidget {
   const PracticeConnectionButton({
-    required this.practice,
     required this.connection,
     required this.onPressed,
     this.compact = false,
     super.key,
   });
 
-  final PracticeController practice;
   final CubeConnectionController connection;
   final VoidCallback onPressed;
   final bool compact;
@@ -43,39 +41,33 @@ class PracticeConnectionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isConnected = connection.isConnected;
-    final isDemo = practice.inputMode == PracticeInputMode.demo;
-    final label = isDemo
-        ? (compact ? 'DEMO' : 'Demo cube')
-        : isConnected
-        ? (compact ? 'LIVE' : connection.connectedCube!.name)
-        : (compact ? 'CONNECT' : 'Connect cube');
-    return OutlinedButton.icon(
+    final isScanning = connection.status == CubeConnectionStatus.scanning;
+    return IconButton.outlined(
       key: const Key('connect-cube-button'),
       onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
+      tooltip: isConnected
+          ? 'Connected to ${connection.connectedCube!.name}'
+          : 'Connect a smart cube',
+      style: IconButton.styleFrom(
         foregroundColor: isConnected
             ? CrubikColors.primaryAccent
-            : CrubikColors.text,
+            : CrubikColors.muted,
         side: BorderSide(
           color: isConnected ? CrubikColors.primaryAccent : CrubikColors.border,
         ),
         backgroundColor: isConnected
             ? CrubikColors.accentStatusBackground
             : CrubikColors.surface,
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 10 : 14,
-          vertical: 11,
-        ),
+        minimumSize: Size.square(compact ? 42 : 46),
       ),
       icon: Icon(
-        isDemo
-            ? Icons.science_outlined
-            : isConnected
+        isConnected
             ? Icons.bluetooth_connected
-            : Icons.bluetooth_searching,
-        size: 18,
+            : isScanning
+            ? Icons.bluetooth_searching
+            : Icons.bluetooth,
+        size: 20,
       ),
-      label: Text(label),
     );
   }
 }
@@ -124,7 +116,10 @@ class _PracticeConnectionDialog extends StatelessWidget {
                   if (practice.inputMode == PracticeInputMode.demo)
                     _DemoInputCard(onExitDemo: onExitDemo)
                   else if (connection.isConnected)
-                    _ConnectedCubeCard(connection: connection)
+                    _ConnectedCubeCard(
+                      connection: connection,
+                      practice: practice,
+                    )
                   else
                     Flexible(
                       child: _DisconnectedCubeContent(
@@ -325,13 +320,68 @@ String _formatProtocolNames(List<String> names) => switch (names) {
   _ => '${names.take(names.length - 1).join(', ')}, and ${names.last}',
 };
 
-class _ConnectedCubeCard extends StatelessWidget {
-  const _ConnectedCubeCard({required this.connection});
+class _ConnectedCubeCard extends StatefulWidget {
+  const _ConnectedCubeCard({required this.connection, required this.practice});
 
   final CubeConnectionController connection;
+  final PracticeController practice;
+
+  @override
+  State<_ConnectedCubeCard> createState() => _ConnectedCubeCardState();
+}
+
+class _ConnectedCubeCardState extends State<_ConnectedCubeCard> {
+  bool _resetting = false;
+  String? _resetMessage;
+  bool _resetSucceeded = false;
+
+  Future<void> _resetState() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset cube state?'),
+        content: const Text(
+          'First make sure the physical cube is fully solved. This will reset the state stored inside the cube, then check its response.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('RESET'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _resetting = true;
+      _resetMessage = null;
+    });
+    try {
+      await widget.connection.resetCubeStateToSolved();
+      if (!mounted) return;
+      setState(() {
+        _resetSucceeded = true;
+        _resetMessage = 'Cube confirmed its solved state.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _resetSucceeded = false;
+        _resetMessage = 'Could not reset cube state: $error';
+      });
+    } finally {
+      if (mounted) setState(() => _resetting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final connection = widget.connection;
     final device = connection.connectedCube!;
     final batteryLevel = connection.batteryLevel;
     final connectionStatus = batteryLevel == null
@@ -344,35 +394,68 @@ class _ConnectedCubeCard extends StatelessWidget {
         border: Border.all(color: CrubikColors.activeInputBorder),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.bluetooth_connected,
-            color: CrubikColors.primaryAccent,
+          Row(
+            children: [
+              const Icon(
+                Icons.bluetooth_connected,
+                color: CrubikColors.primaryAccent,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      device.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      connectionStatus,
+                      semanticsLabel: batteryLevel == null
+                          ? connectionStatus
+                          : 'BLE link active, battery $batteryLevel percent',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: connection.disconnect,
+                child: const Text('Disconnect'),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device.name,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                Text(
-                  connectionStatus,
-                  semanticsLabel: batteryLevel == null
-                      ? connectionStatus
-                      : 'BLE link active, battery $batteryLevel percent',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+          if (connection.canResetCubeState) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('reset-cube-state-button'),
+              onPressed: _resetting || widget.practice.attemptInProgress
+                  ? null
+                  : _resetState,
+              icon: _resetting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.restart_alt, size: 18),
+              label: const Text('RESET CUBE STATE'),
             ),
-          ),
-          TextButton(
-            onPressed: connection.disconnect,
-            child: const Text('Disconnect'),
-          ),
+            if (_resetMessage case final message?) ...[
+              const SizedBox(height: 8),
+              Text(
+                message,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: _resetSucceeded
+                      ? CrubikColors.primaryAccent
+                      : CrubikColors.danger,
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -490,9 +573,12 @@ class _DiscoveredDeviceList extends StatelessWidget {
               connectionBusy: connectionBusy,
               onConnect: cubes[index].canConnect
                   ? () async {
+                      final navigator = Navigator.of(context);
+                      final dialogRoute = ModalRoute.of(context);
                       await onConnect(cubes[index]);
-                      if (context.mounted && connection.isConnected) {
-                        Navigator.of(context).pop();
+                      if (connection.isConnected &&
+                          dialogRoute?.isCurrent == true) {
+                        navigator.pop();
                       }
                     }
                   : null,

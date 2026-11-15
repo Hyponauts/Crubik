@@ -6,10 +6,17 @@ import '../../../core/time/monotonic_clock.dart';
 import '../../cube/domain/cube_model.dart';
 import '../../cube/domain/smart_cube_device.dart';
 import '../../cube/domain/smart_cube_event.dart';
+import '../domain/countable_solve.dart';
+import '../domain/practice_session.dart';
+import '../domain/solve_analysis.dart';
+import '../domain/solve_average.dart';
+import '../domain/solve_method.dart';
 import '../domain/solve_record.dart';
 import '../domain/solve_recording.dart';
+import 'solve_analyzer.dart';
 import 'solve_history.dart';
 import 'solve_recording_builder.dart';
+import 'solve_statistics.dart';
 
 enum PracticePhase {
   manualReady,
@@ -92,6 +99,8 @@ final class PracticeController extends ChangeNotifier {
   PracticeController({
     required FutureOr<CubeScramble> Function() nextScramble,
     SolveHistoryRepository? repository,
+    PracticeSessionStore? sessionStore,
+    SolveAnalyzer analyzer = const SolveAnalyzer(),
     SolveClock? clock,
     MonotonicClock? monotonicClock,
     DateTime Function()? now,
@@ -100,6 +109,8 @@ final class PracticeController extends ChangeNotifier {
   }) : this._(
          nextScramble,
          repository,
+         sessionStore,
+         analyzer,
          clock,
          monotonicClock,
          now,
@@ -110,6 +121,8 @@ final class PracticeController extends ChangeNotifier {
   PracticeController._(
     this._nextScramble,
     SolveHistoryRepository? repository,
+    PracticeSessionStore? sessionStore,
+    this._analyzer,
     SolveClock? clock,
     MonotonicClock? monotonicClock,
     DateTime Function()? now,
@@ -122,6 +135,10 @@ final class PracticeController extends ChangeNotifier {
       repository: repository ?? MemorySolveHistoryRepository(),
       now: _now,
     );
+    _sessionStore = sessionStore ?? MemoryPracticeSessionStore();
+    final defaultSession = PracticeSession.defaultSession();
+    _sessions.add(defaultSession);
+    _selectedSessionId = defaultSession.id;
     _requestNextScramble(notify: false);
   }
 
@@ -129,7 +146,14 @@ final class PracticeController extends ChangeNotifier {
   late final SolveClock _clock;
   late final MonotonicClock _monotonicClock;
   final DateTime Function() _now;
+  final SolveAnalyzer _analyzer;
   late final SolveHistory _history;
+  late final PracticeSessionStore _sessionStore;
+  final List<PracticeSession> _sessions = [];
+  late String _selectedSessionId;
+  final Map<String, SolveAnalysis> _analyses = {};
+  final Map<String, Future<SolveAnalysis?>> _analysisRequests = {};
+  bool _sessionsInitialized = false;
   final Duration preInspectionDelay;
   final Duration inspectionDuration;
   final ChangeNotifier _clockTicks = ChangeNotifier();
@@ -174,7 +198,56 @@ final class PracticeController extends ChangeNotifier {
   Object? get scramblePreparationError => _scramblePreparationError;
   CubeState get cubeState => _cubeState;
   List<CubeMove> get currentMoves => List.unmodifiable(_currentMoves);
-  List<SolveRecord> get solves => _history.records;
+  List<SolveRecord> get allSolves => _history.records;
+  List<SolveAverageRecord> averagesFor(SolveAverageKind kind) =>
+      _history.averagesFor(_selectedSessionId, kind);
+  SolveAverageWindow? windowForAverage(SolveAverageRecord average) =>
+      _history.windowFor(average);
+
+  /// Loads only the trimmed window when an average is expanded.
+  Future<SolveAverageDetails?> detailsForAverage(
+    SolveAverageRecord average,
+  ) async {
+    final window = _history.windowFor(average);
+    if (window == null ||
+        window.record.status != SolveAverageStatus.completed) {
+      return null;
+    }
+    final anchor = _history.records.firstWhere(
+      (solve) => solve.id == average.endSolveId,
+    );
+    final sameMethodSolves = window.includedSolves
+        .where(
+          (solve) =>
+              solve.method.preset == anchor.method.preset &&
+              listEquals(solve.method.stages, anchor.method.stages),
+        )
+        .toList();
+    final analyses = await _analysesFor(window.includedSolves);
+    final analysesById = {
+      for (var index = 0; index < window.includedSolves.length; index++)
+        window.includedSolves[index].id: analyses[index],
+    };
+    return SolveAverageDetails(
+      eligibleSolveCount: sameMethodSolves.length,
+      stages: SolveStatistics.averageStages(
+        sameMethodSolves.map((solve) => analysesById[solve.id]),
+        order: anchor.method.stages,
+      ),
+      metrics: SolveStatistics.averageMetrics(
+        includedSolves: window.includedSolves,
+        sameMethodSolves: sameMethodSolves,
+        analysesById: analysesById,
+      ),
+    );
+  }
+
+  List<SolveRecord> get solves => List.unmodifiable(
+    _history.records.where((solve) => solve.sessionId == _selectedSessionId),
+  );
+  List<PracticeSession> get sessions => List.unmodifiable(_sessions);
+  PracticeSession get selectedSession =>
+      _sessions.firstWhere((session) => session.id == _selectedSessionId);
   PracticePhase get phase => _phase;
   PracticeInputMode get inputMode => _inputMode;
   Duration get elapsed => _clock.elapsed;
@@ -294,21 +367,203 @@ final class PracticeController extends ChangeNotifier {
         _phase == PracticePhase.solving;
   }
 
-  bool get hasSolves => _history.hasRecords;
+  bool get hasSolves => solves.isNotEmpty;
 
-  Duration? get bestTime => _history.bestTime;
+  Duration? get lastTime {
+    final solve = solves.firstOrNull;
+    if (solve == null ||
+        solve.outcome != SolveOutcome.completed ||
+        !solve.isTimingReliable) {
+      return null;
+    }
+    return solve.elapsed;
+  }
 
-  Duration? get sessionAverage => _history.sessionAverage;
+  Duration? get bestTime => _bestTime(solves);
 
-  Duration? get averageOfFive => _history.averageOfFive;
+  Duration? get sessionAverage => _meanTime(solves);
 
-  Future<String> exportJson() => _history.exportJson();
+  Duration? get averageOfFive =>
+      averagesFor(SolveAverageKind.ao5).firstOrNull?.elapsed;
+
+  Duration? get averageOfTwelve =>
+      averagesFor(SolveAverageKind.ao12).firstOrNull?.elapsed;
+
+  Duration? get averageOfOneHundred =>
+      averagesFor(SolveAverageKind.ao100).firstOrNull?.elapsed;
+
+  Duration? get bestAverageOfFive => _bestAverage(SolveAverageKind.ao5);
+
+  Duration? get bestAverageOfTwelve => _bestAverage(SolveAverageKind.ao12);
+
+  Duration? get bestAverageOfOneHundred => _bestAverage(SolveAverageKind.ao100);
+
+  Duration? _bestAverage(SolveAverageKind kind) {
+    final times = averagesFor(
+      kind,
+    ).where((average) => average.status == SolveAverageStatus.completed);
+    Duration? best;
+    for (final average in times) {
+      final elapsed = average.elapsed!;
+      if (best == null || elapsed < best) best = elapsed;
+    }
+    return best;
+  }
+
+  SolveAnalysis? analysisForCached(String solveId) => _analyses[solveId];
+
+  Future<SolveAnalysis?> analysisFor(SolveRecord solve) {
+    final cached = _analyses[solve.id];
+    if (cached != null && !cached.isOutdated) return Future.value(cached);
+    return _analysisRequests.putIfAbsent(
+      solve.id,
+      () => _loadOrCreateAnalysis(solve).whenComplete(() {
+        _analysisRequests.remove(solve.id);
+      }),
+    );
+  }
+
+  /// Calculates per-stage means from the newest recorded analyses in a session.
+  ///
+  /// Skipped and unavailable stages do not contribute to their stage mean.
+  Future<Map<SolveStageKind, SolveStageTimingAverage>> stageTimingAverages({
+    required String sessionId,
+    SolveMethodConfig? method,
+    int maximumSolveCount = 100,
+  }) async {
+    assert(maximumSolveCount > 0);
+    final recentSolves = _history.records
+        .where((solve) => solve.sessionId == sessionId)
+        .take(maximumSolveCount)
+        .toList();
+    final included = maximumSolveCount == SolveAverageKind.ao100.windowSize
+        ? SolveAverageWindow.comparisonSolves(recentSolves)
+        : recentSolves;
+    final comparable = method == null
+        ? included
+        : included.where(
+            (solve) =>
+                solve.method.preset == method.preset &&
+                listEquals(solve.method.stages, method.stages),
+          );
+    final analyses = await _analysesFor(comparable.toList());
+
+    return Map.unmodifiable({
+      for (final stage in SolveStatistics.averageStages(analyses))
+        stage.kind: SolveStageTimingAverage(
+          recognitionTime: stage.recognitionTime,
+          executionTime: stage.executionTime,
+          stepTime: stage.stepTime,
+          sampleCount: stage.sampleCount,
+          turnsPerSecond: stage.turnsPerSecond,
+        ),
+    });
+  }
+
+  Future<List<SolveAnalysis?>> _analysesFor(List<SolveRecord> solves) async {
+    final analyses = <SolveAnalysis?>[];
+    for (var start = 0; start < solves.length; start += 8) {
+      analyses.addAll(
+        await Future.wait(solves.skip(start).take(8).map(analysisFor)),
+      );
+    }
+    return analyses;
+  }
+
+  Future<String> exportJson() =>
+      _history.exportJson(sessionId: _selectedSessionId);
+
+  Future<void> writeExportJson(
+    StringSink output, {
+    required String sessionId,
+  }) => _history.writeExportJson(output, sessionId: sessionId);
 
   Future<void> flushPersistence() => _history.flush();
 
   Future<void> initialize() async {
-    await _history.initialize();
+    final results = await Future.wait([
+      _history.initialize(),
+      _sessionStore.load(),
+    ]);
+    final stored =
+        results[1] as ({List<PracticeSession> sessions, String selectedId})?;
+    if (stored != null) {
+      _sessions
+        ..clear()
+        ..addAll(stored.sessions);
+      _selectedSessionId = stored.selectedId;
+    }
+    _sessionsInitialized = true;
     if (!_disposed) notifyListeners();
+  }
+
+  bool get canConfigureSession => _sessionsInitialized && !attemptInProgress;
+
+  void selectSession(String id) {
+    if (!canConfigureSession || id == _selectedSessionId) return;
+    if (!_sessions.any((session) => session.id == id)) return;
+    _selectedSessionId = id;
+    _persistSessions();
+    notifyListeners();
+  }
+
+  PracticeSession createSession({
+    required String name,
+    SolveMethodConfig? method,
+  }) {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Session name cannot be empty.');
+    }
+    final timestamp = _now().microsecondsSinceEpoch;
+    var id = 'session-$timestamp';
+    var suffix = 2;
+    while (_sessions.any((session) => session.id == id)) {
+      id = 'session-$timestamp-${suffix++}';
+    }
+    final session = PracticeSession(
+      id: id,
+      name: normalizedName,
+      method: method ?? SolveMethodConfig.preset(SolveMethodPreset.cfop),
+    );
+    _sessions.add(session);
+    _selectedSessionId = session.id;
+    _persistSessions();
+    notifyListeners();
+    return session;
+  }
+
+  void updateSelectedSession({String? name, SolveMethodConfig? method}) {
+    if (!canConfigureSession) return;
+    final index = _sessions.indexWhere(
+      (session) => session.id == _selectedSessionId,
+    );
+    if (index < 0) return;
+    final normalizedName = name?.trim();
+    if (normalizedName != null && normalizedName.isEmpty) return;
+    _sessions[index] = _sessions[index].copyWith(
+      name: normalizedName,
+      method: method,
+    );
+    _persistSessions();
+    notifyListeners();
+  }
+
+  void deleteSelectedSession() {
+    if (!canConfigureSession || _sessions.length == 1) return;
+    final deletedId = _selectedSessionId;
+    _sessions.removeWhere((session) => session.id == deletedId);
+    _selectedSessionId = _sessions.first.id;
+    for (final solve in _history.records) {
+      if (solve.sessionId != deletedId) continue;
+      _analyses.remove(solve.id);
+    }
+    if (_pendingSolveReview?.sessionId == deletedId) _pendingSolveReview = null;
+    _history.deleteSession(
+      deletedId,
+      saveSessionSettings: _sessionSettingsWrite(),
+    );
+    notifyListeners();
   }
 
   void newScramble() {
@@ -393,6 +648,14 @@ final class PracticeController extends ChangeNotifier {
       case SmartCubeDataGapEvent():
         if (_phase == PracticePhase.solving) {
           _recordingBuilder.recordSmartCubeGap(event);
+          if (event.reason == SmartCubeDataGapReason.recoveryTimeout) {
+            _isTimingReliable = false;
+            _completeSolve(
+              inputSource: SolveInputSource.smartCube,
+              completedAtHostTimestamp: event.hostTimestamp,
+              outcome: SolveOutcome.dnf,
+            );
+          }
         } else if (_phase == PracticePhase.inspectionDelay ||
             _phase == PracticePhase.inspection) {
           _recordingBuilder.queueSmartCubeGap(event);
@@ -652,6 +915,7 @@ final class PracticeController extends ChangeNotifier {
   void _completeSolve({
     required SolveInputSource inputSource,
     required Duration completedAtHostTimestamp,
+    SolveOutcome outcome = SolveOutcome.completed,
   }) {
     if (_phase != PracticePhase.solving) return;
     if (completedAtHostTimestamp < _solveStartedAt!) {
@@ -662,19 +926,32 @@ final class PracticeController extends ChangeNotifier {
     _ticker = null;
 
     final createdAt = _now();
+    final session = selectedSession;
     final solve = SolveRecord(
       id: createdAt.microsecondsSinceEpoch.toString(),
       scramble: _scramble!.toString(),
       elapsed: _clock.elapsed,
-      moveCount: _currentMoves.length,
+      moveCount: CountableSolve.fromMoves(_currentMoves).moves.length,
       createdAt: createdAt,
       inputSource: inputSource,
       inspectionElapsed: _inspectionElapsed,
       startTrigger: _startTrigger,
       isTimingReliable: _isTimingReliable,
+      outcome: outcome,
+      sessionId: session.id,
+      sessionName: session.name,
+      method: session.method,
     );
     final recording = _recordingBuilder.finish();
-    _history.add(solve, recording: recording);
+    final analysis = recording == null
+        ? null
+        : _analyzer.analyze(
+            solve: solve,
+            recording: recording,
+            analyzedAt: createdAt,
+          );
+    if (analysis != null) _analyses[solve.id] = analysis;
+    _history.add(solve, recording: recording, analysis: analysis);
     _pendingSolveReview = solve;
     _requestNextScramble(notify: false);
     notifyListeners();
@@ -957,8 +1234,48 @@ final class PracticeController extends ChangeNotifier {
 
   void deleteSolve(String id) {
     _history.delete(id);
+    _analyses.remove(id);
     if (_pendingSolveReview?.id == id) _pendingSolveReview = null;
     notifyListeners();
+  }
+
+  Future<SolveAnalysis?> _loadOrCreateAnalysis(SolveRecord solve) async {
+    try {
+      final stored = await _history.loadAnalysis(solve.id);
+      if (stored != null && !stored.isOutdated) {
+        _analyses[solve.id] = stored;
+        if (!_disposed) notifyListeners();
+        return stored;
+      }
+
+      final recording = await _history.loadRecording(solve.id);
+      if (recording == null) {
+        if (stored != null) _analyses[solve.id] = stored;
+        if (!_disposed) notifyListeners();
+        return stored;
+      }
+
+      final analysis = _analyzer.analyze(solve: solve, recording: recording);
+      _analyses[solve.id] = analysis;
+      try {
+        await _history.saveAnalysis(solve.id, analysis);
+      } on Object {
+        // Analysis remains usable in memory and can be regenerated later.
+      }
+      if (!_disposed) notifyListeners();
+      return analysis;
+    } on Object {
+      return null;
+    }
+  }
+
+  void _persistSessions() =>
+      _history.saveSessionSettings(_sessionSettingsWrite());
+
+  Future<void> Function() _sessionSettingsWrite() {
+    final sessions = List<PracticeSession>.of(_sessions);
+    final selectedId = _selectedSessionId;
+    return () => _sessionStore.save(sessions, selectedId);
   }
 
   @override
@@ -969,4 +1286,32 @@ final class PracticeController extends ChangeNotifier {
     _clockTicks.dispose();
     super.dispose();
   }
+}
+
+Duration? _bestTime(List<SolveRecord> solves) {
+  final reliable = solves
+      .where(
+        (solve) =>
+            solve.outcome == SolveOutcome.completed && solve.isTimingReliable,
+      )
+      .toList();
+  if (reliable.isEmpty) return null;
+  return reliable
+      .map((solve) => solve.elapsed)
+      .reduce((first, second) => first <= second ? first : second);
+}
+
+Duration? _meanTime(List<SolveRecord> solves) {
+  final reliable = solves
+      .where(
+        (solve) =>
+            solve.outcome == SolveOutcome.completed && solve.isTimingReliable,
+      )
+      .toList();
+  if (reliable.isEmpty) return null;
+  final microseconds = reliable.fold<int>(
+    0,
+    (sum, solve) => sum + solve.elapsed.inMicroseconds,
+  );
+  return Duration(microseconds: microseconds ~/ reliable.length);
 }

@@ -3,7 +3,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crubik/features/cube/domain/cube_model.dart';
+import 'package:crubik/features/cube/domain/smart_cube_event.dart';
 import 'package:crubik/features/practice/application/practice_controller.dart';
+import 'package:crubik/features/practice/domain/practice_session.dart';
+import 'package:crubik/features/practice/domain/solve_analysis.dart';
+import 'package:crubik/features/practice/domain/solve_method.dart';
 import 'package:crubik/features/practice/domain/solve_record.dart';
 import 'package:crubik/features/practice/domain/solve_recording.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,6 +39,57 @@ void main() {
       expect(restored.inputSource, source);
       expect(restored.toJson()['input_source'], source.serializedValue);
     }
+  });
+
+  test('stage timing averages trim the newest 100 session analyses', () async {
+    final repository = MemorySolveHistoryRepository();
+    final createdAt = DateTime.utc(2026);
+    for (var index = 0; index <= 100; index++) {
+      final solve = SolveRecord(
+        id: 'solve-$index',
+        scramble: 'R U',
+        elapsed: const Duration(seconds: 10),
+        moveCount: 2,
+        createdAt: createdAt.add(Duration(minutes: index)),
+      );
+      await repository.add(solve);
+      await repository.saveAnalysis(
+        solve.id,
+        SolveAnalysis(
+          analyzerVersion: currentSolveAnalyzerVersion,
+          method: SolveMethodConfig.preset(SolveMethodPreset.cfop),
+          protocolFamily: 'test',
+          createdAt: solve.createdAt,
+          isComplete: true,
+          stages: [
+            SolveStageAnalysis(
+              kind: SolveStageKind.cross,
+              recognitionTime: Duration(milliseconds: index + 1),
+              executionTime: Duration(milliseconds: (index + 1) * 2),
+              totalTime: Duration(milliseconds: (index + 1) * 3),
+              moves: [CubeMove.parse('R')],
+              regripCount: 0,
+              skipped: false,
+            ),
+          ],
+        ),
+      );
+    }
+    final controller = createTestPracticeController(repository: repository);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+
+    final averages = await controller.stageTimingAverages(
+      sessionId: defaultPracticeSessionId,
+    );
+
+    final cross = averages[SolveStageKind.cross]!;
+    expect(cross.sampleCount, 90);
+    expect(
+      cross.recognitionTime,
+      const Duration(milliseconds: 51, microseconds: 500),
+    );
+    expect(cross.executionTime, const Duration(milliseconds: 103));
   });
 
   test('can be disposed while solve history is still loading', () async {
@@ -111,6 +166,27 @@ void main() {
     controller.continueAfterSolve();
     expect(continuationNotifications, 1);
     controller.dispose();
+  });
+
+  test('completed solve counts two equal quarter turns as one turn', () {
+    final clock = PracticeTestClock();
+    final controller = createTestPracticeController(
+      clock: clock,
+      preInspectionDelay: Duration.zero,
+      monotonicClock: clock,
+    )..activateDemoInput();
+    addTearDown(controller.dispose);
+
+    controller.startSolve();
+    controller.applyMove(CubeMove.parse('B'));
+    controller.applyMove(CubeMove.parse('B'));
+    expect(controller.currentMoves.map((move) => move.notation), ['B', 'B']);
+
+    clock.value = const Duration(seconds: 2);
+    controller.stopSolve();
+
+    expect(controller.solves.single.moveCount, 1);
+    expect(controller.solves.single.turnsPerSecond, 0.5);
   });
 
   test(
@@ -378,7 +454,7 @@ void main() {
   });
 
   test(
-    'exports version 3 solve history while retaining manual metadata',
+    'exports version 5 solve history while retaining manual metadata',
     () async {
       final exportedAt = DateTime.utc(2026, 1, 1, 12);
       final clock = PracticeTestClock(wallTime: () => exportedAt);
@@ -401,7 +477,7 @@ void main() {
       final solve = solves.single! as Map<String, Object?>;
 
       expect(payload['format'], 'crubik-solve-history');
-      expect(payload['version'], 3);
+      expect(payload['version'], 5);
       expect(solve['elapsed_ms'], 12345);
       expect(solve['move_count'], 1);
       expect(solve['input_source'], 'manual');
@@ -841,6 +917,48 @@ void main() {
     controller.dispose();
   });
 
+  test(
+    'only unresolved telemetry recovery times out an active solve as DNF',
+    () {
+      final now = DateTime.utc(2026);
+      final clock = PracticeTestClock(wallTime: () => now);
+      final controller = createTestPracticeController(
+        clock: clock,
+        now: () => now,
+        preInspectionDelay: Duration.zero,
+        scrambleGenerator: TestScrambleGenerator(random: Random(7)),
+        monotonicClock: clock,
+      );
+      addTearDown(controller.dispose);
+      _prepareConnectedCube(controller, now);
+      controller.applyMove(
+        CubeMove.parse('R'),
+        fromSmartCube: true,
+        hostTimestamp: const Duration(seconds: 1),
+      );
+      expect(controller.phase, PracticePhase.solving);
+
+      controller.handleSmartCubeEvent(
+        SmartCubeDataGapEvent(
+          reason: SmartCubeDataGapReason.missedMoves,
+          receivedAt: now,
+          hostTimestamp: const Duration(seconds: 2),
+        ),
+      );
+      expect(controller.phase, PracticePhase.solving);
+
+      controller.handleSmartCubeEvent(
+        SmartCubeDataGapEvent(
+          reason: SmartCubeDataGapReason.recoveryTimeout,
+          receivedAt: now.add(const Duration(minutes: 2)),
+          hostTimestamp: const Duration(minutes: 2, seconds: 1),
+        ),
+      );
+      expect(controller.solves.single.outcome, SolveOutcome.dnf);
+      expect(controller.pendingSolveReview?.outcome, SolveOutcome.dnf);
+    },
+  );
+
   test('an overdue inspection starts at the deadline', () {
     var now = DateTime.utc(2026);
     final clock = PracticeTestClock(wallTime: () => now);
@@ -1111,6 +1229,14 @@ final class _DelayedSolveHistoryRepository implements SolveHistoryRepository {
 
   @override
   Future<void> delete(String id) async {}
+
+  @override
+  Future<void> deleteSession(
+    String sessionId, {
+    Future<void> Function()? saveSessionSettings,
+  }) async {
+    await saveSessionSettings?.call();
+  }
 
   @override
   Future<SolveRecording?> loadRecording(String solveId) async => null;
